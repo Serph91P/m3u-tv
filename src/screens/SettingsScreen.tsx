@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,10 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
     vodCategories,
     seriesCategories,
   } = useXtream();
+
+  const serverRef = useRef<TextInput>(null);
+  const usernameRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   const [server, setServer] = useState('');
   const [username, setUsername] = useState('');
@@ -172,8 +176,13 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Server URL</Text>
-          <FocusablePressable preferredFocus style={({ isFocused }) => [styles.inputContainer, isFocused && styles.inputFocused]}>
+          <FocusablePressable
+            preferredFocus
+            style={({ isFocused }) => [styles.inputContainer, isFocused && styles.inputFocused]}
+            onSelect={() => serverRef.current?.focus()}
+          >
             <TextInput
+              ref={serverRef}
               style={styles.input}
               value={server}
               onChangeText={setServer}
@@ -187,8 +196,12 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Username</Text>
-          <FocusablePressable style={({ isFocused }) => [styles.inputContainer, isFocused && styles.inputFocused]}>
+          <FocusablePressable
+            style={({ isFocused }) => [styles.inputContainer, isFocused && styles.inputFocused]}
+            onSelect={() => usernameRef.current?.focus()}
+          >
             <TextInput
+              ref={usernameRef}
               style={styles.input}
               value={username}
               onChangeText={setUsername}
@@ -202,8 +215,12 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Password</Text>
-          <FocusablePressable style={({ isFocused }) => [styles.inputContainer, isFocused && styles.inputFocused]}>
+          <FocusablePressable
+            style={({ isFocused }) => [styles.inputContainer, isFocused && styles.inputFocused]}
+            onSelect={() => passwordRef.current?.focus()}
+          >
             <TextInput
+              ref={passwordRef}
               style={styles.input}
               value={password}
               onChangeText={setPassword}
