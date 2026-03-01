@@ -66,6 +66,16 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
         if (isSidebarActive) {
             setExpanded(true);
             wasSidebarActiveRef.current = true;
+            // When the EPG screen opens the sidebar programmatically, native focus
+            // is held by the EPG's FocusCapture (which has just been deactivated).
+            // Explicitly move focus to the current menu item so the user can
+            // immediately navigate with Up/Down.
+            if (currentRouteName === 'EPG') {
+                const target =
+                    menuItemRefs.current[preferredMenuId] ??
+                    Object.values(menuItemRefs.current).find(Boolean);
+                target?.focus();
+            }
             return;
         }
         wasSidebarActiveRef.current = false;
@@ -157,6 +167,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                 menuItemRefs.current[item.id] = r;
                             }}
                             key={item.id}
+                            focusable={currentRouteName !== 'EPG' || isSidebarActive}
                             nextFocusRight={contentFocusTag}
                             onSelect={() => {
                                 console.log(`[SideBar] onSelect triggered for: ${item.id}`);
@@ -169,6 +180,9 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                 }
                             }}
                             onFocus={() => {
+                                // The EPG screen manages its own focus; never activate the
+                                // sidebar from a native focus event while EPG is active.
+                                if (currentRouteName === 'EPG') return;
                                 setExpanded(true);
                                 if (!isSidebarActive) {
                                     setSidebarActive(true);

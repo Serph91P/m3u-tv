@@ -13,6 +13,7 @@ interface FocusablePressableProps {
   onFocus?: () => void;
   onBlur?: () => void;
   preferredFocus?: boolean;
+  focusable?: boolean;
   nextFocusUp?: number;
   nextFocusDown?: number;
   nextFocusLeft?: number;
@@ -28,6 +29,7 @@ export const FocusablePressable = forwardRef<FocusablePressableRef, FocusablePre
       onFocus,
       onBlur,
       preferredFocus,
+      focusable = true,
       nextFocusUp,
       nextFocusDown,
       nextFocusLeft,
@@ -66,7 +68,7 @@ export const FocusablePressable = forwardRef<FocusablePressableRef, FocusablePre
     return (
       <Pressable
         collapsable={false}
-        focusable
+        focusable={focusable}
         hasTVPreferredFocus={preferredFocus || forcePreferredFocus}
         nextFocusUp={nextFocusUp}
         nextFocusDown={nextFocusDown}
