@@ -90,7 +90,10 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
                 <LiveTVCard item={item} />
               )}
               horizontal
-              removeClippedSubviews={false}
+              removeClippedSubviews
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+              windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.stream_id)}
               showsHorizontalScrollIndicator={false}
@@ -110,7 +113,10 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
                 <MovieCard item={item} />
               )}
               horizontal
-              removeClippedSubviews={false}
+              removeClippedSubviews
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+              windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.stream_id)}
               showsHorizontalScrollIndicator={false}
@@ -130,7 +136,10 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
                 <SeriesCard item={item} />
               )}
               horizontal
-              removeClippedSubviews={false}
+              removeClippedSubviews
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+              windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.series_id)}
               showsHorizontalScrollIndicator={false}
