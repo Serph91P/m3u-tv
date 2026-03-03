@@ -121,7 +121,16 @@ const buildPrograms = (
   if (!listings?.length) return [];
   const programs: EpgProgram[] = [];
 
-  listings.forEach((l) => {
+  // Deduplicate by start_timestamp – the API frequently returns the same slot
+  // multiple times with different ids. Keep the last occurrence per slot since
+  // Xtream tends to place the most specific record last in the list.
+  const seen = new Map<number, XtreamEpgListing>();
+  for (const l of listings) {
+    if (l?.start_timestamp) seen.set(Number(l.start_timestamp), l);
+  }
+  const dedupedListings = Array.from(seen.values());
+
+  dedupedListings.forEach((l) => {
     if (!l?.id || !l.start_timestamp || !l.stop_timestamp) return;
     const since = new Date(Number(l.start_timestamp) * 1000);
     const till = new Date(Number(l.stop_timestamp) * 1000);
