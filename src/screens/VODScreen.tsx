@@ -78,36 +78,37 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
     <View style={styles.container}>
       {/* Movies grid */}
       <View style={styles.gridContent}>
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            data={vodStreams}
-            renderItem={renderMovieItem}
-            numColumns={8}
-            style={styles.movieGrid}
-            keyExtractor={(item) => String(item.stream_id)}
-            showsVerticalScrollIndicator={false}
-            removeClippedSubviews
-            initialNumToRender={24}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            ListHeaderComponent={<View style={styles.categoryListContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.categoryList}
-                contentContainerStyle={styles.categoryListContent}
-              >
-                {[{ category_id: '', category_name: 'All Movies', parent_id: 0 }, ...vodCategories].map((item, index) =>
-                  renderCategoryItem({ item, index })
-                )}
-              </ScrollView>
-            </View>}
-          />
-        )}
+        <FlatList
+          data={vodStreams}
+          renderItem={renderMovieItem}
+          numColumns={8}
+          style={styles.movieGrid}
+          keyExtractor={(item) => String(item.stream_id)}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          initialNumToRender={24}
+          maxToRenderPerBatch={16}
+          windowSize={5}
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : null
+          }
+          ListHeaderComponent={<View style={styles.categoryListContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryList}
+              contentContainerStyle={styles.categoryListContent}
+            >
+              {[{ category_id: '', category_name: 'All Movies', parent_id: 0 }, ...vodCategories].map((item, index) =>
+                renderCategoryItem({ item, index })
+              )}
+            </ScrollView>
+          </View>}
+        />
       </View>
     </View>
   );

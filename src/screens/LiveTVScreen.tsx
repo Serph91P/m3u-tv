@@ -77,38 +77,39 @@ export function LiveTVScreen(_props: DrawerScreenPropsType<'LiveTV'>) {
     <View style={styles.container}>
       {/* Channels grid */}
       <View style={styles.gridContainer}>
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            data={liveStreams}
-            renderItem={renderStreamItem}
-            numColumns={8}
-            style={styles.channelGrid}
-            keyExtractor={(item) => String(item.stream_id)}
-            showsVerticalScrollIndicator={false}
-            removeClippedSubviews
-            initialNumToRender={24}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            ListHeaderComponent={
-              <View style={styles.categoryListContainer}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.categoryList}
-                  contentContainerStyle={styles.categoryListContent}
-                >
-                  {[{ category_id: '', category_name: 'All Channels', parent_id: 0 }, ...liveCategories].map((item, index) =>
-                    renderCategoryItem({ item, index })
-                  )}
-                </ScrollView>
+        <FlatList
+          data={liveStreams}
+          renderItem={renderStreamItem}
+          numColumns={8}
+          style={styles.channelGrid}
+          keyExtractor={(item) => String(item.stream_id)}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          initialNumToRender={24}
+          maxToRenderPerBatch={16}
+          windowSize={5}
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
               </View>
-            }
-          />
-        )}
+            ) : null
+          }
+          ListHeaderComponent={
+            <View style={styles.categoryListContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryList}
+                contentContainerStyle={styles.categoryListContent}
+              >
+                {[{ category_id: '', category_name: 'All Channels', parent_id: 0 }, ...liveCategories].map((item, index) =>
+                  renderCategoryItem({ item, index })
+                )}
+              </ScrollView>
+            </View>
+          }
+        />
       </View>
     </View>
   );

@@ -75,36 +75,37 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
     <View style={styles.container}>
       {/* Series grid */}
       <View style={styles.gridContent}>
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            data={series}
-            renderItem={renderSeriesItem}
-            numColumns={8}
-            style={styles.seriesGrid}
-            keyExtractor={(item) => String(item.series_id)}
-            showsVerticalScrollIndicator={false}
-            removeClippedSubviews
-            initialNumToRender={24}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            ListHeaderComponent={<View style={styles.categoryListContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.categoryList}
-                contentContainerStyle={styles.categoryListContent}
-              >
-                {[{ category_id: '', category_name: 'All Series', parent_id: 0 }, ...seriesCategories].map((item, index) =>
-                  renderCategoryItem({ item, index })
-                )}
-              </ScrollView>
-            </View>}
-          />
-        )}
+        <FlatList
+          data={series}
+          renderItem={renderSeriesItem}
+          numColumns={8}
+          style={styles.seriesGrid}
+          keyExtractor={(item) => String(item.series_id)}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          initialNumToRender={24}
+          maxToRenderPerBatch={16}
+          windowSize={5}
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : null
+          }
+          ListHeaderComponent={<View style={styles.categoryListContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryList}
+              contentContainerStyle={styles.categoryListContent}
+            >
+              {[{ category_id: '', category_name: 'All Series', parent_id: 0 }, ...seriesCategories].map((item, index) =>
+                renderCategoryItem({ item, index })
+              )}
+            </ScrollView>
+          </View>}
+        />
       </View>
     </View>
   );
