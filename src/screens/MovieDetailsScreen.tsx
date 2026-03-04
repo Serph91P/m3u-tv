@@ -93,6 +93,7 @@ export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'
           setShowResumeDialog(false);
           startPlay(0);
         }}
+        onDismiss={() => setShowResumeDialog(false)}
       />
       <ImageBackground source={{ uri: backdrop }} style={styles.backdrop}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>

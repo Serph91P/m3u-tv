@@ -136,6 +136,10 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
             setPendingEpisode(null);
           }
         }}
+        onDismiss={() => {
+          setShowResumeDialog(false);
+          setPendingEpisode(null);
+        }}
       />
       <ImageBackground source={{ uri: item.cover }} style={styles.backdrop} blurRadius={5}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>

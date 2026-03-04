@@ -1,5 +1,8 @@
 import React from 'react';
-import { View, Text, Modal, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Modal, StyleSheet } from 'react-native';
+import { FocusablePressable } from './FocusablePressable';
+import { colors } from '../theme';
+import { scaledPixels } from '../hooks/useScale';
 
 interface Props {
   visible: boolean;
@@ -7,6 +10,7 @@ interface Props {
   duration?: number; // seconds
   onResume: () => void;
   onStartOver: () => void;
+  onDismiss?: () => void; // called on back button press
 }
 
 function formatTime(seconds: number): string {
@@ -19,7 +23,7 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function ResumeDialog({ visible, position, duration, onResume, onStartOver }: Props) {
+export default function ResumeDialog({ visible, position, duration, onResume, onStartOver, onDismiss }: Props) {
   const progressPercent =
     duration && duration > 0 ? Math.round((position / duration) * 100) : null;
 
@@ -29,6 +33,7 @@ export default function ResumeDialog({ visible, position, duration, onResume, on
       transparent
       animationType="fade"
       statusBarTranslucent
+      onRequestClose={onDismiss ?? onStartOver}
     >
       <View style={styles.overlay}>
         <View style={styles.dialog}>
@@ -40,22 +45,28 @@ export default function ResumeDialog({ visible, position, duration, onResume, on
           </Text>
 
           <View style={styles.buttons}>
-            <TouchableOpacity
-              style={[styles.button, styles.resumeButton]}
-              onPress={onResume}
-              hasTVPreferredFocus
-              activeOpacity={0.8}
+            <FocusablePressable
+              preferredFocus
+              onSelect={onResume}
+              style={({ isFocused }) => [
+                styles.button,
+                styles.resumeButton,
+                isFocused && styles.resumeButtonFocused,
+              ]}
             >
-              <Text style={styles.resumeText}>Resume from {formatTime(position)}</Text>
-            </TouchableOpacity>
+              {() => <Text style={styles.resumeText}>Resume from {formatTime(position)}</Text>}
+            </FocusablePressable>
 
-            <TouchableOpacity
-              style={[styles.button, styles.startOverButton]}
-              onPress={onStartOver}
-              activeOpacity={0.8}
+            <FocusablePressable
+              onSelect={onStartOver}
+              style={({ isFocused }) => [
+                styles.button,
+                styles.startOverButton,
+                isFocused && styles.startOverButtonFocused,
+              ]}
             >
-              <Text style={styles.startOverText}>Start from Beginning</Text>
-            </TouchableOpacity>
+              {() => <Text style={styles.startOverText}>Start from Beginning</Text>}
+            </FocusablePressable>
           </View>
         </View>
       </View>
@@ -72,9 +83,9 @@ const styles = StyleSheet.create({
   },
   dialog: {
     backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 32,
-    width: 480,
+    borderRadius: scaledPixels(12),
+    padding: scaledPixels(32),
+    width: scaledPixels(480),
     maxWidth: '80%',
     alignItems: 'center',
     borderWidth: 1,
@@ -82,42 +93,53 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: scaledPixels(22),
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: scaledPixels(8),
   },
   subtitle: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 16,
-    marginBottom: 28,
+    fontSize: scaledPixels(16),
+    marginBottom: scaledPixels(28),
     textAlign: 'center',
   },
   buttons: {
     flexDirection: 'column',
-    gap: 12,
+    gap: scaledPixels(12),
     width: '100%',
   },
   button: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: scaledPixels(14),
+    paddingHorizontal: scaledPixels(24),
+    borderRadius: scaledPixels(8),
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   resumeButton: {
     backgroundColor: '#6366f1',
+  },
+  resumeButtonFocused: {
+    borderColor: '#fff',
+    transform: [{ scale: 1.04 }],
   },
   startOverButton: {
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
   },
+  startOverButtonFocused: {
+    borderColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    transform: [{ scale: 1.04 }],
+  },
   resumeText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: scaledPixels(16),
     fontWeight: '600',
   },
   startOverText: {
     color: 'rgba(255,255,255,0.8)',
-    fontSize: 16,
+    fontSize: scaledPixels(16),
   },
 });
