@@ -31,9 +31,49 @@ export interface XtreamServerInfo {
   time_now: string;
 }
 
+export interface XtreamM3UEditorInfo {
+  version: string;
+  features: string[];
+}
+
 export interface XtreamAuthResponse {
   user_info: XtreamUserInfo;
   server_info: XtreamServerInfo;
+  m3u_editor?: XtreamM3UEditorInfo;
+}
+
+// Viewer & Progress Types (m3u-editor specific)
+
+export interface PlaylistViewer {
+  id: number;
+  ulid: string;
+  name: string;
+  is_admin: boolean;
+}
+
+export type WatchContentType = 'live' | 'vod' | 'episode';
+
+export interface WatchProgress {
+  content_type: WatchContentType;
+  stream_id: number;
+  series_id?: number;
+  season_number?: number;
+  position_seconds: number;
+  duration_seconds?: number;
+  completed: boolean;
+  watch_count: number;
+  last_watched_at: string;
+}
+
+export interface UpdateProgressParams {
+  viewer_id: string;
+  content_type: WatchContentType;
+  stream_id: number;
+  position_seconds?: number;
+  duration_seconds?: number;
+  completed?: boolean;
+  series_id?: number;
+  season_number?: number;
 }
 
 // Categories

@@ -19,6 +19,8 @@ interface XtreamState {
   isLoading: boolean;
   error: string | null;
   authResponse: XtreamAuthResponse | null;
+  isM3UEditor: boolean;
+  m3uEditorVersion: string | null;
   liveCategories: XtreamCategory[];
   vodCategories: XtreamCategory[];
   seriesCategories: XtreamCategory[];
@@ -51,6 +53,8 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
     isLoading: false,
     error: null,
     authResponse: null,
+    isM3UEditor: false,
+    m3uEditorVersion: null,
     liveCategories: [],
     vodCategories: [],
     seriesCategories: [],
@@ -84,6 +88,19 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           return false;
         }
 
+        // Verify this is an m3u-editor backend
+        if (!authResponse.m3u_editor) {
+          xtreamService.setCredentials(null as any);
+          setError(
+            'This app requires an m3u-editor backend. The provided server does not appear to be running m3u-editor.'
+          );
+          return false;
+        }
+
+        const isM3UEditor = true;
+        const m3uEditorVersion = authResponse.m3u_editor.version ?? null;
+        xtreamService.setM3UEditor(true);
+
         // Save credentials
         await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(credentials));
 
@@ -100,6 +117,8 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           error: null,
           authResponse,
+          isM3UEditor,
+          m3uEditorVersion,
           liveCategories,
           vodCategories,
           seriesCategories,
@@ -117,11 +136,14 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(async () => {
     await SecureStore.deleteItemAsync(STORAGE_KEY);
+    xtreamService.setM3UEditor(false);
     setState({
       isConfigured: false,
       isLoading: false,
       error: null,
       authResponse: null,
+      isM3UEditor: false,
+      m3uEditorVersion: null,
       liveCategories: [],
       vodCategories: [],
       seriesCategories: [],

@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useViewer } from '../context/ViewerContext';
+import { useXtream } from '../context/XtreamContext';
 import {
     View,
     StyleSheet,
@@ -117,9 +119,14 @@ const FocusContainer = isTVOS
         <View style={style}>{children}</View>
     );
 
+const PROGRESS_INTERVAL_MS = 10_000; // Report progress every 10 seconds
+
 export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player'>) => {
-    const { title, type } = route.params;
+    const { title, type, streamId, seriesId, seasonNumber } = route.params;
     const isLive = type === 'live';
+
+    const { isM3UEditor } = useXtream();
+    const { activeViewer, updateProgress } = useViewer();
 
 
     // DEBUGGING: Temporary hardcoded stream URL for testing purposes
@@ -177,6 +184,45 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     useEffect(() => {
         backendRef.current = backend;
     }, [backend]);
+
+    // Watch progress tracking
+    useEffect(() => {
+        if (!isM3UEditor || !activeViewer || !streamId) return;
+
+        if (isLive) {
+            // For live TV, report once on mount to increment watch count
+            updateProgress({ content_type: 'live', stream_id: streamId });
+            return;
+        }
+
+        // For VOD/episode, report every 10 seconds
+        const interval = setInterval(() => {
+            updateProgress({
+                content_type: type === 'series' ? 'episode' : 'vod',
+                stream_id: streamId,
+                position_seconds: Math.floor(currentTimeRef.current),
+                duration_seconds: durationRef.current > 0 ? Math.floor(durationRef.current) : undefined,
+                series_id: seriesId,
+                season_number: seasonNumber,
+            });
+        }, PROGRESS_INTERVAL_MS);
+
+        return () => {
+            clearInterval(interval);
+            // Final update on unmount
+            if (currentTimeRef.current > 0) {
+                updateProgress({
+                    content_type: type === 'series' ? 'episode' : 'vod',
+                    stream_id: streamId,
+                    position_seconds: Math.floor(currentTimeRef.current),
+                    duration_seconds: durationRef.current > 0 ? Math.floor(durationRef.current) : undefined,
+                    series_id: seriesId,
+                    season_number: seasonNumber,
+                });
+            }
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isM3UEditor, activeViewer, streamId, isLive, type, seriesId, seasonNumber]);
 
     const [overlayVisible, setOverlayVisible] = useState(true);
     const fadeAnim = useRef(new Animated.Value(1)).current;

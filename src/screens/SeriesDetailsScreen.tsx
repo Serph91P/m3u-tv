@@ -12,25 +12,33 @@ import {
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
+import { useViewer } from '../context/ViewerContext';
 import { colors } from '../theme';
 import { RootStackScreenProps } from '../navigation/types';
-import { XtreamSeriesInfo, XtreamEpisode } from '../types/xtream';
+import { XtreamSeriesInfo, XtreamEpisode, WatchProgress } from '../types/xtream';
 import { scaledPixels } from '../hooks/useScale';
 import { FocusablePressable, FocusablePressableRef } from '../components/FocusablePressable';
 import { Icon } from '../components/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
+import ResumeDialog from '../components/ResumeDialog';
 
 export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<'SeriesDetails'>) => {
   const isFocused = useIsFocused();
   const { item } = route.params;
   const seasonListRef = useRef<FocusablePressableRef>(null);
   const firstEpisodeRef = useRef<FocusablePressableRef>(null);
-  const { fetchSeriesInfo, getSeriesStreamUrl } = useXtream();
+  const { fetchSeriesInfo, getSeriesStreamUrl, isM3UEditor } = useXtream();
+  const { activeViewer, getSeriesProgress } = useViewer();
   const [seriesInfo, setSeriesInfo] = useState<XtreamSeriesInfo | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [firstSeasonTag, setFirstSeasonTag] = useState<number>();
   const [firstEpisodeTag, setFirstEpisodeTag] = useState<number>();
   const episodes = seriesInfo?.episodes[selectedSeason || ''] || [];
+
+  // Keyed by episode id (stream_id)
+  const [episodeProgress, setEpisodeProgress] = useState<Record<number, WatchProgress>>({});
+  const [pendingEpisode, setPendingEpisode] = useState<XtreamEpisode | null>(null);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
 
   const { width } = useWindowDimensions();
 
@@ -67,22 +75,68 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
     loadInfo();
   }, [item.series_id]);
 
-  const handlePlayEpisode = useCallback(
-    (episode: XtreamEpisode) => {
+  // Load episode progress for this series
+  useEffect(() => {
+    if (!isM3UEditor || !activeViewer) return;
+    getSeriesProgress(item.series_id).then((progressList) => {
+      const map: Record<number, WatchProgress> = {};
+      progressList.forEach((p) => { map[p.stream_id] = p; });
+      setEpisodeProgress(map);
+    });
+  }, [isM3UEditor, activeViewer, item.series_id, getSeriesProgress]);
+
+  const startPlayEpisode = useCallback(
+    (episode: XtreamEpisode, startPosition?: number) => {
       const streamUrl = getSeriesStreamUrl(episode.id, episode.container_extension);
       navigation.navigate('Player', {
         streamUrl,
         title: episode.title,
         type: 'series',
+        streamId: Number(episode.id),
+        seriesId: item.series_id,
+        seasonNumber: episode.season,
+        startPosition,
       });
     },
-    [navigation, getSeriesStreamUrl],
+    [navigation, getSeriesStreamUrl, item.series_id],
+  );
+
+  const handlePlayEpisode = useCallback(
+    (episode: XtreamEpisode) => {
+      const progress = episodeProgress[Number(episode.id)];
+      if (progress && progress.position_seconds > 30 && !progress.completed) {
+        setPendingEpisode(episode);
+        setShowResumeDialog(true);
+      } else {
+        startPlayEpisode(episode);
+      }
+    },
+    [episodeProgress, startPlayEpisode],
   );
 
   if (!isFocused) return null;
 
   return (
     <View style={styles.container}>
+      <ResumeDialog
+        visible={showResumeDialog}
+        position={pendingEpisode ? (episodeProgress[Number(pendingEpisode.id)]?.position_seconds ?? 0) : 0}
+        duration={pendingEpisode ? (episodeProgress[Number(pendingEpisode.id)]?.duration_seconds ?? undefined) : undefined}
+        onResume={() => {
+          setShowResumeDialog(false);
+          if (pendingEpisode) {
+            startPlayEpisode(pendingEpisode, episodeProgress[Number(pendingEpisode.id)]?.position_seconds);
+            setPendingEpisode(null);
+          }
+        }}
+        onStartOver={() => {
+          setShowResumeDialog(false);
+          if (pendingEpisode) {
+            startPlayEpisode(pendingEpisode, 0);
+            setPendingEpisode(null);
+          }
+        }}
+      />
       <ImageBackground source={{ uri: item.cover }} style={styles.backdrop} blurRadius={5}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>
           <View style={styles.content}>
@@ -150,11 +204,23 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
                     >
                       <View style={styles.episodeMain}>
                         <Text style={styles.episodeNumber}>{ep.episode_num}</Text>
-                        <Image
-                          source={{ uri: ep.info?.movie_image || item.cover }}
-                          style={styles.episodeImage}
-                          resizeMode="cover"
-                        />
+                        <View style={styles.episodeImageWrapper}>
+                          <Image
+                            source={{ uri: ep.info?.movie_image || item.cover }}
+                            style={styles.episodeImage}
+                            resizeMode="cover"
+                          />
+                          {(() => {
+                            const prog = episodeProgress[Number(ep.id)];
+                            if (!prog || !prog.duration_seconds) return null;
+                            const pct = Math.min(prog.position_seconds / prog.duration_seconds, 1);
+                            return (
+                              <View style={styles.progressBarBg}>
+                                <View style={[styles.progressBarFill, { width: `${Math.round(pct * 100)}%` as any }]} />
+                              </View>
+                            );
+                          })()}
+                        </View>
                         <View style={styles.episodeInfo}>
                           <Text style={styles.episodeTitle} numberOfLines={1}>
                             {ep.title}
@@ -315,10 +381,30 @@ const styles = StyleSheet.create({
     fontSize: scaledPixels(24),
     color: colors.textSecondary,
   },
-  episodeImage: {
+  episodeImageWrapper: {
+    position: 'relative',
     width: scaledPixels(200),
     aspectRatio: 3 / 2,
+  },
+  episodeImage: {
+    width: '100%',
+    height: '100%',
     borderRadius: scaledPixels(8),
+  },
+  progressBarBg: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: scaledPixels(4),
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderBottomLeftRadius: scaledPixels(8),
+    borderBottomRightRadius: scaledPixels(8),
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
   },
   episodePlot: {
     fontSize: scaledPixels(20),

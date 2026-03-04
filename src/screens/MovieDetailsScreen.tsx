@@ -2,20 +2,25 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Image, ImageBackground, ScrollView } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
+import { useViewer } from '../context/ViewerContext';
 import { colors } from '../theme';
 import { RootStackScreenProps } from '../navigation/types';
-import { XtreamVodInfo } from '../types/xtream';
+import { XtreamVodInfo, WatchProgress } from '../types/xtream';
 import { scaledPixels } from '../hooks/useScale';
 import { FocusablePressable, FocusablePressableRef } from '../components/FocusablePressable';
 import { Icon } from '../components/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
+import ResumeDialog from '../components/ResumeDialog';
 
 export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'Details'>) => {
   const isFocused = useIsFocused();
   const { item } = route.params;
   const playButtonRef = useRef<FocusablePressableRef>(null);
-  const { fetchVodInfo, getVodStreamUrl } = useXtream();
+  const { fetchVodInfo, getVodStreamUrl, isM3UEditor } = useXtream();
+  const { activeViewer, getProgress } = useViewer();
   const [movieInfo, setMovieInfo] = useState<XtreamVodInfo | null>(null);
+  const [watchProgress, setWatchProgress] = useState<WatchProgress | null>(null);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
 
   useEffect(() => {
     if (isFocused) {
@@ -37,14 +42,37 @@ export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'
     loadInfo();
   }, [item.stream_id]);
 
-  const handlePlay = useCallback(() => {
-    const streamUrl = getVodStreamUrl(item.stream_id, item.container_extension);
-    navigation.navigate('Player', {
-      streamUrl,
-      title: item.name,
-      type: 'vod',
+  // Load watch progress when connected to m3u-editor
+  useEffect(() => {
+    if (!isM3UEditor || !activeViewer) return;
+    getProgress('vod', item.stream_id).then((progress) => {
+      if (progress && progress.position_seconds > 30) {
+        setWatchProgress(progress);
+      }
     });
-  }, [item, navigation, getVodStreamUrl]);
+  }, [isM3UEditor, activeViewer, item.stream_id, getProgress]);
+
+  const startPlay = useCallback(
+    (resumePosition?: number) => {
+      const streamUrl = getVodStreamUrl(item.stream_id, item.container_extension);
+      navigation.navigate('Player', {
+        streamUrl,
+        title: item.name,
+        type: 'vod',
+        streamId: item.stream_id,
+        startPosition: resumePosition,
+      });
+    },
+    [item, navigation, getVodStreamUrl],
+  );
+
+  const handlePlay = useCallback(() => {
+    if (watchProgress && watchProgress.position_seconds > 30) {
+      setShowResumeDialog(true);
+    } else {
+      startPlay();
+    }
+  }, [watchProgress, startPlay]);
 
   const info = movieInfo?.info;
   const backdrop = info?.backdrop_path?.[0];
@@ -53,6 +81,19 @@ export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'
 
   return (
     <View style={styles.container}>
+      <ResumeDialog
+        visible={showResumeDialog}
+        position={watchProgress?.position_seconds ?? 0}
+        duration={watchProgress?.duration_seconds}
+        onResume={() => {
+          setShowResumeDialog(false);
+          startPlay(watchProgress?.position_seconds);
+        }}
+        onStartOver={() => {
+          setShowResumeDialog(false);
+          startPlay(0);
+        }}
+      />
       <ImageBackground source={{ uri: backdrop }} style={styles.backdrop}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>
           <ScrollView contentContainerStyle={[styles.scrollContent, { paddingLeft: scaledPixels(60) }]}>
@@ -74,10 +115,12 @@ export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'
                     ref={playButtonRef}
                     preferredFocus
                     onSelect={handlePlay}
-                    style={({ isFocused }) => [styles.playButton, isFocused && styles.buttonFocused]}
+                    style={({ isFocused: f }) => [styles.playButton, f && styles.buttonFocused]}
                   >
                     <Icon name="Play" size={scaledPixels(24)} color={colors.text} />
-                    <Text style={styles.buttonText}>Watch Now</Text>
+                    <Text style={styles.buttonText}>
+                      {watchProgress && watchProgress.position_seconds > 30 ? 'Resume' : 'Watch Now'}
+                    </Text>
                   </FocusablePressable>
                 </View>
               </View>
@@ -176,6 +219,10 @@ const styles = StyleSheet.create({
     paddingVertical: scaledPixels(15),
     paddingHorizontal: scaledPixels(30),
     borderRadius: scaledPixels(8),
+  },
+  resumeButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
   buttonFocused: {
     backgroundColor: colors.primary,

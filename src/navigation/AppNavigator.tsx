@@ -13,7 +13,9 @@ import {
   PlayerScreen,
   MovieDetailsScreen,
   SeriesDetailsScreen,
+  ViewerSelectionScreen,
 } from '../screens';
+import { ViewerProvider } from '../context/ViewerContext';
 import { SideBar, SIDEBAR_WIDTH_COLLAPSED } from '../components/SideBar';
 import { colors } from '../theme';
 import { RootStackParamList, DrawerParamList } from './types';
@@ -113,6 +115,7 @@ function MainNavigator() {
 export function AppNavigator() {
   console.log('AppNavigator: Rendering');
   return (
+    <ViewerProvider>
     <NavigationContainer theme={AppTheme} ref={navigationRef}>
       <RootStack.Navigator
         screenOptions={{
@@ -144,8 +147,17 @@ export function AppNavigator() {
             animation: 'slide_from_right',
           }}
         />
+        <RootStack.Screen
+          name="ViewerSelection"
+          component={ViewerSelectionScreen}
+          options={{
+            animation: 'fade',
+            presentation: 'transparentModal',
+          }}
+        />
       </RootStack.Navigator>
     </NavigationContainer>
+    </ViewerProvider>
   );
 }
 

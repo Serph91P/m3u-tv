@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
+import { useViewer } from '../context/ViewerContext';
 import { colors, spacing, typography } from '../theme';
 import { DrawerScreenPropsType } from '../navigation/types';
 import { FocusablePressable } from '../components/FocusablePressable';
@@ -28,7 +29,9 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
     liveCategories,
     vodCategories,
     seriesCategories,
+    isM3UEditor,
   } = useXtream();
+  const { activeViewer } = useViewer();
 
   const serverRef = useRef<TextInput>(null);
   const usernameRef = useRef<TextInput>(null);
@@ -148,8 +151,33 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
           </View>
         </View>
 
+        {isM3UEditor && activeViewer && (
+          <View style={styles.viewerSection}>
+            <Text style={styles.title}>Active Viewer</Text>
+            <View style={styles.viewerCard}>
+              <View style={styles.viewerRow}>
+                <View style={styles.viewerAvatar}>
+                  <Text style={styles.viewerAvatarText}>{activeViewer.name.charAt(0).toUpperCase()}</Text>
+                </View>
+                <View style={styles.viewerInfo}>
+                  <Text style={styles.viewerName}>{activeViewer.name}</Text>
+                  {activeViewer.is_admin && <Text style={styles.viewerAdmin}>Admin</Text>}
+                </View>
+              </View>
+              <FocusablePressable
+                preferredFocus
+                style={({ isFocused }) => [styles.settingsButton, isFocused && styles.settingsButtonFocused]}
+                onSelect={() => navigation.navigate('ViewerSelection')}
+              >
+                {({ isFocused }) => (
+                  <Text style={[styles.settingsButtonText, isFocused && styles.buttonTextFocused]}>Switch Viewer</Text>
+                )}
+              </FocusablePressable>
+            </View>
+          </View>
+        )}
+
         <FocusablePressable
-          preferredFocus
           style={({ isFocused }) => [styles.settingsButton, isFocused && styles.settingsButtonFocused]}
           onSelect={handleDisconnect}
         >
@@ -443,5 +471,51 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: scaledPixels(24),
     fontWeight: '500',
+  },
+  viewerSection: {
+    marginBottom: scaledPixels(40),
+  },
+  viewerCard: {
+    backgroundColor: colors.card,
+    borderRadius: scaledPixels(12),
+    padding: scaledPixels(spacing.lg),
+    gap: scaledPixels(20),
+  },
+  viewerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaledPixels(16),
+  },
+  viewerAvatar: {
+    width: scaledPixels(56),
+    height: scaledPixels(56),
+    borderRadius: scaledPixels(28),
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerAvatarText: {
+    color: colors.text,
+    fontSize: scaledPixels(24),
+    fontWeight: 'bold',
+  },
+  viewerInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaledPixels(12),
+  },
+  viewerName: {
+    color: colors.text,
+    fontSize: scaledPixels(22),
+    fontWeight: '600',
+  },
+  viewerAdmin: {
+    color: colors.primary,
+    fontSize: scaledPixels(14),
+    backgroundColor: 'rgba(236,0,63,0.15)',
+    paddingHorizontal: scaledPixels(8),
+    paddingVertical: scaledPixels(3),
+    borderRadius: scaledPixels(4),
   },
 });

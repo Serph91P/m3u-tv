@@ -9,10 +9,18 @@ import {
   XtreamSeriesInfo,
   XtreamShortEpg,
   ContentItem,
+  PlaylistViewer,
+  WatchProgress,
+  UpdateProgressParams,
+  WatchContentType,
 } from '../types/xtream';
+
+const M3UE_CLIENT_HEADER = 'X-M3UE-Client';
+const M3UE_CLIENT_VALUE = 'm3u-tv';
 
 class XtreamService {
   private credentials: XtreamCredentials | null = null;
+  private isM3UEditor: boolean = false;
 
   setCredentials(credentials: XtreamCredentials) {
     // Ensure server URL doesn't have trailing slash
@@ -54,12 +62,42 @@ class XtreamService {
     return url;
   }
 
+  setM3UEditor(value: boolean): void {
+    this.isM3UEditor = value;
+  }
+
+  getIsM3UEditor(): boolean {
+    return this.isM3UEditor;
+  }
+
+  private getClientHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (this.isM3UEditor) {
+      headers[M3UE_CLIENT_HEADER] = M3UE_CLIENT_VALUE;
+    }
+    return headers;
+  }
+
   private async fetchJson<T>(url: string): Promise<T> {
     const response = await fetch(url, {
       method: 'GET',
+      headers: this.getClientHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  private async fetchPost<T>(url: string, body: Record<string, string>): Promise<T> {
+    const form = new URLSearchParams(body);
+    const response = await fetch(url, {
+      method: 'POST',
       headers: {
-        Accept: 'application/json',
+        ...this.getClientHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
+      body: form.toString(),
     });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -167,6 +205,68 @@ class XtreamService {
     }
     const url = this.getApiUrl('get_epg_batch', params);
     return this.fetchJson<Record<string, XtreamShortEpg>>(url);
+  }
+
+  // Viewers (m3u-editor specific)
+  async getViewers(): Promise<PlaylistViewer[]> {
+    const url = this.getApiUrl('get_viewers');
+    return this.fetchJson<PlaylistViewer[]>(url);
+  }
+
+  async createViewer(name: string): Promise<PlaylistViewer> {
+    const url = this.getApiUrl('create_viewer');
+    return this.fetchPost<PlaylistViewer>(url, { name });
+  }
+
+  // Watch Progress (m3u-editor specific)
+  async getProgress(
+    viewerId: string,
+    contentType: WatchContentType,
+    streamId: number
+  ): Promise<WatchProgress | null> {
+    const url = this.getApiUrl('get_progress', {
+      viewer_id: viewerId,
+      content_type: contentType,
+      stream_id: String(streamId),
+    });
+    return this.fetchJson<WatchProgress | null>(url);
+  }
+
+  async updateProgress(params: UpdateProgressParams): Promise<void> {
+    const url = this.getApiUrl('update_progress');
+    const body: Record<string, string> = {
+      viewer_id: params.viewer_id,
+      content_type: params.content_type,
+      stream_id: String(params.stream_id),
+    };
+    if (params.position_seconds !== undefined) body.position_seconds = String(params.position_seconds);
+    if (params.duration_seconds !== undefined) body.duration_seconds = String(params.duration_seconds);
+    if (params.completed !== undefined) body.completed = params.completed ? '1' : '0';
+    if (params.series_id !== undefined) body.series_id = String(params.series_id);
+    if (params.season_number !== undefined) body.season_number = String(params.season_number);
+    await this.fetchPost<unknown>(url, body);
+  }
+
+  async getSeriesProgress(viewerId: string, seriesId: number): Promise<WatchProgress[]> {
+    const url = this.getApiUrl('get_series_progress', {
+      viewer_id: viewerId,
+      series_id: String(seriesId),
+    });
+    return this.fetchJson<WatchProgress[]>(url);
+  }
+
+  async getRecentlyWatched(
+    viewerId: string,
+    type?: WatchContentType,
+    limit: number = 20
+  ): Promise<WatchProgress[]> {
+    const params: Record<string, string> = {
+      viewer_id: viewerId,
+      limit: String(limit),
+    };
+    if (type) params.type = type;
+    const url = this.getApiUrl('get_recently_watched', params);
+    return this.fetchJson<WatchProgress[]>(url);
   }
 
   // Helper methods to transform data for UI

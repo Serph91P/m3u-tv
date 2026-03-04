@@ -10,6 +10,11 @@ export type RootStackParamList = {
     streamUrl: string;
     title: string;
     type: 'live' | 'vod' | 'series';
+    // Optional progress-tracking params (m3u-editor specific)
+    streamId?: number;
+    seriesId?: number;
+    seasonNumber?: number;
+    startPosition?: number; // seconds to seek to on start
   };
   Details: {
     item: XtreamVodStream;
@@ -17,6 +22,7 @@ export type RootStackParamList = {
   SeriesDetails: {
     item: XtreamSeries;
   };
+  ViewerSelection: undefined;
 };
 
 // Drawer Navigator
