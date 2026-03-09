@@ -56,7 +56,8 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withAndroidSigning"
     ],
     "web": {
       "favicon": "./favicon.png"
