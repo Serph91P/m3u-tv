@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, FlatList, Image } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
 import { colors } from '../theme';
@@ -13,10 +12,6 @@ import { DrawerScreenPropsType } from '../navigation/types';
 import { XtreamLiveStream, XtreamVodStream, XtreamSeries, WatchProgress } from '../types/xtream';
 
 export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
-  const isFocused = useIsFocused();
-  useEffect(() => {
-    console.log(`[HomeScreen] isFocused: ${isFocused}`);
-  }, [isFocused]);
   const { isConfigured, isLoading, isM3UEditor, loadSavedCredentials, fetchLiveStreams, fetchVodStreams, fetchSeries } = useXtream();
   const { activeViewer, getRecentlyWatched } = useViewer();
   const [liveStreams, setLiveStreams] = useState<XtreamLiveStream[]>([]);
@@ -93,8 +88,6 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
       </View>
     );
   }
-
-  if (!isFocused) return null;
 
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>

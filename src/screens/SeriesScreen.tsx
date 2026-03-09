@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
 import { colors } from '../theme';
@@ -11,7 +10,6 @@ import { FocusablePressable } from '../components/FocusablePressable';
 import { SeriesCard } from '../components/SeriesCard';
 
 export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
-  const isFocused = useIsFocused();
   const { isSidebarActive, setSidebarActive } = useMenu();
   const { isConfigured, seriesCategories, series, fetchSeries } = useXtream();
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
@@ -68,8 +66,6 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
       </View>
     );
   }
-
-  if (!isFocused) return null;
 
   return (
     <View style={styles.container}>

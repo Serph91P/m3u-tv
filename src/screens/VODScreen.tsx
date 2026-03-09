@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
 import { colors } from '../theme';
@@ -11,11 +10,7 @@ import { FocusablePressable } from '../components/FocusablePressable';
 import { MovieCard } from '../components/MovieCard';
 
 export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
-  const isFocused = useIsFocused();
   const { isSidebarActive, setSidebarActive } = useMenu();
-  useEffect(() => {
-    console.log(`[VODScreen] isFocused: ${isFocused}`);
-  }, [isFocused]);
   const { isConfigured, vodCategories, vodStreams, fetchVodStreams } = useXtream();
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
@@ -71,8 +66,6 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
       </View>
     );
   }
-
-  if (!isFocused) return null;
 
   return (
     <View style={styles.container}>
