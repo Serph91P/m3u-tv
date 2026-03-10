@@ -30,3 +30,4 @@ __*
 ios/M3UTV.xcodeproj/project.pbxproj
 planby-native-pro-main
 release.keystore
+signing.properties
