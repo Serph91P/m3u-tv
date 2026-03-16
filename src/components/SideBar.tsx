@@ -37,6 +37,7 @@ interface MenuItem {
 
 const MENU_ITEMS: MenuItem[] = [
     { id: 'Home', label: 'Home', icon: 'Home' },
+    { id: 'Search', label: 'Search', icon: 'Search' },
     { id: 'LiveTV', label: 'Live TV', icon: 'Tv' },
     { id: 'EPG', label: 'TV Guide', icon: 'Calendar' },
     { id: 'VOD', label: 'Movies', icon: 'Film' },
@@ -52,11 +53,16 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
     const currentRouteName = useNavigationState((state) => {
         if (!state) return 'Home';
         let route: any = state.routes[state.index];
+        // Traverse into nested navigators to find the deepest active screen
         while (route?.state && typeof route.state.index === 'number') {
             route = route.state.routes[route.state.index];
         }
         return route?.name || 'Home';
     });
+
+    // Use the last known menu item when on non-menu screens (e.g. Player)
+    const isMenuRoute = MENU_ITEMS.some((item) => item.id === currentRouteName);
+    const activeMenuId = isMenuRoute ? currentRouteName : preferredMenuId;
 
     // Refs to each menu item so we can set focus programmatically
     const menuItemRefs = useRef<Record<string, FocusablePressableRef | null>>({});
@@ -82,14 +88,13 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
         setExpanded(false);
     }, [isSidebarActive, setExpanded, currentRouteName, preferredMenuId]);
 
-    // Keep preferred item in sync with active route while content is active.
+    // Keep preferred item in sync with active route.
     useEffect(() => {
-        if (isSidebarActive) return;
         const isTopLevelMenuRoute = MENU_ITEMS.some((item) => item.id === (currentRouteName as keyof DrawerParamList));
         if (isTopLevelMenuRoute && preferredMenuId !== currentRouteName) {
             setPreferredMenuId(currentRouteName);
         }
-    }, [currentRouteName, isSidebarActive, preferredMenuId]);
+    }, [currentRouteName, preferredMenuId]);
 
     // Width Animation
     const animatedWidth = useSharedValue(isExpanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED);
@@ -191,7 +196,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                             style={({ isFocused }) => [
                                 styles.menuItem,
                                 isFocused && styles.menuItemFocused,
-                                currentRouteName === item.id && !isFocused && styles.menuItemActive,
+                                activeMenuId === item.id && !isFocused && styles.menuItemActive,
                             ]}
                         >
                             {({ isFocused }) => (
@@ -200,7 +205,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                         name={item.icon}
                                         size={scaledPixels(32)}
                                         color={
-                                            isFocused ? colors.text : currentRouteName === item.id ? colors.primary : colors.textSecondary
+                                            isFocused ? colors.text : activeMenuId === item.id ? colors.primary : colors.textSecondary
                                         }
                                     />
                                     {isExpanded && (
@@ -211,7 +216,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                                 {
                                                     color: isFocused
                                                         ? colors.text
-                                                        : currentRouteName === item.id
+                                                        : activeMenuId === item.id
                                                             ? colors.primary
                                                             : colors.textSecondary,
                                                     width: scaledPixels(200),
