@@ -30,6 +30,10 @@ class XtreamService {
     };
   }
 
+  clearCredentials(): void {
+    this.credentials = null;
+  }
+
   getCredentials(): XtreamCredentials | null {
     return this.credentials;
   }
@@ -123,7 +127,7 @@ class XtreamService {
     return this.fetchJson<XtreamLiveStream[]>(url);
   }
 
-  getLiveStreamUrl(streamId: number, format: string = 'ts'): string {
+  getLiveStreamUrl(streamId: number, format: string = 'm3u8'): string {
     if (!this.credentials) {
       throw new Error('Xtream credentials not configured');
     }

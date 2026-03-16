@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { xtreamService } from '../services/XtreamService';
+import { cacheService } from '../services/CacheService';
 import {
   XtreamCredentials,
   XtreamAuthResponse,
@@ -63,6 +64,10 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
     series: [],
   });
 
+  useEffect(() => {
+    cacheService.loadSettings();
+  }, []);
+
   const setLoading = useCallback((isLoading: boolean) => {
     setState((prev) => ({ ...prev, isLoading }));
   }, []);
@@ -80,25 +85,34 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
       try {
         setLoading(true);
         xtreamService.setCredentials(credentials);
+        // Always send the m3u-editor client header for the initial auth request
+        // so the server knows to include m3u_editor info in the response
+        xtreamService.setM3UEditor(true);
 
         const authResponse = await xtreamService.authenticate();
 
-        if (authResponse.user_info.auth !== 1) {
+        // Handle error responses (e.g. {"error":"Unauthorized"})
+        if ('error' in authResponse) {
+          setError(`Server error: ${(authResponse as Record<string, unknown>).error}`);
+          return false;
+        }
+
+        if (!authResponse.user_info || authResponse.user_info.auth !== 1) {
           setError('Authentication failed. Please check your credentials.');
           return false;
         }
 
-        // Verify this is an m3u-editor backend
-        if (!authResponse.m3u_editor) {
-          xtreamService.setCredentials(null as any);
-          setError(
-            'This app requires an m3u-editor backend. The provided server does not appear to be running m3u-editor.'
-          );
+        // Check if the server advertises m3u-editor features (requires experimental v0.10.x+)
+        const isM3UEditor = !!authResponse.m3u_editor;
+        const m3uEditorVersion = authResponse.m3u_editor?.version ?? null;
+
+        if (!isM3UEditor) {
+          setError('This app requires an m3u-editor backend (v0.10.x or later).');
+          xtreamService.setM3UEditor(false);
+          xtreamService.clearCredentials();
           return false;
         }
 
-        const isM3UEditor = true;
-        const m3uEditorVersion = authResponse.m3u_editor.version ?? null;
         xtreamService.setM3UEditor(true);
 
         // Save credentials
@@ -110,6 +124,9 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           xtreamService.getVodCategories(),
           xtreamService.getSeriesCategories(),
         ]);
+
+        // Cache categories for instant load on next app start
+        cacheService.set('categories', { liveCategories, vodCategories, seriesCategories });
 
         setState((prev) => ({
           ...prev,
@@ -136,6 +153,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(async () => {
     await SecureStore.deleteItemAsync(STORAGE_KEY);
+    await cacheService.clear();
     xtreamService.setM3UEditor(false);
     setState({
       isConfigured: false,
@@ -156,11 +174,41 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
   const loadSavedCredentials = useCallback(async (): Promise<boolean> => {
     try {
       const saved = await SecureStore.getItemAsync(STORAGE_KEY);
-      if (saved) {
-        const credentials: XtreamCredentials = JSON.parse(saved);
-        return await connect(credentials);
+      if (!saved) return false;
+
+      const credentials: XtreamCredentials = JSON.parse(saved);
+
+      // Try to load cached categories immediately for instant UI
+      const cached = await cacheService.get<{
+        liveCategories: XtreamCategory[];
+        vodCategories: XtreamCategory[];
+        seriesCategories: XtreamCategory[];
+      }>('categories');
+
+      if (cached) {
+        xtreamService.setCredentials(credentials);
+        xtreamService.setM3UEditor(true);
+        setState((prev) => ({
+          ...prev,
+          isConfigured: true,
+          isLoading: false,
+          liveCategories: cached.data.liveCategories,
+          vodCategories: cached.data.vodCategories,
+          seriesCategories: cached.data.seriesCategories,
+        }));
+
+        // If stale, refresh in background without blocking UI
+        if (cached.isStale) {
+          connect(credentials);
+        } else {
+          // Still authenticate to update authResponse and m3u_editor status
+          connect(credentials);
+        }
+        return true;
       }
-      return false;
+
+      // No cache — full connect
+      return await connect(credentials);
     } catch {
       return false;
     }
@@ -177,6 +225,8 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
         xtreamService.getSeriesCategories(),
       ]);
 
+      cacheService.set('categories', { liveCategories, vodCategories, seriesCategories });
+
       setState((prev) => ({
         ...prev,
         isLoading: false,
@@ -191,34 +241,105 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
   }, [setLoading, setError]);
 
   const fetchLiveStreams = useCallback(async (categoryId?: string): Promise<XtreamLiveStream[]> => {
+    const cacheKey = categoryId ? `liveStreams_${categoryId}` as const : 'liveStreams' as const;
+
     try {
+      const cached = await cacheService.get<XtreamLiveStream[]>(cacheKey);
+      if (cached && !cached.isStale) {
+        setState((prev) => ({ ...prev, liveStreams: cached.data }));
+        return cached.data;
+      }
+
+      // Return cached data immediately, fetch fresh in parallel
+      if (cached) {
+        setState((prev) => ({ ...prev, liveStreams: cached.data }));
+        xtreamService.getLiveStreams(categoryId).then((streams) => {
+          cacheService.set(cacheKey, streams);
+          setState((prev) => ({ ...prev, liveStreams: streams }));
+        });
+        return cached.data;
+      }
+
       const streams = await xtreamService.getLiveStreams(categoryId);
+      cacheService.set(cacheKey, streams);
       setState((prev) => ({ ...prev, liveStreams: streams }));
       return streams;
     } catch (error) {
       console.error('Failed to fetch live streams:', error);
+      // On network error, try returning stale cache
+      const cached = await cacheService.get<XtreamLiveStream[]>(cacheKey);
+      if (cached) {
+        setState((prev) => ({ ...prev, liveStreams: cached.data }));
+        return cached.data;
+      }
       return [];
     }
   }, []);
 
   const fetchVodStreams = useCallback(async (categoryId?: string): Promise<XtreamVodStream[]> => {
+    const cacheKey = categoryId ? `vodStreams_${categoryId}` as const : 'vodStreams' as const;
+
     try {
+      const cached = await cacheService.get<XtreamVodStream[]>(cacheKey);
+      if (cached && !cached.isStale) {
+        setState((prev) => ({ ...prev, vodStreams: cached.data }));
+        return cached.data;
+      }
+
+      if (cached) {
+        setState((prev) => ({ ...prev, vodStreams: cached.data }));
+        xtreamService.getVodStreams(categoryId).then((streams) => {
+          cacheService.set(cacheKey, streams);
+          setState((prev) => ({ ...prev, vodStreams: streams }));
+        });
+        return cached.data;
+      }
+
       const streams = await xtreamService.getVodStreams(categoryId);
+      cacheService.set(cacheKey, streams);
       setState((prev) => ({ ...prev, vodStreams: streams }));
       return streams;
     } catch (error) {
       console.error('Failed to fetch VOD streams:', error);
+      const cached = await cacheService.get<XtreamVodStream[]>(cacheKey);
+      if (cached) {
+        setState((prev) => ({ ...prev, vodStreams: cached.data }));
+        return cached.data;
+      }
       return [];
     }
   }, []);
 
   const fetchSeries = useCallback(async (categoryId?: string): Promise<XtreamSeries[]> => {
+    const cacheKey = categoryId ? `series_${categoryId}` as const : 'series' as const;
+
     try {
+      const cached = await cacheService.get<XtreamSeries[]>(cacheKey);
+      if (cached && !cached.isStale) {
+        setState((prev) => ({ ...prev, series: cached.data }));
+        return cached.data;
+      }
+
+      if (cached) {
+        setState((prev) => ({ ...prev, series: cached.data }));
+        xtreamService.getSeries(categoryId).then((seriesList) => {
+          cacheService.set(cacheKey, seriesList);
+          setState((prev) => ({ ...prev, series: seriesList }));
+        });
+        return cached.data;
+      }
+
       const seriesList = await xtreamService.getSeries(categoryId);
+      cacheService.set(cacheKey, seriesList);
       setState((prev) => ({ ...prev, series: seriesList }));
       return seriesList;
     } catch (error) {
       console.error('Failed to fetch series:', error);
+      const cached = await cacheService.get<XtreamSeries[]>(cacheKey);
+      if (cached) {
+        setState((prev) => ({ ...prev, series: cached.data }));
+        return cached.data;
+      }
       return [];
     }
   }, []);
