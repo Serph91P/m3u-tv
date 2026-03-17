@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView } from 'react-native';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
@@ -11,7 +11,8 @@ import { SeriesCard } from '../components/SeriesCard';
 
 export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
   const { isSidebarActive, setSidebarActive } = useMenu();
-  const { isConfigured, seriesCategories, series, fetchSeries } = useXtream();
+  const { isConfigured, seriesCategories, fetchSeries } = useXtream();
+  const [seriesList, setSeriesList] = useState<XtreamSeries[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -23,25 +24,26 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
 
   const loadSeries = async () => {
     setIsLoading(true);
-    await fetchSeries(selectedCategory);
+    const result = await fetchSeries(selectedCategory);
+    setSeriesList(result);
     setIsLoading(false);
   };
 
-  const renderCategoryItem = ({ item, index }: { item: XtreamCategory; index: number }) => (
+  const renderCategoryItem = useCallback(({ item, index }: { item: XtreamCategory; index: number }) => (
     <FocusablePressable
       onFocus={index === 0 ? () => isSidebarActive && setSidebarActive(false) : undefined}
       style={({ isFocused }) => [
         styles.categoryButton,
-        selectedCategory === item.category_id && styles.categoryButtonActive,
+        (selectedCategory ?? undefined) === (item.category_id || undefined) && styles.categoryButtonActive,
         isFocused && styles.categoryButtonFocused,
       ]}
-      onSelect={() => setSelectedCategory(item.category_id)}
+      onSelect={() => setSelectedCategory(item.category_id || undefined)}
     >
       {({ isFocused }) => (
         <Text
           style={[
             styles.categoryText,
-            selectedCategory === item.category_id && styles.categoryTextActive,
+            (selectedCategory ?? undefined) === (item.category_id || undefined) && styles.categoryTextActive,
             isFocused && styles.categoryTextFocused,
           ]}
           numberOfLines={1}
@@ -50,14 +52,14 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
         </Text>
       )}
     </FocusablePressable>
-  );
+  ), [selectedCategory, isSidebarActive, setSidebarActive]);
 
-  const renderSeriesItem = ({ item, index }: { item: XtreamSeries; index: number }) => (
+  const renderSeriesItem = useCallback(({ item, index }: { item: XtreamSeries; index: number }) => (
     <SeriesCard
       item={item}
       onFocus={index === 0 ? () => isSidebarActive && setSidebarActive(false) : undefined}
     />
-  );
+  ), [isSidebarActive, setSidebarActive]);
 
   if (!isConfigured) {
     return (
@@ -71,8 +73,13 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
     <View style={styles.container}>
       {/* Series grid */}
       <View style={styles.gridContent}>
+        {isLoading && seriesList.length > 0 && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
         <FlatList
-          data={series}
+          data={seriesList}
           renderItem={renderSeriesItem}
           numColumns={8}
           style={styles.seriesGrid}
@@ -187,6 +194,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: scaledPixels(60),
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: scaledPixels(100),
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(10, 10, 15, 0.7)',
+    zIndex: 10,
   },
   seriesGrid: {
     padding: scaledPixels(20),
