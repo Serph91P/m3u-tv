@@ -84,7 +84,10 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 def releaseSigningProps = new Properties()
 def releaseSigningFile = rootProject.file('signing.properties')
-if (releaseSigningFile.exists()) {
+def releaseKeystoreFile = rootProject.file('../../release.keystore')
+def hasReleaseSigning = releaseSigningFile.exists() && releaseKeystoreFile.exists()
+
+if (hasReleaseSigning) {
     releaseSigningFile.withInputStream { releaseSigningProps.load(it) }
 }
 
@@ -112,10 +115,10 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file('../../release.keystore')
-            storePassword releaseSigningProps['RELEASE_STORE_PASSWORD'] ?: ''
-            keyAlias releaseSigningProps['RELEASE_KEY_ALIAS'] ?: ''
-            keyPassword releaseSigningProps['RELEASE_KEY_PASSWORD'] ?: ''
+            storeFile hasReleaseSigning ? file('../../release.keystore') : file('debug.keystore')
+            storePassword hasReleaseSigning ? releaseSigningProps['RELEASE_STORE_PASSWORD'] : 'android'
+            keyAlias hasReleaseSigning ? releaseSigningProps['RELEASE_KEY_ALIAS'] : 'androiddebugkey'
+            keyPassword hasReleaseSigning ? releaseSigningProps['RELEASE_KEY_PASSWORD'] : 'android'
         }
     }
     buildTypes {
