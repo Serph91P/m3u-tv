@@ -215,7 +215,6 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                 });
             }
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isM3UEditor, activeViewer, streamId, isLive, type, seriesId, seasonNumber]);
 
     const [overlayVisible, setOverlayVisible] = useState(true);
