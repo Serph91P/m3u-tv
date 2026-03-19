@@ -1,7 +1,7 @@
 const { app, BrowserWindow, globalShortcut, protocol, net, session, ipcMain, shell } = require('electron');
 const path = require('path');
 const url = require('url');
-const { execFile } = require('child_process');
+const { spawn } = require('child_process');
 
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 
@@ -77,8 +77,16 @@ app.whenReady().then(() => {
 
   createWindow();
 
+  // Track the active external player process to prevent duplicates
+  let activePlayerProcess = null;
+
   // Handle request to open a stream URL in an external player (mpv, vlc, or system default)
-  ipcMain.handle('open-external', async (_event, streamUrl) => {
+  ipcMain.handle('open-external', async (_event, streamUrl, startPosition) => {
+    // Prevent spawning multiple players
+    if (activePlayerProcess) {
+      return { success: true, player: 'already-running' };
+    }
+
     // Validate URL to prevent command injection
     try {
       const parsed = new URL(streamUrl);
@@ -91,20 +99,30 @@ app.whenReady().then(() => {
 
     // Try mpv first, then vlc, then flatpak mpv
     const players = [
-      { cmd: 'mpv', args: [streamUrl] },
-      { cmd: 'vlc', args: [streamUrl] },
-      { cmd: 'flatpak', args: ['run', 'io.mpv.Mpv', streamUrl] },
+      { cmd: 'mpv', args: ['--force-window=yes', '--no-terminal', ...(startPosition > 0 ? [`--start=${Math.floor(startPosition)}`] : []), streamUrl] },
+      { cmd: 'vlc', args: ['--play-and-exit', ...(startPosition > 0 ? [`--start-time=${Math.floor(startPosition)}`] : []), streamUrl] },
+      { cmd: 'flatpak', args: ['run', 'io.mpv.Mpv', '--force-window=yes', '--no-terminal', ...(startPosition > 0 ? [`--start=${Math.floor(startPosition)}`] : []), streamUrl] },
     ];
 
     for (const player of players) {
       try {
-        await new Promise((resolve, reject) => {
-          const child = execFile(player.cmd, player.args, { timeout: 5000 });
+        const launched = await new Promise((resolve, reject) => {
+          const child = spawn(player.cmd, player.args, {
+            stdio: 'ignore',
+            detached: false,
+          });
           child.on('error', reject);
-          // Give it a moment to fail if the binary doesn't exist
-          setTimeout(() => resolve(player.cmd), 500);
+          child.on('close', () => {
+            activePlayerProcess = null;
+            mainWindow?.webContents?.send('external-player-closed');
+          });
+          // If it hasn't errored after 200ms, it launched successfully
+          setTimeout(() => {
+            activePlayerProcess = child;
+            resolve(player.cmd);
+          }, 200);
         });
-        return { success: true, player: player.cmd };
+        return { success: true, player: launched };
       } catch {
         continue;
       }
