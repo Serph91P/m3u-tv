@@ -14,8 +14,6 @@ jobs:
   node-ci:
     name: Lint, Typecheck & Audit
     runs-on: ubuntu-latest
-    env:
-      PLANBY_DEPLOY_KEY: ${{ secrets.PLANBY_DEPLOY_KEY }}
 
     steps:
       - name: Checkout
