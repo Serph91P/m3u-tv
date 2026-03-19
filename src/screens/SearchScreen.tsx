@@ -294,13 +294,13 @@ const styles = StyleSheet.create({
   inputFocused: {
     borderColor: colors.primary,
     borderWidth: 2,
-    transform: [{ scale: 1.02 }],
+    transform: [{ scale: 1.01 }],
   },
   textInput: {
     flex: 1,
     color: colors.text,
     fontSize: scaledPixels(typography.fontSize.md),
-    padding: 0,
+    padding: scaledPixels(8),
     backgroundColor: 'transparent',
   },
   searchButton: {
