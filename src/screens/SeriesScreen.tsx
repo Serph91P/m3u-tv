@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { useHorizontalWheelScroll } from '../hooks/useHorizontalWheelScroll';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
@@ -10,6 +10,10 @@ import { scaledPixels } from '../hooks/useScale';
 import { FocusablePressable } from '../components/FocusablePressable';
 import { SeriesCard } from '../components/SeriesCard';
 
+import { SIDEBAR_WIDTH_COLLAPSED } from '../components/SideBar';
+
+const CARD_CELL_WIDTH = scaledPixels(200) + scaledPixels(12) * 2;
+
 export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
   const categoryWheelRef = useHorizontalWheelScroll();
   const { isSidebarActive, setSidebarActive } = useMenu();
@@ -17,6 +21,12 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
   const [seriesList, setSeriesList] = useState<XtreamSeries[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const numColumns = useMemo(() => {
+    if (Platform.OS !== 'web') return 8;
+    const available = windowWidth - SIDEBAR_WIDTH_COLLAPSED - scaledPixels(40);
+    return Math.max(2, Math.floor(available / CARD_CELL_WIDTH));
+  }, [windowWidth]);
 
   useEffect(() => {
     if (isConfigured) {
@@ -81,9 +91,11 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
           </View>
         )}
         <FlatList
+          key={`grid-${numColumns}`}
           data={seriesList}
           renderItem={renderSeriesItem}
-          numColumns={8}
+          numColumns={numColumns}
+          columnWrapperStyle={styles.columnWrapper}
           style={styles.seriesGrid}
           keyExtractor={(item) => String(item.series_id)}
           showsVerticalScrollIndicator={false}
@@ -101,7 +113,7 @@ export function SeriesScreen(_props: DrawerScreenPropsType<'Series'>) {
           ListHeaderComponent={<View ref={categoryWheelRef} style={styles.categoryListContainer}>
             <ScrollView
               horizontal
-              showsHorizontalScrollIndicator={Platform.OS === 'web'}
+              showsHorizontalScrollIndicator={false}
               style={styles.categoryList}
               contentContainerStyle={styles.categoryListContent}
             >
@@ -211,5 +223,8 @@ const styles = StyleSheet.create({
   },
   seriesGrid: {
     padding: scaledPixels(20),
+  },
+  columnWrapper: {
+    justifyContent: 'center',
   },
 });
