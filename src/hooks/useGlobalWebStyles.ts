@@ -27,22 +27,22 @@ export function useGlobalWebStyles(): void {
       /* Show thin styled scrollbar only on elements marked .m3u-scroll */
       .m3u-scroll {
         scrollbar-width: thin !important;
-        scrollbar-color: rgba(255,255,255,0.15) transparent !important;
+        scrollbar-color: rgba(255,255,255,0.3) transparent !important;
       }
       .m3u-scroll::-webkit-scrollbar {
         display: block !important;
-        width: 4px;
-        height: 4px;
+        width: 6px;
+        height: 6px;
       }
       .m3u-scroll::-webkit-scrollbar-track {
         background: transparent;
       }
       .m3u-scroll::-webkit-scrollbar-thumb {
-        background: rgba(255,255,255,0.15);
-        border-radius: 2px;
+        background: rgba(255,255,255,0.3);
+        border-radius: 3px;
       }
       .m3u-scroll::-webkit-scrollbar-thumb:hover {
-        background: rgba(255,255,255,0.3);
+        background: rgba(255,255,255,0.5);
       }
 
       /* Remove browser focus outline on interactive elements */
