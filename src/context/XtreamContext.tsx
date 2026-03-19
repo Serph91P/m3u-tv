@@ -14,6 +14,15 @@ import {
 import * as SecureStore from 'expo-secure-store';
 
 const STORAGE_KEY = 'm3ue_tv_credentials';
+const MIN_MAJOR = 0;
+const MIN_MINOR = 10;
+
+function meetsMinimumVersion(version: string | null): boolean {
+  if (!version) return false;
+  const [major = 0, minor = 0] = version.split('.').map(Number);
+  if (major !== MIN_MAJOR) return major > MIN_MAJOR;
+  return minor >= MIN_MINOR;
+}
 
 interface XtreamState {
   isConfigured: boolean;
@@ -96,7 +105,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
 
         // Verify this is an m3u-editor backend
         if (!authResponse.m3u_editor) {
-          xtreamService.setCredentials(null as any);
+          xtreamService.clearCredentials();
           setError(
             'This app requires an m3u-editor backend. The provided server does not appear to be running m3u-editor.'
           );
@@ -105,6 +114,17 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
 
         const isM3UEditor = true;
         const m3uEditorVersion = authResponse.m3u_editor.version ?? null;
+
+        // Require m3u-editor v0.10.x or later
+        if (!meetsMinimumVersion(m3uEditorVersion)) {
+          xtreamService.clearCredentials();
+          setError(
+            `This app requires m3u-editor v0.10.0 or later. ` +
+            (m3uEditorVersion ? `Your server is running v${m3uEditorVersion}.` : 'Could not determine the server version.')
+          );
+          return false;
+        }
+
         xtreamService.setM3UEditor(true);
 
         // Save credentials
