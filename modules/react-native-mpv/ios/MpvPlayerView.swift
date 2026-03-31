@@ -12,7 +12,10 @@ class MpvPlayerView: UIView {
     private var pendingPaused = false
     private var pendingSeek: Double = -1
 
-    // RN event callbacks — must be @objc RCTDirectEventBlock so the bridge can set them via KVC
+    // All mpv API calls run on this queue — keeps mpv off the main thread entirely
+    private let mpvQueue = DispatchQueue(label: "mpv.core", qos: .userInteractive)
+
+    // RN event callbacks — @objc + RCTDirectEventBlock so the bridge sets them via KVC
     @objc var onMpvLoad: RCTDirectEventBlock?
     @objc var onMpvProgress: RCTDirectEventBlock?
     @objc var onMpvBuffer: RCTDirectEventBlock?
@@ -37,158 +40,212 @@ class MpvPlayerView: UIView {
     }
 
     private func setupMpv() {
-        mpv = mpv_create()
-        guard let ctx = mpv else { return }
+        mpvQueue.async { [weak self] in
+            guard let self else { return }
 
-        // Core configuration — no vo/gpu-api needed; the SW render context handles output
-        setMpvOption(ctx, "hwdec", "videotoolbox-copy")  // HW decode → CPU copy for SW renderer
-        setMpvOption(ctx, "ao", "audiounit")
-        setMpvOption(ctx, "demuxer-max-bytes", "150MiB")
-        setMpvOption(ctx, "demuxer-max-back-bytes", "75MiB")
-        setMpvOption(ctx, "cache", "yes")
-        setMpvOption(ctx, "cache-secs", "120")
-        setMpvOption(ctx, "network-timeout", "30")
-        setMpvOption(ctx, "keep-open", "yes")
-        setMpvOption(ctx, "profile", "fast")
-        setMpvOption(ctx, "terminal", "no")
-        setMpvOption(ctx, "msg-level", "all=warn")
-        setMpvOption(ctx, "tls-verify", "no")
-        setMpvOption(ctx, "ytdl", "no")
+            guard let ctx = mpv_create() else { return }
 
-        let initResult = mpv_initialize(ctx)
-        guard initResult == 0 else {
-            onMpvError?(["error": "mpv_initialize failed: \(initResult)"])
-            return
-        }
+            mpv_set_option_string(ctx, "hwdec", "videotoolbox-copy")
+            mpv_set_option_string(ctx, "ao", "audiounit")
+            mpv_set_option_string(ctx, "demuxer-max-bytes", "150MiB")
+            mpv_set_option_string(ctx, "demuxer-max-back-bytes", "75MiB")
+            mpv_set_option_string(ctx, "cache", "yes")
+            mpv_set_option_string(ctx, "cache-secs", "120")
+            mpv_set_option_string(ctx, "network-timeout", "30")
+            mpv_set_option_string(ctx, "keep-open", "yes")
+            mpv_set_option_string(ctx, "profile", "fast")
+            mpv_set_option_string(ctx, "terminal", "no")
+            mpv_set_option_string(ctx, "msg-level", "all=warn")
+            mpv_set_option_string(ctx, "tls-verify", "no")
+            mpv_set_option_string(ctx, "ytdl", "no")
 
-        // Metal rendering view — must be created and attached before playback starts
-        let mv = MPVMetalView(frame: bounds)
-        mv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        mv.initMpvRender(ctx)
-        addSubview(mv)
-        metalView = mv
+            guard mpv_initialize(ctx) == 0 else {
+                mpv_terminate_destroy(ctx)
+                return
+            }
 
-        // Observe properties
-        mpv_observe_property(ctx, 0, "time-pos", MPV_FORMAT_DOUBLE)
-        mpv_observe_property(ctx, 0, "duration", MPV_FORMAT_DOUBLE)
-        mpv_observe_property(ctx, 0, "pause", MPV_FORMAT_FLAG)
-        mpv_observe_property(ctx, 0, "paused-for-cache", MPV_FORMAT_FLAG)
-        mpv_observe_property(ctx, 0, "track-list/count", MPV_FORMAT_INT64)
-        mpv_observe_property(ctx, 0, "eof-reached", MPV_FORMAT_FLAG)
+            self.mpv = ctx
 
-        // Event wakeup (separate from the render update callback set inside MPVMetalView)
-        mpv_set_wakeup_callback(ctx, { pointer in
-            guard let pointer else { return }
-            let view = Unmanaged<MpvPlayerView>.fromOpaque(pointer).takeUnretainedValue()
-            DispatchQueue.main.async { view.handleEvents() }
-        }, Unmanaged.passUnretained(self).toOpaque())
+            mpv_observe_property(ctx, 0, "time-pos", MPV_FORMAT_DOUBLE)
+            mpv_observe_property(ctx, 0, "duration", MPV_FORMAT_DOUBLE)
+            mpv_observe_property(ctx, 0, "pause", MPV_FORMAT_FLAG)
+            mpv_observe_property(ctx, 0, "paused-for-cache", MPV_FORMAT_FLAG)
+            mpv_observe_property(ctx, 0, "track-list/count", MPV_FORMAT_INT64)
+            mpv_observe_property(ctx, 0, "eof-reached", MPV_FORMAT_FLAG)
 
-        isInitialized = true
+            // Wakeup fires on mpv's internal thread — dispatch to mpvQueue, not main,
+            // to avoid competing with the render loop for the main thread.
+            mpv_set_wakeup_callback(ctx, { ptr in
+                guard let ptr else { return }
+                let view = Unmanaged<MpvPlayerView>.fromOpaque(ptr).takeUnretainedValue()
+                view.mpvQueue.async { view.handleEvents() }
+            }, Unmanaged.passUnretained(self).toOpaque())
 
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.emitProgress()
-        }
+            // UIKit: create and attach the Metal view on main, then init render context on mpvQueue
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let mv = MPVMetalView(frame: self.bounds)
+                mv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                self.addSubview(mv)
+                self.metalView = mv
 
-        if let uri = pendingUri {
-            loadFile(uri)
-            pendingUri = nil
+                self.mpvQueue.async { [weak self] in
+                    // Re-read self.mpv — it may have been nil'd by destroy() before we got here
+                    guard let self, let ctx = self.mpv else { return }
+                    mv.initMpvRender(ctx)
+                    self.isInitialized = true
+
+                    if let uri = self.pendingUri {
+                        self.doLoadFile(ctx, uri)
+                        self.pendingUri = nil
+                    }
+                    if self.pendingPaused {
+                        var flag: Int32 = 1
+                        mpv_set_property(ctx, "pause", MPV_FORMAT_FLAG, &flag)
+                    }
+
+                    // Timer must be scheduled on a RunLoop thread — use main
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        self.progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                            self?.mpvQueue.async { self?.emitProgress() }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    private func setMpvOption(_ ctx: OpaquePointer, _ name: String, _ value: String) {
-        mpv_set_option_string(ctx, name, value)
-    }
-
-    // MARK: - Public API
+    // MARK: - Public API (called from main thread by RN bridge; forwarded to mpvQueue)
 
     @objc func setUri(_ uri: String?) {
-        guard let uri = uri, !uri.isEmpty else { return }
-        if isInitialized {
-            loadFile(uri)
-        } else {
-            pendingUri = uri
+        guard let uri, !uri.isEmpty else { return }
+        mpvQueue.async { [weak self] in
+            guard let self else { return }
+            if self.isInitialized, let ctx = self.mpv {
+                self.doLoadFile(ctx, uri)
+            } else {
+                self.pendingUri = uri
+            }
         }
     }
 
     @objc func setUserAgent(_ userAgent: String?) {
-        guard let ctx = mpv, let ua = userAgent else { return }
-        mpv_set_option_string(ctx, "user-agent", ua)
+        guard let ua = userAgent else { return }
+        mpvQueue.async { [weak self] in
+            guard let ctx = self?.mpv else { return }
+            mpv_set_option_string(ctx, "user-agent", ua)
+        }
     }
 
     @objc func setPaused(_ paused: Bool) {
-        pendingPaused = paused
-        guard let ctx = mpv, isInitialized else { return }
-        var flag: Int32 = paused ? 1 : 0
-        mpv_set_property(ctx, "pause", MPV_FORMAT_FLAG, &flag)
+        mpvQueue.async { [weak self] in
+            guard let self else { return }
+            self.pendingPaused = paused
+            guard let ctx = self.mpv, self.isInitialized else { return }
+            var flag: Int32 = paused ? 1 : 0
+            mpv_set_property(ctx, "pause", MPV_FORMAT_FLAG, &flag)
+        }
     }
 
     @objc func setStartPosition(_ seconds: Double) {
-        if seconds > 0 {
-            pendingSeek = seconds
+        mpvQueue.async { [weak self] in
+            if seconds > 0 { self?.pendingSeek = seconds }
         }
     }
 
     func seekTo(_ seconds: Double) {
-        guard let ctx = mpv, isInitialized, seconds >= 0 else { return }
-        mpvCommand(ctx, "seek", [seconds.description, "absolute"])
+        mpvQueue.async { [weak self] in
+            guard let self, let ctx = self.mpv, self.isInitialized, seconds >= 0 else { return }
+            self.doCommand(ctx, "seek", [seconds.description, "absolute"])
+        }
     }
 
     func seekRelative(_ seconds: Double) {
-        guard let ctx = mpv, isInitialized else { return }
-        mpvCommand(ctx, "seek", [seconds.description, "relative"])
+        mpvQueue.async { [weak self] in
+            guard let self, let ctx = self.mpv, self.isInitialized else { return }
+            self.doCommand(ctx, "seek", [seconds.description, "relative"])
+        }
     }
 
     func setAudioTrack(_ trackId: Int) {
-        guard let ctx = mpv, isInitialized else { return }
-        if trackId < 0 {
-            mpv_set_option_string(ctx, "aid", "no")
-        } else {
-            var id = Int64(trackId)
-            mpv_set_property(ctx, "aid", MPV_FORMAT_INT64, &id)
+        mpvQueue.async { [weak self] in
+            guard let self, let ctx = self.mpv, self.isInitialized else { return }
+            if trackId < 0 {
+                mpv_set_option_string(ctx, "aid", "no")
+            } else {
+                var id = Int64(trackId)
+                mpv_set_property(ctx, "aid", MPV_FORMAT_INT64, &id)
+            }
         }
     }
 
     func setSubtitleTrack(_ trackId: Int) {
-        guard let ctx = mpv, isInitialized else { return }
-        if trackId < 0 {
-            mpv_set_option_string(ctx, "sid", "no")
-        } else {
-            var id = Int64(trackId)
-            mpv_set_property(ctx, "sid", MPV_FORMAT_INT64, &id)
+        mpvQueue.async { [weak self] in
+            guard let self, let ctx = self.mpv, self.isInitialized else { return }
+            if trackId < 0 {
+                mpv_set_option_string(ctx, "sid", "no")
+            } else {
+                var id = Int64(trackId)
+                mpv_set_property(ctx, "sid", MPV_FORMAT_INT64, &id)
+            }
         }
     }
 
     func stop() {
-        guard let ctx = mpv, isInitialized else { return }
-        mpvCommand(ctx, "stop", [])
+        mpvQueue.async { [weak self] in
+            guard let self, let ctx = self.mpv, self.isInitialized else { return }
+            self.doCommand(ctx, "stop", [])
+        }
     }
 
     func destroy() {
-        progressTimer?.invalidate()
-        progressTimer = nil
+        // Use strong self throughout — [weak self] is nil by the time deinit calls destroy()
+        // because Swift zeroes weak refs before deinit runs. Sync blocks have no retain-cycle risk.
 
-        // Render context must be freed before mpv_terminate_destroy
-        metalView?.cleanup()
-        metalView?.removeFromSuperview()
-        metalView = nil
-
-        if let ctx = mpv {
-            mpv_set_wakeup_callback(ctx, nil, nil)
-            mpvCommand(ctx, "quit", [])
-            mpv_terminate_destroy(ctx)
-            mpv = nil
+        // 1. Stop timer (must be invalidated on the thread it was scheduled on — main)
+        if Thread.isMainThread {
+            progressTimer?.invalidate()
+            progressTimer = nil
+        } else {
+            DispatchQueue.main.sync {
+                self.progressTimer?.invalidate()
+                self.progressTimer = nil
+            }
         }
-        isInitialized = false
+
+        // 2. Cleanup Metal view on main (cleanup() drains renderQueue.sync internally)
+        if Thread.isMainThread {
+            metalView?.cleanup()
+            metalView?.removeFromSuperview()
+            metalView = nil
+        } else {
+            DispatchQueue.main.sync {
+                self.metalView?.cleanup()
+                self.metalView?.removeFromSuperview()
+                self.metalView = nil
+            }
+        }
+
+        // 3. Tear down mpv on its queue
+        mpvQueue.sync {
+            if let ctx = self.mpv {
+                mpv_set_wakeup_callback(ctx, nil, nil)
+                self.doCommand(ctx, "quit", [])
+                mpv_terminate_destroy(ctx)
+                self.mpv = nil
+            }
+            self.isInitialized = false
+        }
     }
 
-    // MARK: - Private helpers
+    // MARK: - Private helpers (must be called on mpvQueue)
 
-    private func loadFile(_ url: String) {
-        guard let ctx = mpv else { return }
-        mpvCommand(ctx, "loadfile", [url])
+    private func doLoadFile(_ ctx: OpaquePointer, _ url: String) {
+        doCommand(ctx, "loadfile", [url])
     }
 
-    private func mpvCommand(_ ctx: OpaquePointer, _ name: String, _ args: [String]) {
+    private func doCommand(_ ctx: OpaquePointer, _ name: String, _ args: [String]) {
         var owned: [UnsafeMutablePointer<CChar>?] = [strdup(name)]
         for arg in args { owned.append(strdup(arg)) }
         owned.append(nil)
@@ -200,17 +257,17 @@ class MpvPlayerView: UIView {
     private func handleEvents() {
         guard let ctx = mpv else { return }
         while true {
-            let event = mpv_wait_event(ctx, 0)
-            guard let ev = event?.pointee else { break }
+            guard let ev = mpv_wait_event(ctx, 0)?.pointee else { break }
             if ev.event_id == MPV_EVENT_NONE { break }
             switch ev.event_id {
-            case MPV_EVENT_FILE_LOADED:   handleFileLoaded()
-            case MPV_EVENT_END_FILE:      handleEndFile(ev)
+            case MPV_EVENT_FILE_LOADED:     handleFileLoaded()
+            case MPV_EVENT_END_FILE:        handleEndFile(ev)
             case MPV_EVENT_PROPERTY_CHANGE: handlePropertyChange(ev)
             case MPV_EVENT_LOG_MESSAGE:
                 if let msg = ev.data?.assumingMemoryBound(to: mpv_event_log_message.self).pointee,
                    msg.log_level.rawValue <= MPV_LOG_LEVEL_ERROR.rawValue {
-                    onMpvError?(["error": String(cString: msg.text)])
+                    let text = String(cString: msg.text)
+                    DispatchQueue.main.async { [weak self] in self?.onMpvError?(["error": text]) }
                 }
             default: break
             }
@@ -218,30 +275,38 @@ class MpvPlayerView: UIView {
     }
 
     private func handleFileLoaded() {
-        guard let ctx = mpv else { return }
-        var duration: Double = 0
-        mpv_get_property(ctx, "duration", MPV_FORMAT_DOUBLE, &duration)
-        let trackInfo = getTrackInfo()
-        onMpvLoad?(["duration": duration, "audioTracks": trackInfo.audio, "textTracks": trackInfo.text])
-        if pendingPaused {
-            var flag: Int32 = 1
-            mpv_set_property(ctx, "pause", MPV_FORMAT_FLAG, &flag)
-        }
-        if pendingSeek >= 0 {
-            seekTo(pendingSeek)
-            pendingSeek = -1
+        // Do NOT call mpv_get_property / getTrackInfo() inline here.
+        // handleFileLoaded is called from inside handleEvents(), which holds mpv's event lock.
+        // Any property read that needs mp_dispatch_lock will deadlock against mpv's own core thread.
+        // Defer all reads via mpvQueue.async — serial queue guarantees this runs after
+        // handleEvents() fully unwinds, by which point mpv's core lock is free.
+        mpvQueue.async { [weak self] in
+            guard let self, let ctx = self.mpv else { return }
+            var duration: Double = 0
+            mpv_get_property(ctx, "duration", MPV_FORMAT_DOUBLE, &duration)
+            let tracks = self.getTrackInfo()
+            if self.pendingPaused {
+                var flag: Int32 = 1
+                mpv_set_property(ctx, "pause", MPV_FORMAT_FLAG, &flag)
+            }
+            if self.pendingSeek >= 0 {
+                self.doCommand(ctx, "seek", [self.pendingSeek.description, "absolute"])
+                self.pendingSeek = -1
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.onMpvLoad?(["duration": duration, "audioTracks": tracks.audio, "textTracks": tracks.text])
+            }
         }
     }
 
     private func handleEndFile(_ ev: mpv_event) {
-        if let endFile = ev.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee {
-            if endFile.error < 0 {
-                onMpvError?(["error": "Playback error (code: \(endFile.error))"])
-            } else {
-                onMpvEnd?([:])
+        if let ef = ev.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee, ef.error < 0 {
+            let code = ef.error
+            DispatchQueue.main.async { [weak self] in
+                self?.onMpvError?(["error": "Playback error (code: \(code))"])
             }
         } else {
-            onMpvEnd?([:])
+            DispatchQueue.main.async { [weak self] in self?.onMpvEnd?([:]) }
         }
     }
 
@@ -250,17 +315,25 @@ class MpvPlayerView: UIView {
         let name = String(cString: prop.name)
         switch name {
         case "paused-for-cache":
-            if prop.format == MPV_FORMAT_FLAG, let data = prop.data {
-                onMpvBuffer?(["isBuffering": data.assumingMemoryBound(to: Int32.self).pointee != 0])
-            }
+            guard prop.format == MPV_FORMAT_FLAG, let data = prop.data else { break }
+            let buffering = data.assumingMemoryBound(to: Int32.self).pointee != 0
+            DispatchQueue.main.async { [weak self] in self?.onMpvBuffer?(["isBuffering": buffering]) }
         case "eof-reached":
-            if prop.format == MPV_FORMAT_FLAG, let data = prop.data,
-               data.assumingMemoryBound(to: Int32.self).pointee != 0 {
-                onMpvEnd?([:])
-            }
+            guard prop.format == MPV_FORMAT_FLAG,
+                  let data = prop.data,
+                  data.assumingMemoryBound(to: Int32.self).pointee != 0 else { break }
+            DispatchQueue.main.async { [weak self] in self?.onMpvEnd?([:]) }
         case "track-list/count":
-            let info = getTrackInfo()
-            onMpvTracksChanged?(["audioTracks": info.audio, "textTracks": info.text])
+            // Defer getTrackInfo() — calling mpv_get_property_string inline while the event
+            // loop holds mpv's core lock causes a deadlock on mp_dispatch_lock.
+            // mpvQueue is serial so this runs after the current handleEvents call returns.
+            mpvQueue.async { [weak self] in
+                guard let self, self.mpv != nil else { return }
+                let info = self.getTrackInfo()
+                DispatchQueue.main.async { [weak self] in
+                    self?.onMpvTracksChanged?(["audioTracks": info.audio, "textTracks": info.text])
+                }
+            }
         default: break
         }
     }
@@ -271,8 +344,9 @@ class MpvPlayerView: UIView {
         var dur: Double = 0
         mpv_get_property(ctx, "time-pos", MPV_FORMAT_DOUBLE, &timePos)
         mpv_get_property(ctx, "duration", MPV_FORMAT_DOUBLE, &dur)
-        if timePos > 0 || dur > 0 {
-            onMpvProgress?(["currentTime": timePos, "duration": dur])
+        guard timePos > 0 || dur > 0 else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.onMpvProgress?(["currentTime": timePos, "duration": dur])
         }
     }
 
@@ -281,20 +355,16 @@ class MpvPlayerView: UIView {
         var count: Int64 = 0
         mpv_get_property(ctx, "track-list/count", MPV_FORMAT_INT64, &count)
         var audio: [[String: Any]] = []
-        var text: [[String: Any]] = []
+        var text:  [[String: Any]] = []
         for i in 0..<Int(count) {
-            guard let typeStr = getPropertyString(ctx, "track-list/\(i)/type") else { continue }
+            guard let type = getPropertyString(ctx, "track-list/\(i)/type") else { continue }
             var id: Int64 = 0
             mpv_get_property(ctx, "track-list/\(i)/id", MPV_FORMAT_INT64, &id)
             let title = getPropertyString(ctx, "track-list/\(i)/title") ?? ""
-            let lang  = getPropertyString(ctx, "track-list/\(i)/lang") ?? ""
+            let lang  = getPropertyString(ctx, "track-list/\(i)/lang")  ?? ""
             let name  = title.isEmpty ? (lang.isEmpty ? "Track \(id)" : lang) : title
             let track: [String: Any] = ["id": Int(id), "name": name, "language": lang]
-            switch typeStr {
-            case "audio": audio.append(track)
-            case "sub":   text.append(track)
-            default: break
-            }
+            if type == "audio" { audio.append(track) } else if type == "sub" { text.append(track) }
         }
         return (audio, text)
     }
@@ -308,11 +378,9 @@ class MpvPlayerView: UIView {
 
 // MARK: - MPVMetalView
 //
-// Renders libmpv frames via the SW render API (MPV_RENDER_API_TYPE_SW).
-// mpv writes each decoded frame as BGRA pixels into a CPU buffer; we then
-// upload those pixels to a MTLTexture and blit it to a CAMetalLayer drawable.
-// This avoids the deprecated OpenGL ES path while being fully compatible with
-// VideoToolbox hardware decode (via hwdec=videotoolbox-copy).
+// SW render API: mpv writes decoded frames as BGRA pixels into a CPU buffer.
+// We upload to a cached MTLTexture and blit to CAMetalLayer on a dedicated
+// renderQueue — the main thread only does a fast flag-check per display tick.
 
 private class MPVMetalView: UIView {
 
@@ -324,15 +392,18 @@ private class MPVMetalView: UIView {
     private var pipelineState: MTLRenderPipelineState?
     private var samplerState: MTLSamplerState?
 
-    // Cached texture — reallocated only when frame dimensions change
+    // Accessed only on renderQueue
     private var renderTexture: MTLTexture?
     private var renderTextureSize = CGSize.zero
+    private var pixelData: [UInt8] = []
 
     private(set) var renderCtx: OpaquePointer?
     private var displayLink: CADisplayLink?
 
-    // Pixel buffer written by mpv on the display-link thread
-    private var pixelData: [UInt8] = []
+    // SW decode + Metal encode happen here, never on the main thread
+    private let renderQueue = DispatchQueue(label: "mpv.render", qos: .userInteractive)
+    // Guard against concurrent renders; accessed only from main thread
+    private var renderInFlight = false
 
     // MARK: - Lifecycle
 
@@ -346,10 +417,11 @@ private class MPVMetalView: UIView {
         setupMetal()
     }
 
-    /// Call before mpv_terminate_destroy to safely release the render context.
     func cleanup() {
         displayLink?.invalidate()
         displayLink = nil
+        // Wait for any in-flight render to finish before freeing the context
+        renderQueue.sync {}
         if let ctx = renderCtx {
             mpv_render_context_set_update_callback(ctx, nil, nil)
             mpv_render_context_free(ctx)
@@ -357,9 +429,7 @@ private class MPVMetalView: UIView {
         }
     }
 
-    deinit {
-        cleanup()
-    }
+    deinit { cleanup() }
 
     // MARK: - Metal setup
 
@@ -380,7 +450,6 @@ private class MPVMetalView: UIView {
     }
 
     private func buildPipeline(device: MTLDevice) {
-        // Inline Metal shaders: fullscreen triangle-strip quad, textured blit.
         let src = """
         #include <metal_stdlib>
         using namespace metal;
@@ -399,11 +468,10 @@ private class MPVMetalView: UIView {
             return tex.sample(s, in.uv);
         }
         """
-
         guard
-            let lib    = try? device.makeLibrary(source: src, options: nil),
-            let vtxFn  = lib.makeFunction(name: "vtx"),
-            let frgFn  = lib.makeFunction(name: "frg")
+            let lib   = try? device.makeLibrary(source: src, options: nil),
+            let vtxFn = lib.makeFunction(name: "vtx"),
+            let frgFn = lib.makeFunction(name: "frg")
         else { return }
 
         let desc = MTLRenderPipelineDescriptor()
@@ -418,11 +486,9 @@ private class MPVMetalView: UIView {
         samplerState = device.makeSamplerState(descriptor: sd)
     }
 
-    // MARK: - mpv render context
+    // MARK: - mpv render context (called on mpvQueue)
 
     func initMpvRender(_ mpvCtx: OpaquePointer) {
-        // SW render API — no platform-specific GL/Metal context required.
-        // Use withCString to pin the API type string's lifetime across the context-create call.
         "sw".withCString { swPtr in
             var params: [mpv_render_param] = [
                 mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE,
@@ -434,23 +500,19 @@ private class MPVMetalView: UIView {
                 renderCtx = ctx
             }
         }
-        // No update callback needed — the display link polls mpv_render_context_update() each tick.
     }
 
     // MARK: - Render loop
 
+    // Runs on main thread via CADisplayLink.
+    // Only checks the update flag here; all heavy work is dispatched to renderQueue.
     @objc private func tick() {
-        guard
-            let ctx      = renderCtx,
-            let pipeline = pipelineState,
-            let sampler  = samplerState
-        else { return }
+        // Check renderInFlight BEFORE consuming the flag — if we can't render yet, preserve it
+        guard !renderInFlight, let ctx = renderCtx else { return }
+        guard mpv_render_context_update(ctx) & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) != 0 else { return }
 
-        // Only render when mpv has produced a new frame
-        guard mpv_render_context_update(ctx) & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) != 0
-        else { return }
-
-        let scale  = metalLayer.contentsScale
+        // Capture layout values on main (UIKit) before handing off to renderQueue
+        let scale = metalLayer.contentsScale
         let w = Int(bounds.width  * scale)
         let h = Int(bounds.height * scale)
         guard w > 0, h > 0 else { return }
@@ -460,17 +522,27 @@ private class MPVMetalView: UIView {
             metalLayer.drawableSize = targetSize
         }
 
-        // Grow pixel buffer as needed (never shrink to avoid churn)
+        renderInFlight = true
+        renderQueue.async { [weak self] in
+            self?.renderFrame(ctx: ctx, w: w, h: h)
+            DispatchQueue.main.async { self?.renderInFlight = false }
+        }
+    }
+
+    // Runs entirely on renderQueue — never blocks the main thread.
+    private func renderFrame(ctx: OpaquePointer, w: Int, h: Int) {
+        guard let pipeline = pipelineState, let sampler = samplerState else { return }
+
         let needed = w * h * 4
         if pixelData.count < needed {
             pixelData = [UInt8](repeating: 0, count: needed)
         }
 
-        // Ask mpv to software-render the current frame into our pixel buffer
+        // Ask mpv to SW-render the current frame into our pixel buffer
         pixelData.withUnsafeMutableBytes { raw in
             guard let base = raw.baseAddress else { return }
-            var size: [Int32]  = [Int32(w), Int32(h)]
-            var stride: Int    = w * 4
+            var size: [Int32] = [Int32(w), Int32(h)]
+            var stride: Int   = w * 4
             "bgra".withCString { fmtCStr in
                 var fmtPtr: UnsafePointer<Int8> = fmtCStr
                 withUnsafeMutablePointer(to: &fmtPtr) { fmtPtrPtr in
@@ -490,7 +562,8 @@ private class MPVMetalView: UIView {
             }
         }
 
-        // Upload pixels to a cached MTLTexture (reallocate only on size change)
+        // Upload to a cached MTLTexture (reallocate only on size change)
+        let targetSize = CGSize(width: w, height: h)
         if renderTexture == nil || renderTextureSize != targetSize {
             let td = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
@@ -510,10 +583,10 @@ private class MPVMetalView: UIView {
                 bytesPerRow: w * 4)
         }
 
-        // Blit texture to the CAMetalLayer drawable
+        // Blit texture to CAMetalLayer drawable (Metal is thread-safe)
         guard
-            let drawable  = metalLayer.nextDrawable(),
-            let cmdBuf    = commandQueue.makeCommandBuffer()
+            let drawable = metalLayer.nextDrawable(),
+            let cmdBuf   = commandQueue.makeCommandBuffer()
         else { return }
 
         let rpd = MTLRenderPassDescriptor()
