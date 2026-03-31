@@ -12,13 +12,6 @@ class MpvViewManager: RCTViewManager {
         return true
     }
 
-    override func customBubblingEventTypes() -> [String] {
-        return [
-            "onMpvLoad", "onMpvProgress", "onMpvBuffer",
-            "onMpvError", "onMpvEnd", "onMpvTracksChanged"
-        ]
-    }
-
     // Commands dispatched from JS
     @objc func seekTo(_ node: NSNumber, seconds: Double) {
         DispatchQueue.main.async {
