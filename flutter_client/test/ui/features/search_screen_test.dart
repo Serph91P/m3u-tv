@@ -1,0 +1,184 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:m3u_tv/features/search/search_screen.dart';
+import 'package:m3u_tv/services/domain_models.dart';
+
+void main() {
+  group('SearchScreen', () {
+    late List<Channel> testChannels;
+    late List<VodItem> testVodItems;
+    late List<Series> testSeriesList;
+
+    setUp(() {
+      testChannels = [
+        const Channel(id: 1, name: 'BBC News', streamUrl: 'http://example.com/1.m3u8', categoryId: '10'),
+        const Channel(id: 2, name: 'CNN International', streamUrl: 'http://example.com/2.m3u8', categoryId: '11'),
+      ];
+      testVodItems = [
+        const VodItem(id: 10, name: 'The Matrix', streamUrl: 'http://example.com/10.mp4', containerExtension: 'mp4', categoryId: '20'),
+        const VodItem(id: 11, name: 'Matrix Reloaded', streamUrl: 'http://example.com/11.mp4', containerExtension: 'mp4', categoryId: '20'),
+      ];
+      testSeriesList = [
+        const Series(id: 20, name: 'Breaking Bad', categoryId: '30'),
+        const Series(id: 21, name: 'Bad Sisters', categoryId: '31'),
+      ];
+    });
+
+    testWidgets('renders search field', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('renders All/Live TV/Movies/Series tabs', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      // Tab bar should have all four tabs
+      expect(find.byType(TabBar), findsOneWidget);
+      expect(find.byType(Tab), findsNWidgets(4));
+    });
+
+    testWidgets('searching filters results case-insensitively', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      // Type search query
+      await tester.enterText(find.byType(TextField), 'matrix');
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Matrix'), findsOneWidget);
+      expect(find.text('Matrix Reloaded'), findsOneWidget);
+      // BBC News and CNN should not appear in All results
+      expect(find.text('BBC News'), findsNothing);
+    });
+
+    testWidgets('Live TV tab shows only channels', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'news');
+      await tester.pumpAndSettle();
+
+      // Switch to Live TV tab (index 1)
+      await tester.tap(find.byType(Tab).at(1));
+      await tester.pumpAndSettle();
+
+      expect(find.text('BBC News'), findsOneWidget);
+      expect(find.text('The Matrix'), findsNothing);
+    });
+
+    testWidgets('Movies tab shows only VOD items', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'matrix');
+      await tester.pumpAndSettle();
+
+      // Switch to Movies tab (index 2)
+      await tester.tap(find.byType(Tab).at(2));
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Matrix'), findsOneWidget);
+      expect(find.text('Matrix Reloaded'), findsOneWidget);
+      expect(find.text('BBC News'), findsNothing);
+    });
+
+    testWidgets('Series tab shows only series', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'bad');
+      await tester.pumpAndSettle();
+
+      // Switch to Series tab (index 3)
+      await tester.tap(find.byType(Tab).at(3));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Breaking Bad'), findsOneWidget);
+      expect(find.text('Bad Sisters'), findsOneWidget);
+      expect(find.text('BBC News'), findsNothing);
+    });
+
+    testWidgets('shows empty state when no results match', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'xyznonexistent');
+      await tester.pumpAndSettle();
+
+      expect(find.text('No results found'), findsOneWidget);
+    });
+
+    testWidgets('shows not configured message when not connected', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        channels: testChannels,
+        vodItems: testVodItems,
+        seriesList: testSeriesList,
+        isConfigured: false,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Please connect to your service in Settings'), findsOneWidget);
+    });
+  });
+}
+
+class _TestApp extends StatelessWidget {
+  const _TestApp({
+    required this.channels,
+    required this.vodItems,
+    required this.seriesList,
+    this.isConfigured = true,
+  });
+
+  final List<Channel> channels;
+  final List<VodItem> vodItems;
+  final List<Series> seriesList;
+  final bool isConfigured;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData.dark(useMaterial3: true),
+      home: SearchScreen(
+        channels: channels,
+        vodItems: vodItems,
+        seriesList: seriesList,
+        isConfigured: isConfigured,
+        onChannelSelect: (_) {},
+        onVodSelect: (_) {},
+        onSeriesSelect: (_) {},
+      ),
+    );
+  }
+}

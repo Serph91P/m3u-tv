@@ -1,0 +1,140 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:m3u_tv/features/vod/vod_screen.dart';
+import 'package:m3u_tv/services/domain_models.dart';
+
+void main() {
+  group('VodScreen', () {
+    late List<VodItem> testVodItems;
+    late List<Category> testCategories;
+
+    setUp(() {
+      testVodItems = [
+        const VodItem(id: 1, name: 'Big Buck Bunny', streamUrl: 'http://example.com/1.mp4', containerExtension: 'mp4', logoUrl: 'http://example.com/bunny.jpg', categoryId: '20', rating: 4.5),
+        const VodItem(id: 2, name: 'Sintel', streamUrl: 'http://example.com/2.mp4', containerExtension: 'mp4', logoUrl: 'http://example.com/sintel.jpg', categoryId: '21', rating: 4.0),
+        const VodItem(id: 3, name: 'Tears of Steel', streamUrl: 'http://example.com/3.mkv', containerExtension: 'mkv', categoryId: '20'),
+      ];
+      testCategories = [
+        const Category(id: '20', name: 'Action'),
+        const Category(id: '21', name: 'Drama'),
+      ];
+    });
+
+    testWidgets('renders movie grid with names', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Big Buck Bunny'), findsOneWidget);
+      expect(find.text('Sintel'), findsOneWidget);
+      expect(find.text('Tears of Steel'), findsOneWidget);
+    });
+
+    testWidgets('renders All Movies and category tabs', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('All Movies'), findsOneWidget);
+      expect(find.text('Action'), findsOneWidget);
+      expect(find.text('Drama'), findsOneWidget);
+    });
+
+    testWidgets('tapping category tab filters movies', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Action'));
+      await tester.pumpAndSettle();
+
+      // Only Action movies should be visible
+      expect(find.text('Big Buck Bunny'), findsOneWidget);
+      expect(find.text('Tears of Steel'), findsOneWidget);
+    });
+
+    testWidgets('shows loading indicator while fetching', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+        isLoading: true,
+      ));
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('shows not configured message when not connected', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+        isConfigured: false,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Please connect to your service in Settings'), findsOneWidget);
+    });
+
+    testWidgets('tapping movie triggers onVodSelect callback', (tester) async {
+      VodItem? selectedItem;
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+        onVodSelect: (item) => selectedItem = item,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Big Buck Bunny'));
+      await tester.pumpAndSettle();
+
+      expect(selectedItem, isNotNull);
+      expect(selectedItem!.id, 1);
+    });
+
+    testWidgets('shows rating when available', (tester) async {
+      await tester.pumpWidget(_TestApp(
+        vodItems: testVodItems,
+        categories: testCategories,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('★ 4.5'), findsOneWidget);
+    });
+  });
+}
+
+class _TestApp extends StatelessWidget {
+  const _TestApp({
+    required this.vodItems,
+    required this.categories,
+    this.isLoading = false,
+    this.isConfigured = true,
+    this.onVodSelect,
+  });
+
+  final List<VodItem> vodItems;
+  final List<Category> categories;
+  final bool isLoading;
+  final bool isConfigured;
+  final void Function(VodItem)? onVodSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData.dark(useMaterial3: true),
+      home: VodScreen(
+        vodItems: vodItems,
+        categories: categories,
+        isLoading: isLoading,
+        isConfigured: isConfigured,
+        onVodSelect: onVodSelect ?? (_) {},
+      ),
+    );
+  }
+}

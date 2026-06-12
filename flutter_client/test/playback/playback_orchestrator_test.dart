@@ -1,0 +1,545 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:m3u_tv/playback/playback_capabilities.dart';
+import 'package:m3u_tv/playback/playback_orchestrator.dart';
+import 'package:m3u_tv/playback/player_adapter.dart';
+import 'package:m3u_tv/transcoding/transcoding.dart';
+
+void main() {
+  group('PlaybackOrchestrator', () {
+    test(
+      'plays directly when the preferred backend can load the stream',
+      () async {
+        final direct = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidExoPlayer,
+        );
+        final fallback = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidMpv,
+        );
+        final transcode = _FakeTranscodeGateway();
+        final orchestrator = _orchestrator(
+          adapters: <PlaybackBackend, PlayerAdapter>{
+            PlaybackBackend.androidExoPlayer: direct,
+            PlaybackBackend.androidMpv: fallback,
+          },
+          transcodeGateway: transcode,
+        );
+
+        await orchestrator.open(_source(videoCodec: 'h264'));
+        await orchestrator.play();
+
+        expect(direct.commands, <String>[
+          'load:https://provider.example/live/news.ts',
+          'play',
+        ]);
+        expect(fallback.commands, isEmpty);
+        expect(transcode.startedServerRequests, isEmpty);
+        expect(orchestrator.activeBackend, PlaybackBackend.androidExoPlayer);
+        expect(
+          orchestrator.diagnostics,
+          contains('direct:androidExoPlayer:ready'),
+        );
+
+        await orchestrator.dispose();
+      },
+    );
+
+    test(
+      'falls back to the native platform backend before transcoding',
+      () async {
+        final direct = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.appleMpvKit,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final fallback = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.appleAvKit,
+        );
+        final transcode = _FakeTranscodeGateway();
+        final orchestrator = PlaybackOrchestrator(
+          platform: PlaybackPlatform.apple,
+          adapters: <PlaybackBackend, PlayerAdapter>{
+            PlaybackBackend.appleMpvKit: direct,
+            PlaybackBackend.appleAvKit: fallback,
+          },
+          transcodeGateway: transcode,
+        );
+
+        await orchestrator.open(_source(videoCodec: 'hevc'));
+        await orchestrator.play();
+
+        expect(direct.commands, <String>[
+          'load:https://provider.example/live/news.ts',
+        ]);
+        expect(fallback.commands, <String>[
+          'load:https://provider.example/live/news.ts',
+          'play',
+        ]);
+        expect(transcode.startedServerRequests, isEmpty);
+        expect(orchestrator.activeBackend, PlaybackBackend.appleAvKit);
+        expect(
+          orchestrator.diagnostics,
+          contains(
+            'fallback:appleAvKit:preferred appleMpvKit unsupported',
+          ),
+        );
+
+        await orchestrator.dispose();
+      },
+    );
+
+    test(
+      'uses server transcode when direct and native fallback are unsupported',
+      () async {
+        final direct = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidExoPlayer,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final fallback = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidMpv,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final serverPlayer = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.serverTranscode,
+        );
+        final transcode = _FakeTranscodeGateway(
+          serverResponse: const TranscodeResponse(
+            streamId: 'transcode-1',
+            streamUrl:
+                'https://m3u-editor.example/hls/transcode-1/playlist.m3u8',
+            mode: TranscodeMode.server,
+            status: 'running',
+            sessionId: 'plex-session-1',
+          ),
+        );
+        final orchestrator = _orchestrator(
+          adapters: <PlaybackBackend, PlayerAdapter>{
+            PlaybackBackend.androidExoPlayer: direct,
+            PlaybackBackend.androidMpv: fallback,
+            PlaybackBackend.serverTranscode: serverPlayer,
+          },
+          transcodeGateway: transcode,
+        );
+
+        await orchestrator.open(_source(videoCodec: 'hevc'));
+        await orchestrator.play();
+
+        expect(transcode.startedServerRequests.single.videoCodec, 'hevc');
+        expect(
+          transcode.startedServerRequests.single.mode,
+          TranscodeMode.server,
+        );
+        expect(serverPlayer.commands, <String>[
+          'load:https://m3u-editor.example/hls/transcode-1/playlist.m3u8',
+          'play',
+        ]);
+        expect(
+          serverPlayer.loadedSources.single.startPosition,
+          const Duration(minutes: 3),
+        );
+        expect(orchestrator.activeBackend, PlaybackBackend.serverTranscode);
+        expect(
+          orchestrator.diagnostics,
+          contains('server-transcode:transcode-1:plex-session-1'),
+        );
+
+        await orchestrator.dispose();
+      },
+    );
+
+    test(
+      'emits one recoverable error when server transcode is unavailable',
+      () async {
+        final direct = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidExoPlayer,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final fallback = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidMpv,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final serverPlayer = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.serverTranscode,
+        );
+        final transcode = _FakeTranscodeGateway(
+          serverError: const TranscodeUnavailableException(
+            'm3u-editor offline',
+          ),
+        );
+        final orchestrator = _orchestrator(
+          adapters: <PlaybackBackend, PlayerAdapter>{
+            PlaybackBackend.androidExoPlayer: direct,
+            PlaybackBackend.androidMpv: fallback,
+            PlaybackBackend.serverTranscode: serverPlayer,
+          },
+          transcodeGateway: transcode,
+        );
+        final errors = <PlaybackError>[];
+        final sub = orchestrator.onError.listen(errors.add);
+
+        await orchestrator.open(_source(videoCodec: 'hevc'));
+        await pumpEventQueue();
+
+        expect(errors, hasLength(1));
+        expect(errors.single.recoverable, isTrue);
+        expect(errors.single.code, 'server_transcode_unavailable');
+        expect(serverPlayer.commands, isEmpty);
+        expect(transcode.stoppedServerTranscodes, isEmpty);
+        expect(
+          orchestrator.diagnostics,
+          contains('error:server_transcode_unavailable:m3u-editor offline'),
+        );
+
+        await sub.cancel();
+        await orchestrator.dispose();
+      },
+    );
+
+    test(
+      'treats stalled transcode as recoverable and cancels its server session',
+      () async {
+        final direct = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidExoPlayer,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final fallback = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidMpv,
+          unsupportedVideoCodecs: <String>{'hevc'},
+        );
+        final serverPlayer = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.serverTranscode,
+        );
+        final transcode = _FakeTranscodeGateway(
+          serverResponse: const TranscodeResponse(
+            streamId: 'transcode-stalled',
+            streamUrl:
+                'https://m3u-editor.example/hls/transcode-stalled/playlist.m3u8',
+            mode: TranscodeMode.server,
+            status: 'stalled',
+            sessionId: 'plex-session-stalled',
+            errorCode: 'transcode_stalled',
+            message: 'No HLS segments arrived',
+          ),
+        );
+        final orchestrator = _orchestrator(
+          adapters: <PlaybackBackend, PlayerAdapter>{
+            PlaybackBackend.androidExoPlayer: direct,
+            PlaybackBackend.androidMpv: fallback,
+            PlaybackBackend.serverTranscode: serverPlayer,
+          },
+          transcodeGateway: transcode,
+        );
+        final errors = <PlaybackError>[];
+        final sub = orchestrator.onError.listen(errors.add);
+
+        await orchestrator.open(_source(videoCodec: 'hevc'));
+        await pumpEventQueue();
+
+        expect(serverPlayer.commands, isEmpty);
+        expect(transcode.stoppedServerTranscodes, <String>[
+          'transcode-stalled:plex-session-stalled',
+        ]);
+        expect(errors.single.code, 'transcode_stalled');
+        expect(errors.single.recoverable, isTrue);
+
+        await sub.cancel();
+        await orchestrator.dispose();
+      },
+    );
+
+    test('cancels broadcast and server transcode sessions on stop', () async {
+      final direct = _FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.androidExoPlayer,
+        unsupportedVideoCodecs: <String>{'hevc'},
+      );
+      final fallback = _FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.androidMpv,
+        unsupportedVideoCodecs: <String>{'hevc'},
+      );
+      final serverPlayer = _FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.serverTranscode,
+      );
+      final transcode = _FakeTranscodeGateway(
+        serverResponse: const TranscodeResponse(
+          streamId: 'transcode-live',
+          streamUrl:
+              'https://m3u-editor.example/hls/transcode-live/playlist.m3u8',
+          mode: TranscodeMode.server,
+          status: 'running',
+          sessionId: 'plex-live-session',
+        ),
+        broadcastSession: const BroadcastSession(
+          networkId: 'network-1',
+          status: BroadcastStatus.running,
+          playlistUrl:
+              'https://m3u-editor.example/broadcast/network-1/live.m3u8',
+          transcodeSessionId: 'plex-live-session',
+        ),
+      );
+      final orchestrator = _orchestrator(
+        adapters: <PlaybackBackend, PlayerAdapter>{
+          PlaybackBackend.androidExoPlayer: direct,
+          PlaybackBackend.androidMpv: fallback,
+          PlaybackBackend.serverTranscode: serverPlayer,
+        },
+        transcodeGateway: transcode,
+      );
+
+      await orchestrator.open(
+        _source(
+          videoCodec: 'hevc',
+          metadata: const <String, Object?>{
+            'broadcast_network_id': 'network-1',
+          },
+        ),
+      );
+      await orchestrator.stop();
+
+      expect(serverPlayer.commands.last, 'stop');
+      expect(transcode.stoppedBroadcasts, <String>['network-1']);
+      expect(transcode.stoppedServerTranscodes, <String>[
+        'transcode-live:plex-live-session',
+      ]);
+
+      await orchestrator.dispose();
+    });
+
+    test('preserves resume seek when loading a server transcode URL', () async {
+      final direct = _FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.appleAvKit,
+        unsupportedVideoCodecs: <String>{'hevc'},
+      );
+      final fallback = _FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.appleMpvKit,
+        unsupportedVideoCodecs: <String>{'hevc'},
+      );
+      final serverPlayer = _FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.serverTranscode,
+      );
+      final transcode = _FakeTranscodeGateway(
+        serverResponse: const TranscodeResponse(
+          streamId: 'transcode-vod',
+          streamUrl:
+              'https://m3u-editor.example/hls/transcode-vod/playlist.m3u8',
+          mode: TranscodeMode.server,
+          status: 'running',
+          sessionId: 'plex-vod-session',
+        ),
+      );
+      final orchestrator = PlaybackOrchestrator(
+        platform: PlaybackPlatform.apple,
+        adapters: <PlaybackBackend, PlayerAdapter>{
+          PlaybackBackend.appleAvKit: direct,
+          PlaybackBackend.appleMpvKit: fallback,
+          PlaybackBackend.serverTranscode: serverPlayer,
+        },
+        transcodeGateway: transcode,
+      );
+
+      await orchestrator.open(
+        _source(
+          isLive: false,
+          videoCodec: 'hevc',
+          startPosition: const Duration(minutes: 12, seconds: 34),
+        ),
+      );
+
+      expect(
+        serverPlayer.loadedSources.single.uri,
+        'https://m3u-editor.example/hls/transcode-vod/playlist.m3u8',
+      );
+      expect(
+        serverPlayer.loadedSources.single.startPosition,
+        const Duration(minutes: 12, seconds: 34),
+      );
+      expect(
+        transcode.startedServerRequests.single.metadata['resume_seconds'],
+        754,
+      );
+
+      await orchestrator.dispose();
+    });
+  });
+}
+
+PlaybackOrchestrator _orchestrator({
+  required Map<PlaybackBackend, PlayerAdapter> adapters,
+  required PlaybackTranscodeGateway transcodeGateway,
+}) {
+  return PlaybackOrchestrator(
+    platform: PlaybackPlatform.android,
+    adapters: adapters,
+    transcodeGateway: transcodeGateway,
+  );
+}
+
+PlaybackSource _source({
+  bool isLive = true,
+  String? videoCodec,
+  Duration startPosition = const Duration(minutes: 3),
+  Map<String, Object?> metadata = const <String, Object?>{},
+}) {
+  return PlaybackSource(
+    uri: 'https://provider.example/live/news.ts',
+    title: 'News',
+    isLive: isLive,
+    startPosition: startPosition,
+    videoCodec: videoCodec,
+    audioCodec: 'aac',
+    userAgent: 'm3u-tv/flutter-test',
+    headers: const <String, String>{'Referer': 'https://provider.example'},
+    metadata: metadata,
+  );
+}
+
+class _FakeTranscodeGateway implements PlaybackTranscodeGateway {
+  _FakeTranscodeGateway({
+    this.serverResponse,
+    this.serverError,
+    this.broadcastSession,
+  });
+
+  final TranscodeResponse? serverResponse;
+  final Object? serverError;
+  final BroadcastSession? broadcastSession;
+  final List<StreamRequest> startedServerRequests = <StreamRequest>[];
+  final List<StreamRequest> startedBroadcastRequests = <StreamRequest>[];
+  final List<String> stoppedServerTranscodes = <String>[];
+  final List<String> stoppedBroadcasts = <String>[];
+
+  @override
+  Future<TranscodeResponse> startServerTranscode(StreamRequest request) async {
+    startedServerRequests.add(request);
+    final error = serverError;
+    if (error != null) throw error;
+    return serverResponse ??
+        const TranscodeResponse(
+          streamId: 'transcode-default',
+          streamUrl: 'https://m3u-editor.example/hls/default/playlist.m3u8',
+          mode: TranscodeMode.server,
+          status: 'running',
+          sessionId: 'plex-default-session',
+        );
+  }
+
+  @override
+  Future<BroadcastSession?> startBroadcast(StreamRequest request) async {
+    startedBroadcastRequests.add(request);
+    return broadcastSession;
+  }
+
+  @override
+  Future<void> stopBroadcast(String networkId) async {
+    stoppedBroadcasts.add(networkId);
+  }
+
+  @override
+  Future<void> stopServerTranscode({
+    required String streamId,
+    required String? sessionId,
+  }) async {
+    stoppedServerTranscodes.add('$streamId:$sessionId');
+  }
+}
+
+class _FakePlayerAdapter implements PlayerAdapter {
+  _FakePlayerAdapter({
+    required this.capabilities,
+    this.unsupportedVideoCodecs = const <String>{},
+  });
+
+  @override
+  final PlaybackCapabilities capabilities;
+  final Set<String> unsupportedVideoCodecs;
+  final List<String> commands = <String>[];
+  final List<PlaybackSource> loadedSources = <PlaybackSource>[];
+  final StreamController<PlaybackState> _stateController =
+      StreamController<PlaybackState>.broadcast();
+  final StreamController<PlaybackError> _errorController =
+      StreamController<PlaybackError>.broadcast();
+
+  PlaybackState _state = const PlaybackState.idle(
+    backend: PlaybackBackend.serverTranscode,
+  );
+
+  @override
+  Stream<PlaybackState> get onState => _stateController.stream;
+
+  @override
+  Stream<PlaybackError> get onError => _errorController.stream;
+
+  @override
+  Future<void> load(PlaybackSource source) async {
+    commands.add('load:${source.uri}');
+    loadedSources.add(source);
+    if (source.videoCodec != null &&
+        unsupportedVideoCodecs.contains(source.videoCodec)) {
+      throw PlaybackException.unsupported(
+        'Unsupported video codec: ${source.videoCodec}',
+        backend: capabilities.backend,
+      );
+    }
+    _emit(
+      PlaybackState(
+        backend: capabilities.backend,
+        status: PlaybackStatus.ready,
+        source: source,
+        position: source.startPosition,
+        duration: source.isLive ? null : const Duration(hours: 2),
+      ),
+    );
+  }
+
+  @override
+  Future<void> play() async {
+    commands.add('play');
+    _emit(_state.copyWith(status: PlaybackStatus.playing));
+  }
+
+  @override
+  Future<void> pause() async {
+    commands.add('pause');
+    _emit(_state.copyWith(status: PlaybackStatus.paused));
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    commands.add('seek:${position.inSeconds}');
+    _emit(_state.copyWith(position: position));
+  }
+
+  @override
+  Future<void> stop() async {
+    commands.add('stop');
+    _emit(_state.copyWith(status: PlaybackStatus.stopped));
+  }
+
+  @override
+  Future<void> setAudioTrack(String? trackId) async {
+    commands.add('audio:$trackId');
+    _emit(_state.copyWith(selectedAudioTrackId: trackId));
+  }
+
+  @override
+  Future<void> setSubtitleTrack(String? trackId) async {
+    commands.add('subtitle:$trackId');
+    _emit(_state.copyWith(selectedSubtitleTrackId: trackId));
+  }
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    commands.add('speed:$speed');
+    _emit(_state.copyWith(playbackSpeed: speed));
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _stateController.close();
+    await _errorController.close();
+  }
+
+  void _emit(PlaybackState state) {
+    _state = state;
+    _stateController.add(state);
+  }
+}
