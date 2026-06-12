@@ -1,0 +1,321 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' hide Category;
+
+import 'auth_notifier.dart';
+import 'cache_service.dart';
+import 'domain_models.dart';
+import 'epg_service.dart';
+import 'favorites_service.dart';
+import 'm3u_parser.dart';
+import 'resume_service.dart';
+import 'secure_storage.dart';
+import 'viewer_service.dart';
+import 'xtream_service.dart';
+
+enum AppSourceType { none, xtream, m3u }
+
+class AppStateController extends ChangeNotifier {
+  factory AppStateController({
+    AuthNotifier? authNotifier,
+    XtreamService? xtreamService,
+    SecureStorage? secureStorage,
+    CacheService? cacheService,
+    FavoritesService? favoritesService,
+    ResumeService? resumeService,
+    ViewerService? viewerService,
+    EpgService? epgService,
+    M3UParser? m3uParser,
+  }) {
+    final resolvedSecureStorage = secureStorage ?? InMemorySecureStorage();
+    final resolvedXtreamService =
+        xtreamService ?? authNotifier?.xtreamService ?? XtreamService();
+    return AppStateController._(
+      authNotifier:
+          authNotifier ??
+          AuthNotifier(
+            xtreamService: resolvedXtreamService,
+            secureStorage: resolvedSecureStorage,
+          ),
+      xtreamService: resolvedXtreamService,
+      secureStorage: resolvedSecureStorage,
+      cacheService: cacheService ?? CacheService(),
+      favoritesService: favoritesService ?? FavoritesService(),
+      resumeService: resumeService ?? ResumeService(),
+      viewerService: viewerService ?? ViewerService(),
+      epgService: epgService ?? EpgService(),
+      m3uParser: m3uParser ?? M3UParser(),
+    );
+  }
+
+  AppStateController._({
+    required this.authNotifier,
+    required this.xtreamService,
+    required this.secureStorage,
+    required this.cacheService,
+    required this.favoritesService,
+    required this.resumeService,
+    required this.viewerService,
+    required this.epgService,
+    required this.m3uParser,
+  });
+
+  static const _sourceKey = 'm3ue_tv_source';
+
+  final AuthNotifier authNotifier;
+  final XtreamService xtreamService;
+  final SecureStorage secureStorage;
+  final CacheService cacheService;
+  final FavoritesService favoritesService;
+  final ResumeService resumeService;
+  final ViewerService viewerService;
+  final EpgService epgService;
+  final M3UParser m3uParser;
+
+  AppSourceType _sourceType = AppSourceType.none;
+  bool _isBootstrapping = false;
+  bool _isLoadingContent = false;
+  String? _error;
+  Viewer? _activeViewer;
+  List<Category> _liveCategories = const <Category>[];
+  List<Category> _vodCategories = const <Category>[];
+  List<Category> _seriesCategories = const <Category>[];
+  List<Channel> _channels = const <Channel>[];
+  List<VodItem> _vodItems = const <VodItem>[];
+  List<Series> _seriesList = const <Series>[];
+  List<Progress> _progressList = const <Progress>[];
+
+  AppSourceType get sourceType => _sourceType;
+  bool get isBootstrapping => _isBootstrapping;
+  bool get isLoadingContent => _isLoadingContent;
+  bool get isConfigured => _sourceType != AppSourceType.none;
+  String? get error => _error ?? authNotifier.error;
+  Viewer? get activeViewer => _activeViewer;
+  List<Category> get liveCategories => _liveCategories;
+  List<Category> get vodCategories => _vodCategories;
+  List<Category> get seriesCategories => _seriesCategories;
+  List<Channel> get channels => _channels;
+  List<VodItem> get vodItems => _vodItems;
+  List<Series> get seriesList => _seriesList;
+  List<Progress> get progressList => _progressList;
+  String get sourceLabel => switch (_sourceType) {
+    AppSourceType.xtream => 'Xtream',
+    AppSourceType.m3u => 'M3U',
+    AppSourceType.none => 'Not connected',
+  };
+
+  Future<void> boot() async {
+    _isBootstrapping = true;
+    _error = null;
+    notifyListeners();
+
+    final savedSource = await _readSavedSourceType();
+    if (savedSource == AppSourceType.xtream ||
+        savedSource == AppSourceType.none) {
+      final restored = await authNotifier.loadSavedCredentials();
+      if (restored) {
+        await _replaceWithXtreamContent(clearCache: false);
+      }
+    } else if (savedSource == AppSourceType.m3u) {
+      await _loadSavedM3uSource();
+    }
+
+    _isBootstrapping = false;
+    notifyListeners();
+  }
+
+  Future<bool> connectXtream(UserCredentials credentials) async {
+    _isLoadingContent = true;
+    _error = null;
+    notifyListeners();
+
+    final connected = await authNotifier.connect(credentials);
+    if (!connected) {
+      _isLoadingContent = false;
+      _error = _redact(
+        authNotifier.error ?? 'Authentication failed',
+        credentials,
+      );
+      notifyListeners();
+      return false;
+    }
+
+    final loaded = await _replaceWithXtreamContent(clearCache: true);
+    _isLoadingContent = false;
+    notifyListeners();
+    return loaded;
+  }
+
+  Future<bool> switchToM3u({
+    required String playlistText,
+    String name = 'Direct M3U',
+  }) async {
+    _isLoadingContent = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final playlist = m3uParser.parse(playlistText);
+      await cacheService.clear();
+      await cacheService.set('sourceType', 'm3u');
+      await cacheService.set('liveCategories', playlist.categories);
+      await cacheService.set('liveStreams', playlist.channels);
+      await secureStorage.write(
+        _sourceKey,
+        jsonEncode(<String, Object?>{
+          'type': 'm3u',
+          'name': name,
+          'playlist': playlistText,
+        }),
+      );
+      _sourceType = AppSourceType.m3u;
+      _liveCategories = playlist.categories;
+      _vodCategories = const <Category>[];
+      _seriesCategories = const <Category>[];
+      _channels = playlist.channels;
+      _vodItems = const <VodItem>[];
+      _seriesList = const <Series>[];
+      _activeViewer = const Viewer(
+        id: 0,
+        ulid: 'local-m3u',
+        name: 'Local M3U',
+        isAdmin: true,
+      );
+      _progressList = await resumeService.all(_activeViewer!.ulid);
+      _isLoadingContent = false;
+      notifyListeners();
+      return true;
+    } on M3UParseException catch (error) {
+      _error = 'M3U parse error: ${error.message}';
+      _isLoadingContent = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> disconnect() async {
+    await authNotifier.disconnect();
+    await secureStorage.delete(_sourceKey);
+    _sourceType = AppSourceType.none;
+    _activeViewer = null;
+    _liveCategories = const <Category>[];
+    _vodCategories = const <Category>[];
+    _seriesCategories = const <Category>[];
+    _channels = const <Channel>[];
+    _vodItems = const <VodItem>[];
+    _seriesList = const <Series>[];
+    _progressList = const <Progress>[];
+    _error = null;
+    notifyListeners();
+  }
+
+  Future<void> refreshLocalState() async {
+    final viewer = _activeViewer;
+    if (viewer != null) {
+      _progressList = await resumeService.all(viewer.ulid);
+    }
+    notifyListeners();
+  }
+
+  Future<bool> _replaceWithXtreamContent({required bool clearCache}) async {
+    try {
+      final liveCategoriesFuture = xtreamService.getLiveCategories();
+      final vodCategoriesFuture = xtreamService.getVodCategories();
+      final seriesCategoriesFuture = xtreamService.getSeriesCategories();
+      final channelsFuture = xtreamService.getLiveStreams();
+      final vodItemsFuture = xtreamService.getVodStreams();
+      final seriesFuture = xtreamService.getSeries();
+      final viewersFuture = xtreamService.getViewers();
+
+      final results = await Future.wait<Object>(<Future<Object>>[
+        liveCategoriesFuture,
+        vodCategoriesFuture,
+        seriesCategoriesFuture,
+        channelsFuture,
+        vodItemsFuture,
+        seriesFuture,
+        viewersFuture,
+      ]);
+
+      final viewers = results[6] as List<Viewer>;
+      final activeViewer = await viewerService.resolveActiveViewer(viewers);
+      final progress = activeViewer == null
+          ? const <Progress>[]
+          : await _loadRecentlyWatched(activeViewer.ulid);
+
+      if (clearCache) await cacheService.clear();
+      await cacheService.set('sourceType', 'xtream');
+      await cacheService.set('liveCategories', results[0] as List<Category>);
+      await cacheService.set('vodCategories', results[1] as List<Category>);
+      await cacheService.set('seriesCategories', results[2] as List<Category>);
+      await cacheService.set('liveStreams', results[3] as List<Channel>);
+      await cacheService.set('vodStreams', results[4] as List<VodItem>);
+      await cacheService.set('seriesStreams', results[5] as List<Series>);
+      await secureStorage.write(
+        _sourceKey,
+        jsonEncode(<String, Object?>{'type': 'xtream'}),
+      );
+
+      _sourceType = AppSourceType.xtream;
+      _liveCategories = results[0] as List<Category>;
+      _vodCategories = results[1] as List<Category>;
+      _seriesCategories = results[2] as List<Category>;
+      _channels = results[3] as List<Channel>;
+      _vodItems = results[4] as List<VodItem>;
+      _seriesList = results[5] as List<Series>;
+      _activeViewer = activeViewer;
+      _progressList = progress;
+      _error = null;
+      return true;
+    } catch (error) {
+      _error = _redact('$error', xtreamService.credentials);
+      return false;
+    }
+  }
+
+  Future<List<Progress>> _loadRecentlyWatched(String viewerId) async {
+    final remote = await xtreamService.getRecentlyWatched(viewerId);
+    for (final progress in remote) {
+      await resumeService.save(progress);
+    }
+    final local = await resumeService.all(viewerId);
+    return <Progress>{...remote, ...local}.toList(growable: false);
+  }
+
+  Future<void> _loadSavedM3uSource() async {
+    final raw = await secureStorage.read(_sourceKey);
+    if (raw == null) return;
+    final json = jsonDecode(raw) as Map<String, Object?>;
+    final playlist = json['playlist'];
+    if (playlist is String) {
+      await switchToM3u(
+        playlistText: playlist,
+        name: '${json['name'] ?? 'Direct M3U'}',
+      );
+    }
+  }
+
+  Future<AppSourceType> _readSavedSourceType() async {
+    final raw = await secureStorage.read(_sourceKey);
+    if (raw == null) return AppSourceType.none;
+    try {
+      final json = jsonDecode(raw) as Map<String, Object?>;
+      return json['type'] == 'm3u' ? AppSourceType.m3u : AppSourceType.xtream;
+    } catch (_) {
+      return AppSourceType.none;
+    }
+  }
+
+  String _redact(String message, UserCredentials? credentials) {
+    if (credentials == null) return message;
+    var redacted = message;
+    if (credentials.password.isNotEmpty) {
+      redacted = redacted.replaceAll(credentials.password, '[redacted]');
+    }
+    if (credentials.username.length > 2) {
+      redacted = redacted.replaceAll(credentials.username, '[redacted]');
+    }
+    return redacted;
+  }
+}
