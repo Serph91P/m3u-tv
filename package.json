@@ -1,7 +1,7 @@
 {
   "name": "m3u-tv",
   "version": "0.0.1",
-  "description": "Multi-platform IPTV player for TV, mobile, and desktop",
+  "description": "Legacy React Native/Expo reference for the Flutter m3u-tv client",
   "author": {
     "name": "sparkison",
     "email": "sparkison@users.noreply.github.com"
@@ -10,24 +10,22 @@
   "private": true,
   "packageManager": "yarn@4.13.0",
   "scripts": {
-    "start": "EXPO_TV=1 expo start",
-    "android": "EXPO_TV=1 expo run:android",
-    "bundle-android": "cd android && ./gradlew bundleRelease && cd ..",
-    "build-apk": "cd android && ./gradlew assembleRelease && cd ..",
-    "ios": "EXPO_TV=1 expo run:ios",
-    "web": "expo start --web",
-    "build:web": "expo export --platform web",
-    "mobile:android": "expo run:android",
-    "mobile:ios": "expo run:ios",
-    "electron:dev": "expo export --platform web && electron electron/main.js",
-    "electron:build": "expo export --platform web && electron-builder",
-    "prebuild": "EXPO_TV=1 expo prebuild --clean",
-    "audit": "npm audit",
-    "clean": "rm -rf node_modules android ios",
-    "lint": "eslint . --debug",
-    "lint:fix": "eslint . --fix",
-    "pretty": "npx prettier *.{ts,tsx} --write",
-    "typecheck": "tsc --noEmit",
+    "legacy:rn:start": "EXPO_TV=1 expo start",
+    "legacy:rn:android": "EXPO_TV=1 expo run:android",
+    "legacy:rn:bundle-android": "cd android && ./gradlew bundleRelease && cd ..",
+    "legacy:rn:build-apk": "cd android && ./gradlew assembleRelease && cd ..",
+    "legacy:rn:ios": "EXPO_TV=1 expo run:ios",
+    "legacy:rn:web": "expo start --web",
+    "legacy:rn:build-web": "expo export --platform web",
+    "legacy:rn:mobile-android": "expo run:android",
+    "legacy:rn:mobile-ios": "expo run:ios",
+    "legacy:rn:prebuild": "EXPO_TV=1 expo prebuild --clean",
+    "legacy:rn:audit": "npm audit",
+    "legacy:rn:clean": "rm -rf node_modules android ios",
+    "legacy:rn:lint": "eslint . --debug",
+    "legacy:rn:lint-fix": "eslint . --fix",
+    "legacy:rn:pretty": "npx prettier *.{ts,tsx} --write",
+    "legacy:rn:typecheck": "tsc --noEmit",
     "postinstall": "npx patch-package"
   },
   "dependencies": {
@@ -65,8 +63,6 @@
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.55.0",
     "@typescript-eslint/parser": "^8.55.0",
-    "electron": "^41.0.2",
-    "electron-builder": "^26.8.1",
     "eslint": "^9.19.0",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react": "^7.37.5",
@@ -83,36 +79,6 @@
   "overrides": {
     "tar": ">=7.5.10",
     "minimatch": ">=9.0.7"
-  },
-  "build": {
-    "appId": "com.m3utv.desktop",
-    "productName": "M3U TV",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "AudioVideo"
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "mac": {
-      "identity": null,
-      "target": [
-        "dmg"
-      ]
-    }
   },
   "expo": {
     "install": {

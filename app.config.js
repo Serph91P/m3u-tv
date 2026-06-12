@@ -24,6 +24,7 @@ const tvPlugins = IS_TV
 const config = {
   name: 'M3U TV',
   slug: 'm3u-tv',
+  description: 'Legacy React Native/Expo migration reference; active client lives in flutter_client/.',
   scheme: 'dev.sparkison.tv',
   version: '0.0.1',
   orientation: IS_TV ? 'landscape' : 'default',
