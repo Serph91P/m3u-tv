@@ -11,6 +11,7 @@ import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Device type enum matching the RN useDeviceType hook.
 enum DeviceType { tv, desktop, tablet, phone }
@@ -434,20 +435,88 @@ class _ContentNavigator extends StatelessWidget {
     );
   }
 
+  void _openChannel(Channel channel) {
+    navigatorKey.currentState?.pushNamed(
+      RouteNames.player,
+      arguments: PlayerArgs(
+        streamUrl: channel.streamUrl,
+        title: channel.name,
+        type: 'live',
+        streamId: channel.id,
+        epgChannelId: channel.epgChannelId,
+        headers: channel.headers,
+      ),
+    );
+  }
+
+  void _openVod(VodItem item, {double? startPosition}) {
+    navigatorKey.currentState?.pushNamed(
+      RouteNames.player,
+      arguments: PlayerArgs(
+        streamUrl: item.streamUrl,
+        title: item.name,
+        type: 'vod',
+        streamId: item.id,
+        startPosition: startPosition,
+        metadata: <String, Object?>{
+          'container_extension': item.containerExtension,
+        },
+      ),
+    );
+  }
+
+  void _openProgress(Progress progress) {
+    if (progress.contentType == ContentType.vod) {
+      final item = appState.vodItems.firstWhereOrNull(
+        (item) => item.id == progress.streamId,
+      );
+      if (item != null) {
+        _openVod(item, startPosition: progress.positionSeconds.toDouble());
+      }
+      return;
+    }
+
+    if (progress.contentType == ContentType.episode &&
+        progress.seriesId != null) {
+      final series = appState.seriesList.firstWhereOrNull(
+        (series) => series.id == progress.seriesId,
+      );
+      if (series != null) {
+        _openSeries(series);
+      }
+    }
+  }
+
+  void _openSeries(Series series) {
+    navigatorKey.currentState?.pushNamed(
+      RouteNames.seriesDetails,
+      arguments: SeriesDetailsArgs(
+        seriesId: series.id,
+        seriesName: series.name,
+      ),
+    );
+  }
+
   Widget _buildMainRoute(String routeName) {
     if (appState.isBootstrapping) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return switch (routeName) {
-      RouteNames.home => _HomeScreen(appState: appState),
+      RouteNames.home => _HomeScreen(
+        appState: appState,
+        onChannelSelect: _openChannel,
+        onVodSelect: _openVod,
+        onSeriesSelect: _openSeries,
+        onProgressSelect: _openProgress,
+      ),
       RouteNames.search => SearchScreen(
         channels: appState.channels,
         vodItems: appState.vodItems,
         seriesList: appState.seriesList,
         isConfigured: appState.isConfigured,
-        onChannelSelect: (Channel channel) {},
-        onVodSelect: (VodItem item) {},
-        onSeriesSelect: (Series series) {},
+        onChannelSelect: _openChannel,
+        onVodSelect: _openVod,
+        onSeriesSelect: _openSeries,
       ),
       RouteNames.liveTv => LiveTvScreen(
         channels: appState.channels,
@@ -456,21 +525,21 @@ class _ContentNavigator extends StatelessWidget {
         isConfigured: appState.isConfigured,
         favoritesService: appState.favoritesService,
         epgService: appState.epgService,
-        onChannelSelect: (Channel channel) {},
+        onChannelSelect: _openChannel,
       ),
       RouteNames.vod => VodScreen(
         vodItems: appState.vodItems,
         categories: appState.vodCategories,
         isLoading: appState.isLoadingContent,
         isConfigured: appState.isConfigured,
-        onVodSelect: (VodItem item) {},
+        onVodSelect: _openVod,
       ),
       RouteNames.series => SeriesScreen(
         seriesList: appState.seriesList,
         categories: appState.seriesCategories,
         isLoading: appState.isLoadingContent,
         isConfigured: appState.isConfigured,
-        onSeriesSelect: (Series series) {},
+        onSeriesSelect: _openSeries,
       ),
       RouteNames.settings => SettingsScreen(
         authNotifier: appState.authNotifier,
@@ -487,9 +556,19 @@ class _ContentNavigator extends StatelessWidget {
 }
 
 class _HomeScreen extends StatelessWidget {
-  const _HomeScreen({required this.appState});
+  const _HomeScreen({
+    required this.appState,
+    required this.onChannelSelect,
+    required this.onVodSelect,
+    required this.onSeriesSelect,
+    required this.onProgressSelect,
+  });
 
   final AppStateController appState;
+  final void Function(Channel) onChannelSelect;
+  final void Function(VodItem) onVodSelect;
+  final void Function(Series) onSeriesSelect;
+  final void Function(Progress) onProgressSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -499,66 +578,142 @@ class _HomeScreen extends StatelessWidget {
       );
     }
 
+    final continueWatchingItems = appState.progressList
+        .where(_isResumeEligible)
+        .map(_resumePreviewItem)
+        .whereType<MediaPreviewItem>()
+        .toList(growable: false);
+    final continueWatchingSection = MediaPreviewSection(
+      title: 'Continue Watching',
+      emptyLabel: 'No Continue Watching available',
+      items: continueWatchingItems,
+    );
+    final liveSection = MediaPreviewSection(
+      title: 'Live TV',
+      emptyLabel: 'No Live TV available',
+      items: appState.channels
+          .map(
+            (Channel channel) => MediaPreviewItem(
+              title: channel.name,
+              imageUrl: channel.logoUrl,
+              subtitle: channel.groupTitle ?? 'Live channel',
+              fallbackIcon: Icons.live_tv,
+              onTap: () => onChannelSelect(channel),
+            ),
+          )
+          .toList(growable: false),
+    );
+    final moviesSection = MediaPreviewSection(
+      title: 'Movies',
+      emptyLabel: 'No Movies available',
+      items: appState.vodItems
+          .map(
+            (VodItem item) => MediaPreviewItem(
+              title: item.name,
+              imageUrl: item.logoUrl,
+              subtitle: item.rating == null ? 'Movie' : '★ ${item.rating}',
+              fallbackIcon: Icons.movie,
+              onTap: () => onVodSelect(item),
+            ),
+          )
+          .toList(growable: false),
+    );
+    final seriesSection = MediaPreviewSection(
+      title: 'Series',
+      emptyLabel: 'No Series available',
+      items: appState.seriesList
+          .map(
+            (Series series) => MediaPreviewItem(
+              title: series.name,
+              imageUrl: series.coverUrl,
+              subtitle: series.rating == null ? 'Series' : '★ ${series.rating}',
+              fallbackIcon: Icons.tv,
+              onTap: () => onSeriesSelect(series),
+            ),
+          )
+          .toList(growable: false),
+    );
+    final previewSections = continueWatchingItems.isEmpty
+        ? [liveSection, moviesSection, seriesSection, continueWatchingSection]
+        : [continueWatchingSection, liveSection, moviesSection, seriesSection];
+
     return Scaffold(
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
         children: [
           Text('Home', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: MediaBrowsingMetrics.chipGap),
           Text('Connected source: ${appState.sourceLabel}'),
-          const SizedBox(height: 24),
-          _PreviewSection(
-            title: 'Live TV',
-            names: appState.channels.map((Channel channel) => channel.name),
-          ),
-          _PreviewSection(
-            title: 'Movies',
-            names: appState.vodItems.map((VodItem item) => item.name),
-          ),
-          _PreviewSection(
-            title: 'Series',
-            names: appState.seriesList.map((Series series) => series.name),
-          ),
-          _PreviewSection(
-            title: 'Continue Watching',
-            names: appState.progressList.map(
-              (Progress progress) => 'Stream ${progress.streamId}',
+          const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+          if (continueWatchingItems.isEmpty)
+            ...previewSections
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final sectionWidth =
+                    (constraints.maxWidth - MediaBrowsingMetrics.itemGap) / 2;
+                return Wrap(
+                  spacing: MediaBrowsingMetrics.itemGap,
+                  children: previewSections
+                      .map(
+                        (section) =>
+                            SizedBox(width: sectionWidth, child: section),
+                      )
+                      .toList(growable: false),
+                );
+              },
             ),
-          ),
         ],
       ),
     );
   }
+
+  bool _isResumeEligible(Progress progress) {
+    return progress.contentType != ContentType.live &&
+        progress.positionSeconds >= 30 &&
+        !progress.completed;
+  }
+
+  MediaPreviewItem? _resumePreviewItem(Progress progress) {
+    if (progress.contentType == ContentType.vod) {
+      final item = appState.vodItems.firstWhereOrNull(
+        (item) => item.id == progress.streamId,
+      );
+      if (item == null) return null;
+      return MediaPreviewItem(
+        title: 'Resume ${item.name}',
+        imageUrl: item.logoUrl,
+        subtitle: 'Stream ${progress.streamId}',
+        fallbackIcon: Icons.play_circle_outline,
+        onTap: () => onProgressSelect(progress),
+      );
+    }
+
+    if (progress.contentType == ContentType.episode &&
+        progress.seriesId != null) {
+      final series = appState.seriesList.firstWhereOrNull(
+        (series) => series.id == progress.seriesId,
+      );
+      if (series == null) return null;
+      return MediaPreviewItem(
+        title: 'Resume ${series.name}',
+        imageUrl: series.coverUrl,
+        subtitle: 'Episode ${progress.streamId}',
+        fallbackIcon: Icons.play_circle_outline,
+        onTap: () => onProgressSelect(progress),
+      );
+    }
+
+    return null;
+  }
 }
 
-class _PreviewSection extends StatelessWidget {
-  const _PreviewSection({required this.title, required this.names});
-
-  final String title;
-  final Iterable<String> names;
-
-  @override
-  Widget build(BuildContext context) {
-    final visibleNames = names.take(3).toList(growable: false);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 4),
-          if (visibleNames.isEmpty)
-            Text('No $title available')
-          else
-            Wrap(
-              spacing: 8,
-              children: visibleNames
-                  .map((String name) => Chip(label: Text(name)))
-                  .toList(growable: false),
-            ),
-        ],
-      ),
-    );
+extension _FirstWhereOrNull<T> on Iterable<T> {
+  T? firstWhereOrNull(bool Function(T item) test) {
+    for (final item in this) {
+      if (test(item)) return item;
+    }
+    return null;
   }
 }
 
