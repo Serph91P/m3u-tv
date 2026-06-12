@@ -1,6 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:m3u_tv/features/player/player_screen.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
+import 'package:m3u_tv/playback/android_playback_adapter.dart';
+import 'package:m3u_tv/playback/desktop_libmpv_backend.dart';
+import 'package:m3u_tv/playback/playback_capabilities.dart';
+import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
+import 'package:m3u_tv/services/epg_service.dart';
+import 'package:m3u_tv/transcoding/transcoding.dart';
 
 /// Placeholder screen for routes not yet implemented.
 /// Shows the route name so navigation is visually verifiable.
@@ -145,11 +153,20 @@ RouteFactory buildAppRouter({
     // Modal routes
     if (routeName == RouteNames.player) {
       final args = settings.arguments;
-      String playerTitle = 'Player';
       if (args is PlayerArgs) {
-        playerTitle = args.title;
+        return _buildModalRoute(
+          settings,
+          PlayerScreen(
+            args: args,
+            orchestrator: _buildPlaybackOrchestrator(),
+            epgService: EpgService(),
+          ),
+        );
       }
-      return _buildModalRoute(settings, PlaceholderScreen(title: playerTitle));
+      return _buildModalRoute(
+        settings,
+        const PlaceholderScreen(title: 'Player unavailable'),
+      );
     }
     if (routeName == RouteNames.details) {
       final args = settings.arguments;
@@ -211,4 +228,68 @@ PageRoute<void> _buildSlideRoute(RouteSettings settings, Widget screen) {
       );
     },
   );
+}
+
+PlaybackOrchestrator _buildPlaybackOrchestrator() {
+  final platform = _playbackPlatformForCurrentTarget();
+  final adapters = <PlaybackBackend, PlayerAdapter>{};
+
+  if (platform == PlaybackPlatform.android) {
+    adapters[PlaybackBackend.androidExoPlayer] = AndroidPlaybackAdapter(
+      probe: const AndroidPlaybackProbe(
+        hardwareCodecs: <VideoCodec>{VideoCodec.h264},
+        passthroughAudioCodecs: <AudioCodec>{AudioCodec.aac, AudioCodec.mp3},
+        mpvAvailable: false,
+        serverTranscodeAvailable: false,
+      ),
+    );
+  } else if (platform == PlaybackPlatform.desktop) {
+    adapters[PlaybackBackend.desktopLibmpv] = DesktopLibmpvBackend();
+  }
+
+  return PlaybackOrchestrator(
+    platform: platform,
+    adapters: adapters,
+    transcodeGateway: const _UnavailableTranscodeGateway(),
+    retryDelay: Duration.zero,
+  );
+}
+
+PlaybackPlatform _playbackPlatformForCurrentTarget() {
+  if (kIsWeb) return PlaybackPlatform.server;
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.android => PlaybackPlatform.android,
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => PlaybackPlatform.desktop,
+    TargetPlatform.iOS => PlaybackPlatform.apple,
+    TargetPlatform.fuchsia => PlaybackPlatform.server,
+  };
+}
+
+class _UnavailableTranscodeGateway implements PlaybackTranscodeGateway {
+  const _UnavailableTranscodeGateway();
+
+  @override
+  Future<TranscodeResponse> startServerTranscode(StreamRequest request) {
+    throw const TranscodeUnavailableException(
+      'Server transcode is not configured for this client session.',
+    );
+  }
+
+  @override
+  Future<BroadcastSession?> startBroadcast(StreamRequest request) {
+    throw const TranscodeUnavailableException(
+      'Broadcast relay is not configured for this client session.',
+    );
+  }
+
+  @override
+  Future<void> stopBroadcast(String networkId) async {}
+
+  @override
+  Future<void> stopServerTranscode({
+    required String streamId,
+    required String? sessionId,
+  }) async {}
 }
