@@ -12,9 +12,26 @@ void main() {
 
     setUp(() {
       testChannels = [
-        const Channel(id: 1, name: 'BBC One', streamUrl: 'http://example.com/1.m3u8', epgChannelId: 'bbc.one', categoryId: '10'),
-        const Channel(id: 2, name: 'CNN', streamUrl: 'http://example.com/2.m3u8', epgChannelId: 'cnn', categoryId: '11'),
-        const Channel(id: 3, name: 'ESPN', streamUrl: 'http://example.com/3.m3u8', categoryId: '12'),
+        const Channel(
+          id: 1,
+          name: 'BBC One',
+          streamUrl: 'http://example.com/1.m3u8',
+          epgChannelId: 'bbc.one',
+          categoryId: '10',
+        ),
+        const Channel(
+          id: 2,
+          name: 'CNN',
+          streamUrl: 'http://example.com/2.m3u8',
+          epgChannelId: 'cnn',
+          categoryId: '11',
+        ),
+        const Channel(
+          id: 3,
+          name: 'ESPN',
+          streamUrl: 'http://example.com/3.m3u8',
+          categoryId: '12',
+        ),
       ];
       testCategories = [
         const Category(id: '10', name: 'News'),
@@ -24,10 +41,9 @@ void main() {
     });
 
     testWidgets('renders channel list with names', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-      ));
+      await tester.pumpWidget(
+        _TestApp(channels: testChannels, categories: testCategories),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('BBC One'), findsOneWidget);
@@ -35,22 +51,24 @@ void main() {
       expect(find.text('ESPN'), findsOneWidget);
     });
 
-    testWidgets('renders All Channels and Favorites category tabs', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-      ));
+    testWidgets('renders All Channels and Favorites category tabs', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(channels: testChannels, categories: testCategories),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('All Channels'), findsOneWidget);
       expect(find.text('★ Favorites'), findsOneWidget);
     });
 
-    testWidgets('renders category tabs from service categories', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-      ));
+    testWidgets('renders category tabs from service categories', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(channels: testChannels, categories: testCategories),
+      );
       await tester.pumpAndSettle();
 
       // At least the first category should be visible
@@ -58,10 +76,9 @@ void main() {
     });
 
     testWidgets('tapping category tab filters channels', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-      ));
+      await tester.pumpWidget(
+        _TestApp(channels: testChannels, categories: testCategories),
+      );
       await tester.pumpAndSettle();
 
       // Tap on News category
@@ -73,10 +90,9 @@ void main() {
     });
 
     testWidgets('tapping All Channels shows all channels', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-      ));
+      await tester.pumpWidget(
+        _TestApp(channels: testChannels, categories: testCategories),
+      );
       await tester.pumpAndSettle();
 
       // Tap a category first
@@ -93,46 +109,58 @@ void main() {
     });
 
     testWidgets('shows empty state when no channels', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: const [],
-        categories: testCategories,
-      ));
+      await tester.pumpWidget(
+        _TestApp(channels: const [], categories: testCategories),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(LiveTvScreen), findsOneWidget);
     });
 
     testWidgets('shows loading indicator while fetching', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-        isLoading: true,
-      ));
+      await tester.pumpWidget(
+        _TestApp(
+          channels: testChannels,
+          categories: testCategories,
+          isLoading: true,
+        ),
+      );
       await tester.pump();
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
 
-    testWidgets('shows not configured message when not connected', (tester) async {
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-        isConfigured: false,
-      ));
+    testWidgets('shows not configured message when not connected', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: testChannels,
+          categories: testCategories,
+          isConfigured: false,
+        ),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.text('Please connect to your service in Settings'), findsOneWidget);
+      expect(
+        find.text('Please connect to your service in Settings'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('Favorites category shows only favorited channels', (tester) async {
+    testWidgets('Favorites category shows only favorited channels', (
+      tester,
+    ) async {
       final favoritesService = FavoritesService();
       await favoritesService.add(1); // BBC One
 
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-        favoritesService: favoritesService,
-      ));
+      await tester.pumpWidget(
+        _TestApp(
+          channels: testChannels,
+          categories: testCategories,
+          favoritesService: favoritesService,
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Tap Favorites category
@@ -142,13 +170,35 @@ void main() {
       expect(find.text('BBC One'), findsOneWidget);
     });
 
-    testWidgets('tapping channel triggers onChannelSelect callback', (tester) async {
+    testWidgets('category bar exposes scrollbar and arrow affordances', (
+      tester,
+    ) async {
+      final manyCategories = List<Category>.generate(
+        16,
+        (index) => Category(id: '$index', name: 'Category $index'),
+      );
+
+      await tester.pumpWidget(
+        _TestApp(channels: testChannels, categories: manyCategories),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Scrollbar), findsWidgets);
+      expect(find.byTooltip('Scroll categories left'), findsOneWidget);
+      expect(find.byTooltip('Scroll categories right'), findsOneWidget);
+    });
+
+    testWidgets('tapping channel triggers onChannelSelect callback', (
+      tester,
+    ) async {
       Channel? selectedChannel;
-      await tester.pumpWidget(_TestApp(
-        channels: testChannels,
-        categories: testCategories,
-        onChannelSelect: (channel) => selectedChannel = channel,
-      ));
+      await tester.pumpWidget(
+        _TestApp(
+          channels: testChannels,
+          categories: testCategories,
+          onChannelSelect: (channel) => selectedChannel = channel,
+        ),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('BBC One'));
