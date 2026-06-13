@@ -1,17 +1,28 @@
+// ignore_for_file: prefer_initializing_formals
+
 import 'domain_models.dart';
+import 'persistent_store.dart';
 
 class ResumeService {
   ResumeService({
     Map<String, Object?>? memory,
+    PersistentJsonStore? store,
     this.promptThreshold = const Duration(seconds: 30),
-  }) : _memory = memory ?? <String, Object?>{};
+  }) : _memory = memory ?? <String, Object?>{},
+       _store = store;
 
   final Map<String, Object?> _memory;
+  final PersistentJsonStore? _store;
   final Duration promptThreshold;
 
   Future<void> save(Progress progress) async {
-    _memory[_key(progress.viewerId, progress.contentType, progress.streamId)] =
-        progress;
+    final key = _key(
+      progress.viewerId,
+      progress.contentType,
+      progress.streamId,
+    );
+    _memory[key] = progress;
+    await _store?.write(key, progress.toJson());
   }
 
   Future<Progress?> load(
@@ -19,11 +30,19 @@ class ResumeService {
     ContentType contentType,
     int streamId,
   ) async {
-    return _memory[_key(viewerId, contentType, streamId)] as Progress?;
+    final key = _key(viewerId, contentType, streamId);
+    final raw = _store == null ? _memory[key] : await _store.read(key);
+    if (raw is Progress) return raw;
+    if (raw is Map) return Progress.fromJson(raw.cast<String, Object?>());
+    return null;
   }
 
   Future<List<Progress>> all(String viewerId) async {
-    return _memory.values
+    final values = _store == null
+        ? _memory.values
+        : (await _store.snapshot()).values;
+    return values
+        .map(_progressFromStored)
         .whereType<Progress>()
         .where((Progress progress) => progress.viewerId == viewerId)
         .toList(growable: false);
@@ -42,4 +61,10 @@ class ResumeService {
 
   String _key(String viewerId, ContentType contentType, int streamId) =>
       'm3ue_resume_${viewerId}_${contentType.wireName}_$streamId';
+
+  Progress? _progressFromStored(Object? raw) {
+    if (raw is Progress) return raw;
+    if (raw is Map) return Progress.fromJson(raw.cast<String, Object?>());
+    return null;
+  }
 }

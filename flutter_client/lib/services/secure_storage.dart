@@ -1,3 +1,5 @@
+import 'persistent_store.dart';
+
 /// Secure storage abstraction for persisting sensitive data like credentials.
 ///
 /// Production implementations should use platform-specific encrypted storage
@@ -28,4 +30,27 @@ class InMemorySecureStorage implements SecureStorage {
 
   @override
   String toString() => 'InMemorySecureStorage(${_store.length} keys)';
+}
+
+class FileSecureStorage implements SecureStorage {
+  FileSecureStorage({PersistentJsonStore? store})
+    : _store = store ?? PersistentJsonStore();
+
+  final PersistentJsonStore _store;
+
+  @override
+  Future<String?> read(String key) async {
+    final value = await _store.read(key);
+    return value is String ? value : null;
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    await _store.write(key, value);
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    await _store.delete(key);
+  }
 }

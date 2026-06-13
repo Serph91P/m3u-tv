@@ -1,23 +1,38 @@
+// ignore_for_file: prefer_initializing_formals
+
 import 'domain_models.dart';
+import 'persistent_store.dart';
 
 class ViewerService {
-  ViewerService({Map<String, Object?>? memory}) : _memory = memory ?? <String, Object?>{};
+  ViewerService({Map<String, Object?>? memory, PersistentJsonStore? store})
+    : _memory = memory ?? <String, Object?>{},
+      _store = store;
 
   static const _activeViewerKey = 'm3ue_tv_active_viewer';
 
   final Map<String, Object?> _memory;
+  final PersistentJsonStore? _store;
 
   Future<Viewer?> resolveActiveViewer(List<Viewer> viewers) async {
     if (viewers.isEmpty) return null;
-    final savedUlid = _memory[_activeViewerKey] as String?;
-    final saved = savedUlid == null ? null : viewers.where((viewer) => viewer.ulid == savedUlid).firstOrNull;
-    final active = saved ?? viewers.where((viewer) => viewer.isAdmin).firstOrNull ?? viewers.first;
-    _memory[_activeViewerKey] = active.ulid;
+    final savedRaw = _store == null
+        ? _memory[_activeViewerKey]
+        : await _store.read(_activeViewerKey);
+    final savedUlid = savedRaw as String?;
+    final saved = savedUlid == null
+        ? null
+        : viewers.where((viewer) => viewer.ulid == savedUlid).firstOrNull;
+    final active =
+        saved ??
+        viewers.where((viewer) => viewer.isAdmin).firstOrNull ??
+        viewers.first;
+    await setActiveViewer(active);
     return active;
   }
 
   Future<void> setActiveViewer(Viewer viewer) async {
     _memory[_activeViewerKey] = viewer.ulid;
+    await _store?.write(_activeViewerKey, viewer.ulid);
   }
 }
 

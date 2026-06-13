@@ -1,38 +1,56 @@
+// ignore_for_file: prefer_initializing_formals
+
+import 'persistent_store.dart';
+
 class FavoritesService {
-  FavoritesService({Map<String, Object?>? memory}) : _memory = memory ?? <String, Object?>{};
+  FavoritesService({Map<String, Object?>? memory, PersistentJsonStore? store})
+    : _memory = memory ?? <String, Object?>{},
+      _store = store;
 
   static const _favoritesKey = 'm3ue_favorites';
   static const _lastCategoryKey = 'm3ue_last_category';
 
   final Map<String, Object?> _memory;
+  final PersistentJsonStore? _store;
 
   Future<bool> add(int streamId) async {
     final ids = await all();
     ids.add(streamId);
-    _memory[_favoritesKey] = ids.toList()..sort();
+    await _write(_favoritesKey, ids.toList()..sort());
     return true;
   }
 
   Future<bool> remove(int streamId) async {
     final ids = await all();
     ids.remove(streamId);
-    _memory[_favoritesKey] = ids.toList()..sort();
+    await _write(_favoritesKey, ids.toList()..sort());
     return false;
   }
 
-  Future<bool> toggle(int streamId) async => await isFavorite(streamId) ? remove(streamId) : add(streamId);
+  Future<bool> toggle(int streamId) async =>
+      await isFavorite(streamId) ? remove(streamId) : add(streamId);
 
-  Future<bool> isFavorite(int streamId) async => (await all()).contains(streamId);
+  Future<bool> isFavorite(int streamId) async =>
+      (await all()).contains(streamId);
 
   Future<Set<int>> all() async {
-    final raw = _memory[_favoritesKey];
+    final raw = await _read(_favoritesKey);
     if (raw is Iterable) return raw.map((value) => int.parse('$value')).toSet();
     return <int>{};
   }
 
   Future<void> setLastCategory(String? categoryId) async {
-    _memory[_lastCategoryKey] = categoryId;
+    await _write(_lastCategoryKey, categoryId);
   }
 
-  Future<String?> getLastCategory() async => _memory[_lastCategoryKey] as String?;
+  Future<String?> getLastCategory() async =>
+      await _read(_lastCategoryKey) as String?;
+
+  Future<Object?> _read(String key) async =>
+      _store == null ? _memory[key] : _store.read(key);
+
+  Future<void> _write(String key, Object? value) async {
+    _memory[key] = value;
+    await _store?.write(key, value);
+  }
 }
