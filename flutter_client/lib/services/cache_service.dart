@@ -20,7 +20,7 @@ class CacheService {
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? _store;
-  final Duration refreshInterval;
+  Duration refreshInterval;
 
   Future<void> set<T>(String key, T data) async {
     final stamped = _StampedValue<T>(data, DateTime.now());

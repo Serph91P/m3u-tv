@@ -597,11 +597,18 @@ class _ContentNavigator extends StatelessWidget {
       RouteNames.settings => SettingsScreen(
         authNotifier: appState.authNotifier,
         activeViewer: appState.activeViewer,
+        viewers: appState.viewers,
         sourceLabel: appState.sourceLabel,
         sourceError: appState.error,
         isConfiguredOverride: appState.isConfigured,
+        epgRefreshInterval: appState.epgRefreshInterval,
+        epgRefreshOptions: AppStateController.epgRefreshOptions,
         onConnect: appState.connectXtream,
         onDisconnect: () => unawaited(appState.disconnect()),
+        onSwitchViewer: (viewer) => unawaited(appState.switchViewer(viewer)),
+        onCreateViewer: appState.createViewer,
+        onClearCache: () => unawaited(appState.clearAndRefresh()),
+        onEpgIntervalChanged: (d) => unawaited(appState.setEpgRefreshInterval(d)),
       ),
       _ => const PlaceholderScreen(title: 'Home'),
     };
@@ -649,7 +656,9 @@ class _HomeScreen extends StatelessWidget {
             (Channel channel) => MediaPreviewItem(
               title: channel.name,
               imageUrl: channel.logoUrl,
-              subtitle: channel.groupTitle ?? 'Live channel',
+              subtitle: appState.epgService.lookupForChannel(channel)?.current.title
+                  ?? channel.groupTitle
+                  ?? 'Live channel',
               fallbackIcon: Icons.live_tv,
               onTap: () => onChannelSelect(channel),
             ),

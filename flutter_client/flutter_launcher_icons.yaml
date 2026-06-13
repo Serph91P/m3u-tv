@@ -1,0 +1,31 @@
+flutter_launcher_icons:
+  # Source icon — 1024×1024 PNG generated from logo.svg by generate-icons.sh
+  image_path: "assets/icons/icon.png"
+
+  android: "launcher_icon"
+  # Adaptive icon (Android 8+): dark background + centred foreground logo
+  adaptive_icon_background: "#0a0a0f"
+  adaptive_icon_foreground: "assets/icons/adaptive-icon.png"
+  min_sdk_android: 21
+
+  ios: true
+  remove_alpha_ios: true
+
+  web:
+    generate: true
+    image_path: "assets/icons/icon.png"
+    background_color: "#0a0a0f"
+    theme_color: "#0a0a0f"
+
+  macos:
+    generate: true
+    image_path: "assets/icons/icon.png"
+
+  windows:
+    generate: true
+    image_path: "assets/icons/icon.png"
+    icon_size: 256
+
+  linux:
+    generate: true
+    image_path: "assets/icons/icon.png"

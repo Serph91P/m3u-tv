@@ -72,6 +72,17 @@ class EpgService {
     return null;
   }
 
+  /// Returns every known program for [channel], sorted by start time.
+  List<EpgProgram> programsForChannel(Channel channel) {
+    final ids = <String?>[channel.epgChannelId, channel.tvgName, channel.name];
+    for (final id in ids) {
+      if (id == null || id.isEmpty) continue;
+      final programs = _programsByChannel[id];
+      if (programs != null && programs.isNotEmpty) return programs;
+    }
+    return const <EpgProgram>[];
+  }
+
   void clear() {
     _programsByChannel.clear();
     _loadedAt = null;

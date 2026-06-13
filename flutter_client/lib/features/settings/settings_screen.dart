@@ -14,11 +14,18 @@ class SettingsScreen extends StatelessWidget {
     super.key,
     required this.authNotifier,
     this.activeViewer,
+    this.viewers = const [],
     this.sourceLabel,
     this.sourceError,
     this.isConfiguredOverride,
+    this.epgRefreshInterval,
+    this.epgRefreshOptions = const [],
     this.onConnect,
     this.onDisconnect,
+    this.onSwitchViewer,
+    this.onCreateViewer,
+    this.onClearCache,
+    this.onEpgIntervalChanged,
   });
 
   /// Auth state notifier providing connection status.
@@ -27,6 +34,9 @@ class SettingsScreen extends StatelessWidget {
   /// Currently active viewer (null if not connected or no viewer).
   final Viewer? activeViewer;
 
+  /// All available viewers from the backend.
+  final List<Viewer> viewers;
+
   final String? sourceLabel;
   final String? sourceError;
   final bool? isConfiguredOverride;
@@ -34,6 +44,25 @@ class SettingsScreen extends StatelessWidget {
 
   /// Called when the user taps Disconnect.
   final VoidCallback? onDisconnect;
+
+  /// Called when the user selects a different viewer.
+  final void Function(Viewer viewer)? onSwitchViewer;
+
+  /// Called when the user creates a new viewer. Returns the created viewer or
+  /// null on failure.
+  final Future<Viewer?> Function(String name)? onCreateViewer;
+
+  /// Currently selected EPG cache refresh interval.
+  final Duration? epgRefreshInterval;
+
+  /// Available interval options to present to the user.
+  final List<Duration> epgRefreshOptions;
+
+  /// Called when the user taps "Clear & Refresh".
+  final VoidCallback? onClearCache;
+
+  /// Called when the user selects a different EPG refresh interval.
+  final void Function(Duration interval)? onEpgIntervalChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -50,9 +79,16 @@ class SettingsScreen extends StatelessWidget {
     return _ConnectedView(
       authNotifier: authNotifier,
       activeViewer: activeViewer,
+      viewers: viewers,
       sourceLabel: sourceLabel,
       sourceError: sourceError,
+      epgRefreshInterval: epgRefreshInterval,
+      epgRefreshOptions: epgRefreshOptions,
       onDisconnect: onDisconnect ?? () => authNotifier.disconnect(),
+      onSwitchViewer: onSwitchViewer,
+      onCreateViewer: onCreateViewer,
+      onClearCache: onClearCache,
+      onEpgIntervalChanged: onEpgIntervalChanged,
     );
   }
 }
@@ -61,16 +97,30 @@ class _ConnectedView extends StatelessWidget {
   const _ConnectedView({
     required this.authNotifier,
     this.activeViewer,
+    this.viewers = const [],
     this.sourceLabel,
     this.sourceError,
+    this.epgRefreshInterval,
+    this.epgRefreshOptions = const [],
     required this.onDisconnect,
+    this.onSwitchViewer,
+    this.onCreateViewer,
+    this.onClearCache,
+    this.onEpgIntervalChanged,
   });
 
   final AuthNotifier authNotifier;
   final Viewer? activeViewer;
+  final List<Viewer> viewers;
   final String? sourceLabel;
   final String? sourceError;
+  final Duration? epgRefreshInterval;
+  final List<Duration> epgRefreshOptions;
   final VoidCallback onDisconnect;
+  final void Function(Viewer viewer)? onSwitchViewer;
+  final Future<Viewer?> Function(String name)? onCreateViewer;
+  final VoidCallback? onClearCache;
+  final void Function(Duration interval)? onEpgIntervalChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -134,9 +184,10 @@ class _ConnectedView extends StatelessWidget {
           // Viewer section (only when m3u-editor and viewer available)
           if (activeViewer != null) ...[
             ViewerSelector(
-              viewers: [activeViewer!],
+              viewers: viewers.isNotEmpty ? viewers : [activeViewer!],
               activeViewer: activeViewer!,
-              onSwitch: (_) {},
+              onSwitch: onSwitchViewer ?? (_) {},
+              onCreateViewer: onCreateViewer,
             ),
             const SizedBox(height: 24),
           ],
@@ -150,7 +201,41 @@ class _ConnectedView extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          if (epgRefreshOptions.isNotEmpty && epgRefreshInterval != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Refresh interval',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                DropdownButton<Duration>(
+                  value: epgRefreshInterval,
+                  onChanged: onEpgIntervalChanged == null
+                      ? null
+                      : (d) { if (d != null) onEpgIntervalChanged!(d); },
+                  items: epgRefreshOptions
+                      .map((d) => DropdownMenuItem(
+                            value: d,
+                            child: Text(_intervalLabel(d)),
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onClearCache,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Clear Cache & Refresh'),
+            ),
+          ),
+          const SizedBox(height: 24),
 
           // Disconnect button
           SizedBox(
@@ -168,6 +253,14 @@ class _ConnectedView extends StatelessWidget {
       ),
     );
   }
+}
+
+String _intervalLabel(Duration d) {
+  if (d.inHours >= 1) {
+    final h = d.inHours;
+    return h == 1 ? '1 hour' : '$h hours';
+  }
+  return '${d.inMinutes} min';
 }
 
 class _StatusRow extends StatelessWidget {

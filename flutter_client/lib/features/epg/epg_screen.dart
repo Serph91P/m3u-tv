@@ -4,22 +4,33 @@ import 'package:m3u_tv/services/epg_service.dart';
 
 /// EPG screen showing current/next program info for live channels.
 ///
-/// Mirrors the RN LiveTVScreen EPG behavior:
-/// - List view with current program title, progress bar, and next program
-/// - Grid view toggle
-/// - "No program info" for channels without EPG data
-/// - Lazy EPG loading for visible channels
+/// Can be used standalone (does its own EPG lookups) or embedded inside
+/// another screen by passing [epgMap] directly from the parent, avoiding a
+/// redundant second lookup. When [showHeader] is false the internal
+/// list/grid toggle is hidden — use this when the parent already provides a
+/// view-mode toggle.
 class EpgScreen extends StatefulWidget {
   const EpgScreen({
     super.key,
     required this.channels,
     required this.epgService,
     required this.onChannelSelect,
+    this.epgMap,
+    this.showHeader = true,
   });
 
   final List<Channel> channels;
   final EpgService epgService;
   final void Function(Channel) onChannelSelect;
+
+  /// Pre-populated EPG map from a parent widget. When provided, the screen
+  /// uses this data directly instead of performing its own service lookups.
+  /// The parent is responsible for keeping it fresh (e.g. on every build).
+  final Map<int, EpgCurrentNext?>? epgMap;
+
+  /// Whether to show the internal list/grid toggle header.
+  /// Set to false when the parent already supplies a view-mode control.
+  final bool showHeader;
 
   @override
   State<EpgScreen> createState() => _EpgScreenState();
@@ -27,35 +38,26 @@ class EpgScreen extends StatefulWidget {
 
 class _EpgScreenState extends State<EpgScreen> {
   bool _isGridView = false;
-  Map<int, EpgCurrentNext?> _epgMap = {};
 
-  @override
-  void initState() {
-    super.initState();
-    _loadEpg();
-  }
-
-  void _loadEpg() {
+  /// Always compute fresh from either the parent-supplied map or the service.
+  /// Avoids stale state when the parent mutates the map or the service loads
+  /// data after the first build.
+  Map<int, EpgCurrentNext?> _resolveEpgMap() {
+    if (widget.epgMap != null) return widget.epgMap!;
     final map = <int, EpgCurrentNext?>{};
     for (final channel in widget.channels) {
       final result = widget.epgService.lookupForChannel(channel);
-      if (result != null) {
-        map[channel.id] = result;
-      }
+      if (result != null) map[channel.id] = result;
     }
-    if (mounted) {
-      setState(() {
-        _epgMap = map;
-      });
-    }
+    return map;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          // View mode toggle
+    final epgMap = _resolveEpgMap();
+    return Column(
+      children: [
+        if (widget.showHeader)
           Container(
             height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -67,38 +69,33 @@ class _EpgScreenState extends State<EpgScreen> {
                   onPressed: () => setState(() => _isGridView = !_isGridView),
                   tooltip: _isGridView ? 'List view' : 'Grid view',
                 ),
-                Text(
-                  'EPG',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+                Text('EPG', style: Theme.of(context).textTheme.titleLarge),
               ],
             ),
           ),
-          // Content
-          Expanded(
-            child: widget.channels.isEmpty
-                ? Center(
-                    child: Text(
-                      'No channels available',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  )
-                : _isGridView
-                    ? _buildGridView()
-                    : _buildListView(),
-          ),
-        ],
-      ),
+        Expanded(
+          child: widget.channels.isEmpty
+              ? Center(
+                  child: Text(
+                    'No channels available',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                )
+              : _isGridView
+                  ? _buildGridView(epgMap)
+                  : _buildListView(epgMap),
+        ),
+      ],
     );
   }
 
-  Widget _buildListView() {
+  Widget _buildListView(Map<int, EpgCurrentNext?> epgMap) {
     final colorScheme = Theme.of(context).colorScheme;
     return ListView.builder(
       itemCount: widget.channels.length,
       itemBuilder: (context, index) {
         final channel = widget.channels[index];
-        final epg = _epgMap[channel.id];
+        final epg = epgMap[channel.id];
         return InkWell(
           onTap: () => widget.onChannelSelect(channel),
           child: Container(
@@ -111,7 +108,6 @@ class _EpgScreenState extends State<EpgScreen> {
             ),
             child: Row(
               children: [
-                // Channel logo
                 if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
@@ -119,13 +115,13 @@ class _EpgScreenState extends State<EpgScreen> {
                       channel.logoUrl!,
                       width: 48,
                       height: 48,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.tv, size: 48),
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.tv, size: 48),
                     ),
                   )
                 else
                   const Icon(Icons.tv, size: 48),
                 const SizedBox(width: 14),
-                // Channel name + EPG info
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -141,22 +137,24 @@ class _EpgScreenState extends State<EpgScreen> {
                         const SizedBox(height: 2),
                         Text(
                           epg.current.title,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         LinearProgressIndicator(
                           value: epg.progress,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+                          backgroundColor:
+                              colorScheme.surfaceContainerHighest,
+                          valueColor:
+                              AlwaysStoppedAnimation(colorScheme.primary),
                         ),
                       ] else
                         Text(
                           'No program info',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                                 fontStyle: FontStyle.italic,
                               ),
@@ -164,7 +162,6 @@ class _EpgScreenState extends State<EpgScreen> {
                     ],
                   ),
                 ),
-                // Next program
                 if (epg?.next != null)
                   SizedBox(
                     width: 160,
@@ -174,15 +171,13 @@ class _EpgScreenState extends State<EpgScreen> {
                       children: [
                         Text(
                           'NEXT',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                         Text(
                           epg!.next!.title,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.right,
@@ -198,7 +193,7 @@ class _EpgScreenState extends State<EpgScreen> {
     );
   }
 
-  Widget _buildGridView() {
+  Widget _buildGridView(Map<int, EpgCurrentNext?> epgMap) {
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -210,7 +205,7 @@ class _EpgScreenState extends State<EpgScreen> {
       itemCount: widget.channels.length,
       itemBuilder: (context, index) {
         final channel = widget.channels[index];
-        final epg = _epgMap[channel.id];
+        final epg = epgMap[channel.id];
         return InkWell(
           onTap: () => widget.onChannelSelect(channel),
           borderRadius: BorderRadius.circular(12),
@@ -241,7 +236,8 @@ class _EpgScreenState extends State<EpgScreen> {
                   const SizedBox(height: 4),
                   LinearProgressIndicator(
                     value: epg.progress,
-                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
                 ] else
                   Text(

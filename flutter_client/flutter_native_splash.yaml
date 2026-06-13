@@ -1,0 +1,20 @@
+flutter_native_splash:
+  # Dark background matching the app's surface colour
+  color: "#0a0a0f"
+  image: assets/icons/splash-icon.png
+
+  # Dark-mode (same assets — the background is already dark)
+  color_dark: "#0a0a0f"
+  image_dark: assets/icons/splash-icon.png
+
+  # Android 12+ splash API — icon is shown inside a circle
+  android_12:
+    color: "#0a0a0f"
+    image: assets/icons/splash-icon.png
+    icon_background_color: "#0a0a0f"
+    color_dark: "#0a0a0f"
+    image_dark: assets/icons/splash-icon.png
+
+  ios: true
+  android: true
+  web: false

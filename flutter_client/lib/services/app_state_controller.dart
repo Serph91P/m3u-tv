@@ -69,6 +69,13 @@ class AppStateController extends ChangeNotifier {
   });
 
   static const _sourceKey = 'm3ue_tv_source';
+  static const _epgIntervalKey = 'm3ue_tv_epg_interval_minutes';
+
+  static const List<Duration> epgRefreshOptions = <Duration>[
+    Duration(minutes: 30),
+    Duration(hours: 1),
+    Duration(hours: 6),
+  ];
 
   final AuthNotifier authNotifier;
   final XtreamService xtreamService;
@@ -85,6 +92,7 @@ class AppStateController extends ChangeNotifier {
   bool _isLoadingContent = false;
   String? _error;
   Viewer? _activeViewer;
+  List<Viewer> _viewers = const <Viewer>[];
   List<Category> _liveCategories = const <Category>[];
   List<Category> _vodCategories = const <Category>[];
   List<Category> _seriesCategories = const <Category>[];
@@ -99,6 +107,7 @@ class AppStateController extends ChangeNotifier {
   bool get isConfigured => _sourceType != AppSourceType.none;
   String? get error => _error ?? authNotifier.error;
   Viewer? get activeViewer => _activeViewer;
+  List<Viewer> get viewers => _viewers;
   List<Category> get liveCategories => _liveCategories;
   List<Category> get vodCategories => _vodCategories;
   List<Category> get seriesCategories => _seriesCategories;
@@ -116,6 +125,14 @@ class AppStateController extends ChangeNotifier {
     _isBootstrapping = true;
     _error = null;
     notifyListeners();
+
+    final savedIntervalRaw = await secureStorage.read(_epgIntervalKey);
+    if (savedIntervalRaw != null) {
+      final minutes = int.tryParse(savedIntervalRaw);
+      if (minutes != null && minutes > 0) {
+        cacheService.refreshInterval = Duration(minutes: minutes);
+      }
+    }
 
     final savedSource = await _readSavedSourceType();
     if (savedSource == AppSourceType.xtream ||
@@ -215,6 +232,7 @@ class AppStateController extends ChangeNotifier {
     await authNotifier.disconnect();
     await secureStorage.delete(_sourceKey);
     _sourceType = AppSourceType.none;
+    _viewers = const <Viewer>[];
     _activeViewer = null;
     _liveCategories = const <Category>[];
     _vodCategories = const <Category>[];
@@ -225,6 +243,44 @@ class AppStateController extends ChangeNotifier {
     _progressList = const <Progress>[];
     _error = null;
     notifyListeners();
+  }
+
+  Duration get epgRefreshInterval => cacheService.refreshInterval;
+
+  Future<void> setEpgRefreshInterval(Duration interval) async {
+    cacheService.refreshInterval = interval;
+    await secureStorage.write(
+      _epgIntervalKey,
+      '${interval.inMinutes}',
+    );
+    notifyListeners();
+  }
+
+  Future<void> clearAndRefresh() async {
+    _isLoadingContent = true;
+    _error = null;
+    notifyListeners();
+    await _replaceWithXtreamContent(clearCache: true);
+    _isLoadingContent = false;
+    notifyListeners();
+  }
+
+  Future<void> switchViewer(Viewer viewer) async {
+    await viewerService.setActiveViewer(viewer);
+    _activeViewer = viewer;
+    _progressList = await _loadRecentlyWatched(viewer.ulid);
+    notifyListeners();
+  }
+
+  Future<Viewer?> createViewer(String name) async {
+    try {
+      final viewer = await xtreamService.createViewer(name);
+      _viewers = [..._viewers, viewer];
+      await switchViewer(viewer);
+      return viewer;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> refreshLocalState() async {
@@ -292,6 +348,7 @@ class AppStateController extends ChangeNotifier {
         jsonEncode(<String, Object?>{'type': 'xtream'}),
       );
 
+      _viewers = viewers;
       _activeViewer = activeViewer;
       _progressList = progress;
       _error = null;
@@ -359,9 +416,11 @@ class AppStateController extends ChangeNotifier {
       final programs = await xtreamService.getEpgBatch(channels);
       if (programs.isNotEmpty) {
         epgService.loadPrograms(programs);
+        notifyListeners();
       }
     } catch (_) {
-      epgService.clear();
+      // Don't clear existing EPG data on a batch failure — a transient network
+      // error shouldn't wipe a previously loaded guide.
     }
   }
 

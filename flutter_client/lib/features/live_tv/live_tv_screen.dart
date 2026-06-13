@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+
+enum _ViewMode { list, logoGrid, epgGrid }
 
 /// Live TV screen with category filtering, EPG info, and favorites.
 ///
@@ -42,7 +45,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   String _query = '';
   Set<int> _favoriteIds = {};
   final Map<int, EpgCurrentNext?> _epgMap = {};
-  bool _isGridView = false;
+  _ViewMode _viewMode = _ViewMode.list;
 
   @override
   void initState() {
@@ -99,7 +102,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   }
 
   void _loadEpgForChannels(List<Channel> channels) {
-    for (final channel in channels.take(20)) {
+    for (final channel in channels) {
       final result = widget.epgService.lookupForChannel(channel);
       if (result != null) {
         _epgMap[channel.id] = result;
@@ -140,9 +143,15 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                   )
-                : _isGridView
-                ? _buildGridView(filtered)
-                : _buildListView(filtered),
+                : switch (_viewMode) {
+                    _ViewMode.epgGrid => TimelineEpgView(
+                        channels: filtered,
+                        epgService: widget.epgService,
+                        onChannelSelect: widget.onChannelSelect,
+                      ),
+                    _ViewMode.logoGrid => _buildGridView(filtered),
+                    _ViewMode.list => _buildListView(filtered),
+                  },
           ),
         ],
       ),
@@ -171,9 +180,21 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       selectedId: _selectedCategory ?? '',
       onSelected: (id) => setState(() => _selectedCategory = id),
       leading: IconButton(
-        icon: Icon(_isGridView ? Icons.list : Icons.grid_view),
-        onPressed: () => setState(() => _isGridView = !_isGridView),
-        tooltip: _isGridView ? 'List view' : 'Grid view',
+        icon: Icon(switch (_viewMode) {
+          _ViewMode.list => Icons.grid_view,
+          _ViewMode.logoGrid => Icons.view_list,
+          _ViewMode.epgGrid => Icons.list,
+        }),
+        onPressed: () => setState(() => _viewMode = switch (_viewMode) {
+          _ViewMode.list => _ViewMode.logoGrid,
+          _ViewMode.logoGrid => _ViewMode.epgGrid,
+          _ViewMode.epgGrid => _ViewMode.list,
+        }),
+        tooltip: switch (_viewMode) {
+          _ViewMode.list => 'Logo grid',
+          _ViewMode.logoGrid => 'EPG grid',
+          _ViewMode.epgGrid => 'List view',
+        },
       ),
     );
   }
