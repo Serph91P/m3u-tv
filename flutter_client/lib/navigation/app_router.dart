@@ -1,13 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/features/player/player_screen.dart';
+import 'package:m3u_tv/features/series/series_details_screen.dart';
+import 'package:m3u_tv/features/vod/vod_details_screen.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/playback/android_playback_adapter.dart';
 import 'package:m3u_tv/playback/desktop_libmpv_backend.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
+import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
+import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/transcoding/transcoding.dart';
 
 /// Placeholder screen for routes not yet implemented.
@@ -81,10 +85,11 @@ class PlayerArgs {
 
 /// Details route arguments for VOD items.
 class DetailsArgs {
-  const DetailsArgs({required this.vodId, required this.vodName});
+  const DetailsArgs({required this.vodId, required this.vodName, this.item});
 
   final int vodId;
   final String vodName;
+  final VodItem? item;
 }
 
 /// Series details route arguments.
@@ -102,6 +107,9 @@ class SeriesDetailsArgs {
 /// - Modal stack: Player (fullscreen), Details, SeriesDetails, ViewerSelection
 RouteFactory buildAppRouter({
   Widget Function(String routeName)? mainRouteBuilder,
+  XtreamService? xtreamService,
+  PlaybackOrchestrator Function()? playbackOrchestratorBuilder,
+  Widget Function(PlayerArgs args)? playerRouteBuilder,
 }) {
   return (RouteSettings settings) {
     final routeName = settings.name;
@@ -156,11 +164,14 @@ RouteFactory buildAppRouter({
       if (args is PlayerArgs) {
         return _buildModalRoute(
           settings,
-          PlayerScreen(
-            args: args,
-            orchestrator: _buildPlaybackOrchestrator(),
-            epgService: EpgService(),
-          ),
+          playerRouteBuilder?.call(args) ??
+              PlayerScreen(
+                args: args,
+                orchestrator:
+                    playbackOrchestratorBuilder?.call() ??
+                    _buildPlaybackOrchestrator(),
+                epgService: EpgService(),
+              ),
         );
       }
       return _buildModalRoute(
@@ -170,18 +181,27 @@ RouteFactory buildAppRouter({
     }
     if (routeName == RouteNames.details) {
       final args = settings.arguments;
-      String detailTitle = 'Details';
-      if (args is DetailsArgs) {
-        detailTitle = args.vodName;
+      if (args is DetailsArgs && args.item != null) {
+        return _buildSlideRoute(settings, VodDetailsScreen(item: args.item!));
       }
+      final detailTitle = args is DetailsArgs ? args.vodName : 'Details';
       return _buildSlideRoute(settings, PlaceholderScreen(title: detailTitle));
     }
     if (routeName == RouteNames.seriesDetails) {
       final args = settings.arguments;
-      String detailTitle = 'Series Details';
-      if (args is SeriesDetailsArgs) {
-        detailTitle = args.seriesName;
+      if (args is SeriesDetailsArgs && xtreamService != null) {
+        return _buildSlideRoute(
+          settings,
+          SeriesDetailsScreen(
+            seriesId: args.seriesId,
+            seriesName: args.seriesName,
+            xtreamService: xtreamService,
+          ),
+        );
       }
+      final detailTitle = args is SeriesDetailsArgs
+          ? args.seriesName
+          : 'Series Details';
       return _buildSlideRoute(settings, PlaceholderScreen(title: detailTitle));
     }
     if (routeName == RouteNames.viewerSelection) {

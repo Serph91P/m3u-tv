@@ -9,6 +9,7 @@ import 'package:m3u_tv/features/settings/settings_screen.dart';
 import 'package:m3u_tv/features/vod/vod_screen.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
+import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -24,10 +25,18 @@ bool shouldUseSidebar(DeviceType deviceType) =>
 /// phone/tablet. Includes TV focus traversal, D-pad/keyboard shortcuts, back
 /// handling, and focus restoration.
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.deviceType, this.appState});
+  const AppShell({
+    super.key,
+    required this.deviceType,
+    this.appState,
+    this.playbackOrchestratorBuilder,
+    this.playerRouteBuilder,
+  });
 
   final DeviceType deviceType;
   final AppStateController? appState;
+  final PlaybackOrchestrator Function()? playbackOrchestratorBuilder;
+  final Widget Function(PlayerArgs args)? playerRouteBuilder;
 
   @override
   State<AppShell> createState() => AppShellState();
@@ -171,32 +180,52 @@ class AppShellState extends State<AppShell> {
   }
 
   Widget _buildTvLayout() {
-    return Scaffold(
-      body: Row(
-        children: [
-          // Sidebar
-          NavigationSidebar(
-            currentIndex: _currentIndex,
-            sidebarActive: _sidebarActive,
-            focusNodes: _sidebarFocusNodes,
-            scopeNode: _sidebarScopeNode,
-            onNavigate: _navigateTo,
-            onActivateSidebar: _activateSidebar,
-            onDeactivateSidebar: _deactivateSidebar,
-          ),
-          // Content area
-          Expanded(
-            child: FocusScope(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 240 || constraints.maxHeight < 120) {
+          return Scaffold(
+            body: FocusScope(
               node: _contentFocusNode,
               child: _ContentNavigator(
                 navigatorKey: _navigatorKey,
                 currentIndex: _currentIndex,
                 appState: _appState,
+                playbackOrchestratorBuilder: widget.playbackOrchestratorBuilder,
+                playerRouteBuilder: widget.playerRouteBuilder,
               ),
             ),
+          );
+        }
+
+        return Scaffold(
+          body: Row(
+            children: [
+              NavigationSidebar(
+                currentIndex: _currentIndex,
+                sidebarActive: _sidebarActive,
+                focusNodes: _sidebarFocusNodes,
+                scopeNode: _sidebarScopeNode,
+                onNavigate: _navigateTo,
+                onActivateSidebar: _activateSidebar,
+                onDeactivateSidebar: _deactivateSidebar,
+              ),
+              Expanded(
+                child: FocusScope(
+                  node: _contentFocusNode,
+                  child: _ContentNavigator(
+                    navigatorKey: _navigatorKey,
+                    currentIndex: _currentIndex,
+                    appState: _appState,
+                    playbackOrchestratorBuilder:
+                        widget.playbackOrchestratorBuilder,
+                    playerRouteBuilder: widget.playerRouteBuilder,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -206,6 +235,8 @@ class AppShellState extends State<AppShell> {
         navigatorKey: _navigatorKey,
         currentIndex: _currentIndex,
         appState: _appState,
+        playbackOrchestratorBuilder: widget.playbackOrchestratorBuilder,
+        playerRouteBuilder: widget.playerRouteBuilder,
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
@@ -416,17 +447,26 @@ class _ContentNavigator extends StatelessWidget {
     required this.navigatorKey,
     required this.currentIndex,
     required this.appState,
+    this.playbackOrchestratorBuilder,
+    this.playerRouteBuilder,
   });
 
   final GlobalKey<NavigatorState> navigatorKey;
   final int currentIndex;
   final AppStateController appState;
+  final PlaybackOrchestrator Function()? playbackOrchestratorBuilder;
+  final Widget Function(PlayerArgs args)? playerRouteBuilder;
 
   @override
   Widget build(BuildContext context) {
     const routes = RouteNames.mainRoutes;
     final currentRoute = routes[currentIndex];
-    final router = buildAppRouter(mainRouteBuilder: _buildMainRoute);
+    final router = buildAppRouter(
+      mainRouteBuilder: _buildMainRoute,
+      xtreamService: appState.xtreamService,
+      playbackOrchestratorBuilder: playbackOrchestratorBuilder,
+      playerRouteBuilder: playerRouteBuilder,
+    );
 
     return Navigator(
       key: navigatorKey,
@@ -450,6 +490,18 @@ class _ContentNavigator extends StatelessWidget {
   }
 
   void _openVod(VodItem item, {double? startPosition}) {
+    if (startPosition == null) {
+      navigatorKey.currentState?.pushNamed(
+        RouteNames.details,
+        arguments: DetailsArgs(vodId: item.id, vodName: item.name, item: item),
+      );
+      return;
+    }
+
+    _playVod(item, startPosition: startPosition);
+  }
+
+  void _playVod(VodItem item, {double? startPosition}) {
     navigatorKey.currentState?.pushNamed(
       RouteNames.player,
       arguments: PlayerArgs(
@@ -471,7 +523,7 @@ class _ContentNavigator extends StatelessWidget {
         (item) => item.id == progress.streamId,
       );
       if (item != null) {
-        _openVod(item, startPosition: progress.positionSeconds.toDouble());
+        _playVod(item, startPosition: progress.positionSeconds.toDouble());
       }
       return;
     }

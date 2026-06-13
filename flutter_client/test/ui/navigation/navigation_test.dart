@@ -4,12 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/app/app_shell.dart';
-import 'package:m3u_tv/features/player/player_screen.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
+import 'package:m3u_tv/playback/playback_capabilities.dart';
+import 'package:m3u_tv/playback/playback_orchestrator.dart';
+import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
+import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/services/resume_service.dart';
+import 'package:m3u_tv/services/secure_storage.dart';
+import 'package:m3u_tv/services/viewer_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/transcoding/transcoding.dart';
 
 void main() {
   group('Route navigation', () {
@@ -133,7 +141,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byType(PlayerScreen), findsOneWidget);
+      expect(find.text('Player route: Test Channel'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
@@ -191,9 +199,7 @@ void main() {
   testWidgets('selecting live channel from app shell opens player route', (
     tester,
   ) async {
-    final appState = AppStateController(
-      xtreamService: _NavigationXtreamService(),
-    );
+    final appState = _testAppState(xtreamService: _NavigationXtreamService());
     addTearDown(appState.dispose);
     await appState.connectXtream(
       const UserCredentials(
@@ -206,21 +212,22 @@ void main() {
     await tester.pumpWidget(
       _TestApp(deviceType: DeviceType.tv, appState: appState),
     );
-    await tester.pumpAndSettle();
+    await _pumpAppFrame(tester);
 
     await tester.tap(_sidebarText('Live TV'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Route News'));
+    await _pumpAppFrame(tester);
+    await tester.tap(find.text('Route News').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.byType(PlayerScreen), findsOneWidget);
+    expect(find.text('Player route: Route News'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('selecting Home continue watching movie opens player route', (
     tester,
   ) async {
-    final appState = AppStateController(
+    final appState = _testAppState(
       xtreamService: _NavigationXtreamService(
         recentlyWatched: const <Progress>[
           Progress(
@@ -245,7 +252,7 @@ void main() {
     await tester.pumpWidget(
       _TestApp(deviceType: DeviceType.tv, appState: appState),
     );
-    await tester.pumpAndSettle();
+    await _pumpAppFrame(tester);
 
     expect(find.text('Resume Route Movie'), findsOneWidget);
     expect(find.text('Stream 201'), findsOneWidget);
@@ -254,15 +261,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.byType(PlayerScreen), findsOneWidget);
+    expect(find.text('Player route: Route Movie'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('selecting movie from app shell opens player route', (
+  testWidgets('selecting movie from app shell opens details then player route', (
     tester,
   ) async {
-    final appState = AppStateController(
-      xtreamService: _NavigationXtreamService(),
-    );
+    final appState = _testAppState(xtreamService: _NavigationXtreamService());
     addTearDown(appState.dispose);
     await appState.connectXtream(
       const UserCredentials(
@@ -275,23 +281,25 @@ void main() {
     await tester.pumpWidget(
       _TestApp(deviceType: DeviceType.tv, appState: appState),
     );
-    await tester.pumpAndSettle();
+    await _pumpAppFrame(tester);
 
     await tester.tap(_sidebarText('Movies'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Route Movie'));
+    await _pumpAppFrame(tester);
+    await tester.tap(find.text('Route Movie').last);
+    await _pumpAppFrame(tester);
+
+    expect(find.text('Play movie'), findsOneWidget);
+    await tester.tap(find.text('Play movie'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-
-    expect(find.byType(PlayerScreen), findsOneWidget);
+    expect(find.text('Player route: Route Movie'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('selecting series from app shell opens series details route', (
     tester,
   ) async {
-    final appState = AppStateController(
-      xtreamService: _NavigationXtreamService(),
-    );
+    final appState = _testAppState(xtreamService: _NavigationXtreamService());
     addTearDown(appState.dispose);
     await appState.connectXtream(
       const UserCredentials(
@@ -304,14 +312,63 @@ void main() {
     await tester.pumpWidget(
       _TestApp(deviceType: DeviceType.tv, appState: appState),
     );
-    await tester.pumpAndSettle();
+    await _pumpAppFrame(tester);
 
     await tester.tap(_sidebarText('Series'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Route Series'));
-    await tester.pumpAndSettle();
+    await _pumpAppFrame(tester);
+    await tester.tap(find.text('Route Series').last);
+    await _pumpAppFrame(tester);
 
+    expect(find.text('Season 1'), findsOneWidget);
+    expect(find.text('Pilot'), findsOneWidget);
     expect(find.text('Route Series'), findsWidgets);
+  });
+
+  testWidgets('selecting series episode opens player route', (tester) async {
+    final appState = _testAppState(xtreamService: _NavigationXtreamService());
+    addTearDown(appState.dispose);
+    await appState.connectXtream(
+      const UserCredentials(
+        server: 'http://example.com',
+        username: 'user',
+        password: 'pass',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _TestApp(deviceType: DeviceType.tv, appState: appState),
+    );
+    await _pumpAppFrame(tester);
+
+    await tester.tap(_sidebarText('Series'));
+    await _pumpAppFrame(tester);
+    await tester.tap(find.text('Route Series').last);
+    await _pumpAppFrame(tester);
+    await tester.tap(find.text('Pilot'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Player route: Pilot'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('TV layout does not overflow at tiny constraints', (tester) async {
+    final previousOnError = FlutterError.onError;
+    final errors = <FlutterErrorDetails>[];
+    FlutterError.onError = errors.add;
+    addTearDown(() => FlutterError.onError = previousOnError);
+
+    await tester.binding.setSurfaceSize(const Size(1, 1));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const _TestApp(deviceType: DeviceType.tv));
+    await tester.pump();
+
+    expect(
+      errors.where(
+        (details) => details.exceptionAsString().contains('RenderFlex overflowed'),
+      ),
+      isEmpty,
+    );
   });
 
   group('Adaptive layout', () {
@@ -409,7 +466,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byType(PlayerScreen), findsOneWidget);
+      expect(find.text('Player route: Test Channel'), findsOneWidget);
 
       nav.pop();
       await tester.pumpAndSettle();
@@ -517,21 +574,148 @@ Finder _sidebarText(String label) {
   );
 }
 
+Future<void> _pumpAppFrame(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 250));
+  await tester.pump();
+}
+
 /// Test app that wraps AppShell with a controlled device type.
-class _TestApp extends StatelessWidget {
+class _TestApp extends StatefulWidget {
   const _TestApp({required this.deviceType, this.appState});
 
   final DeviceType deviceType;
   final AppStateController? appState;
 
   @override
+  State<_TestApp> createState() => _TestAppState();
+}
+
+class _TestAppState extends State<_TestApp> {
+  late final AppStateController _appState =
+      widget.appState ??
+      _testAppState(xtreamService: _NavigationXtreamService());
+
+  @override
+  void dispose() {
+    if (widget.appState == null) _appState.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'M3U TV Test',
       theme: ThemeData.dark(useMaterial3: true),
-      home: AppShell(deviceType: deviceType, appState: appState),
+      home: AppShell(
+        deviceType: widget.deviceType,
+        appState: _appState,
+        playbackOrchestratorBuilder: _testPlaybackOrchestrator,
+        playerRouteBuilder: _testPlayerRoute,
+      ),
     );
   }
+}
+
+AppStateController _testAppState({required XtreamService xtreamService}) {
+  final memory = <String, Object?>{};
+  return AppStateController(
+    xtreamService: xtreamService,
+    secureStorage: InMemorySecureStorage(),
+    cacheService: CacheService(memory: <String, Object?>{}),
+    favoritesService: FavoritesService(memory: memory),
+    resumeService: ResumeService(memory: memory),
+    viewerService: ViewerService(memory: memory),
+  );
+}
+
+Widget _testPlayerRoute(PlayerArgs args) {
+  return Scaffold(body: Center(child: Text('Player route: ${args.title}')));
+}
+
+PlaybackOrchestrator _testPlaybackOrchestrator() {
+  return PlaybackOrchestrator(
+    platform: PlaybackPlatform.desktop,
+    adapters: <PlaybackBackend, PlayerAdapter>{
+      PlaybackBackend.desktopLibmpv: _NavigationPlayerAdapter(),
+    },
+    transcodeGateway: _NavigationTranscodeGateway(),
+    retryDelay: Duration.zero,
+  );
+}
+
+class _NavigationPlayerAdapter implements PlayerAdapter {
+  final StreamController<PlaybackState> _stateController =
+      StreamController<PlaybackState>.broadcast();
+  final StreamController<PlaybackError> _errorController =
+      StreamController<PlaybackError>.broadcast();
+
+  @override
+  PlaybackCapabilities get capabilities => PlaybackCapabilities.desktopLibmpv;
+
+  @override
+  Stream<PlaybackState> get onState => _stateController.stream;
+
+  @override
+  Stream<PlaybackError> get onError => _errorController.stream;
+
+  @override
+  Future<void> load(PlaybackSource source) async {
+    _stateController.add(
+      PlaybackState(
+        backend: PlaybackBackend.desktopLibmpv,
+        status: PlaybackStatus.playing,
+        source: source,
+        duration: source.isLive ? null : const Duration(hours: 2),
+      ),
+    );
+  }
+
+  @override
+  Future<void> play() async {}
+
+  @override
+  Future<void> pause() async {}
+
+  @override
+  Future<void> seek(Duration position) async {}
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> setAudioTrack(String? trackId) async {}
+
+  @override
+  Future<void> setSubtitleTrack(String? trackId) async {}
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {}
+
+  @override
+  Future<void> dispose() async {
+    await _stateController.close();
+    await _errorController.close();
+  }
+}
+
+class _NavigationTranscodeGateway implements PlaybackTranscodeGateway {
+  @override
+  Future<TranscodeResponse> startServerTranscode(StreamRequest request) {
+    throw const TranscodeUnavailableException('Transcode disabled in tests');
+  }
+
+  @override
+  Future<BroadcastSession?> startBroadcast(StreamRequest request) async => null;
+
+  @override
+  Future<void> stopBroadcast(String networkId) async {}
+
+  @override
+  Future<void> stopServerTranscode({
+    required String streamId,
+    required String? sessionId,
+  }) async {}
 }
 
 class _NavigationXtreamService extends XtreamService {
@@ -588,8 +772,37 @@ class _NavigationXtreamService extends XtreamService {
 
   @override
   Future<List<Series>> getSeries({String? categoryId}) async => const <Series>[
-    Series(id: 301, name: 'Route Series', categoryId: 'series'),
+    Series(
+      id: 301,
+      name: 'Route Series',
+      categoryId: 'series',
+      plot: 'Route series plot',
+    ),
   ];
+
+  @override
+  Future<SeriesInfo> getSeriesInfo(int seriesId) async => const SeriesInfo(
+    series: Series(
+      id: 301,
+      name: 'Route Series',
+      categoryId: 'series',
+      plot: 'Route series plot',
+    ),
+    seasons: <Season>[Season(number: 1, name: 'Season 1', episodeCount: 1)],
+    episodesBySeason: <int, List<Episode>>{
+      1: <Episode>[
+        Episode(
+          id: '9001',
+          episodeNumber: 1,
+          title: 'Pilot',
+          containerExtension: 'mp4',
+          seasonNumber: 1,
+          plot: 'Route episode plot',
+          streamUrl: 'http://example.com/series/9001.mp4',
+        ),
+      ],
+    },
+  );
 
   @override
   Future<List<Viewer>> getViewers() async => const <Viewer>[
