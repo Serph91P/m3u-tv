@@ -218,6 +218,88 @@ void main() {
       },
     );
 
+    test('VOD info parses m3u-editor get_vod_info metadata', () async {
+      final transport = FakeXtreamTransport({
+        'auth': xtreamAuth(auth: 1),
+        'get_vod_info': {
+          'info': {
+            'plot': 'A rabbit faces a squad of tired butterflies.',
+            'genre': 'Animation / Comedy',
+            'director': 'Fixture Director',
+            'actors': 'Bunny, Butterfly',
+            'release_date': '2008-04-10',
+            'duration_secs': 596,
+            'rating_5based': '4.5',
+            'cover_big': 'https://img.example/bunny-big.jpg',
+          },
+          'movie_data': {
+            'stream_id': 201,
+            'name': 'Big Buck Bunny',
+            'container_extension': 'mkv',
+          },
+        },
+      });
+      final service = XtreamService(transport: transport.call);
+      await service.authenticate(
+        const UserCredentials(
+          server: 'https://xtream.example',
+          username: 'demo',
+          password: 'secret',
+        ),
+      );
+
+      final info = await service.getVodInfo(201);
+
+      expect(transport.requests.last.action, 'get_vod_info');
+      expect(transport.requests.last.params, {'vod_id': '201'});
+      expect(info.id, 201);
+      expect(info.name, 'Big Buck Bunny');
+      expect(info.plot, 'A rabbit faces a squad of tired butterflies.');
+      expect(info.genre, 'Animation / Comedy');
+      expect(info.director, 'Fixture Director');
+      expect(info.cast, 'Bunny, Butterfly');
+      expect(info.year, '2008');
+      expect(info.duration, '9m');
+      expect(info.rating, 4.5);
+      expect(info.coverUrl, 'https://img.example/bunny-big.jpg');
+      expect(info.containerExtension, 'mkv');
+    });
+
+    test('VOD info falls back to root-level Xtream variants', () async {
+      final service = XtreamService(
+        transport: FakeXtreamTransport({
+          'auth': xtreamAuth(auth: 1),
+          'get_vod_info': {
+            'id': 202,
+            'title': 'Root Movie',
+            'description': 'Root description',
+            'cast': 'Root Cast',
+            'releasedate': '2024-02-03',
+            'episode_run_time': '91',
+            'rating': 7.2,
+            'movie_image': 'https://img.example/root.jpg',
+          },
+        }).call,
+      );
+      await service.authenticate(
+        const UserCredentials(
+          server: 'https://xtream.example',
+          username: 'demo',
+          password: 'secret',
+        ),
+      );
+
+      final info = await service.getVodInfo(202);
+
+      expect(info.name, 'Root Movie');
+      expect(info.plot, 'Root description');
+      expect(info.cast, 'Root Cast');
+      expect(info.year, '2024');
+      expect(info.duration, '91');
+      expect(info.rating, 7.2);
+      expect(info.coverUrl, 'https://img.example/root.jpg');
+    });
+
     test('EPG batch parses m3u-editor and Xtream programme shapes', () async {
       final now = DateTime.utc(2026, 1, 1, 12);
       final service = XtreamService(
@@ -279,6 +361,108 @@ void main() {
       expect(midday.description, 'Fixture bulletin');
       expect(afternoon.channelId, 'bbc.one');
     });
+
+    test('EPG batch chunks requests to at most 100 stream ids', () async {
+      final now = DateTime.utc(2026, 1, 1, 12);
+      final transport = FakeXtreamTransport({'auth': xtreamAuth(auth: 1)});
+      transport.onRequest = (XtreamRequest request) {
+        if (request.action != 'get_epg_batch') {
+          return transport.responses[request.action ?? 'auth'];
+        }
+        final streamIds = request.params['stream_ids']!.split(',');
+        return <String, Object?>{
+          for (final streamId in streamIds)
+            streamId: <Map<String, Object?>>[
+              <String, Object?>{
+                'stream_id': int.parse(streamId),
+                'channel_id': 'epg.$streamId',
+                'title': 'Programme $streamId',
+                'description': 'Plain m3u-editor listing',
+                'start': now
+                    .add(Duration(seconds: int.parse(streamId)))
+                    .toIso8601String(),
+                'end': now
+                    .add(Duration(minutes: 30, seconds: int.parse(streamId)))
+                    .toIso8601String(),
+              },
+            ],
+        };
+      };
+      final service = XtreamService(transport: transport.call);
+      await service.authenticate(
+        const UserCredentials(
+          server: 'https://xtream.example',
+          username: 'demo',
+          password: 'secret',
+        ),
+      );
+
+      final programs = await service.getEpgBatch([
+        for (var index = 1; index <= 205; index += 1)
+          Channel(
+            id: index,
+            name: 'Channel $index',
+            streamUrl: 'https://example/live/$index.m3u8',
+          ),
+      ]);
+
+      final epgRequests = transport.requests
+          .where((request) => request.action == 'get_epg_batch')
+          .toList(growable: false);
+      expect(epgRequests, hasLength(3));
+      expect(epgRequests[0].params['stream_ids']!.split(','), hasLength(100));
+      expect(epgRequests[1].params['stream_ids']!.split(','), hasLength(100));
+      expect(epgRequests[2].params['stream_ids']!.split(','), hasLength(5));
+      expect(programs, hasLength(205));
+      expect(programs.first.channelId, 'epg.1');
+      expect(programs.first.title, 'Programme 1');
+      expect(programs.first.description, 'Plain m3u-editor listing');
+      expect(programs.last.channelId, 'epg.205');
+    });
+
+    test(
+      'EPG batch uses listing channel_id when response key is stream id',
+      () async {
+        final now = DateTime.utc(2026, 1, 1, 12);
+        final service = XtreamService(
+          transport: FakeXtreamTransport({
+            'auth': xtreamAuth(auth: 1),
+            'get_epg_batch': <String, Object?>{
+              '101': <Map<String, Object?>>[
+                <String, Object?>{
+                  'stream_id': 101,
+                  'channel_id': 'm3u-editor-channel-key',
+                  'title': 'Plain Short EPG Title',
+                  'description': 'Plain short EPG description',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+              ],
+            },
+          }).call,
+        );
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final programs = await service.getEpgBatch(const <Channel>[
+          Channel(
+            id: 101,
+            name: 'Fallback Name',
+            streamUrl: 'https://example/live/101.m3u8',
+            epgChannelId: 'stale-channel-key',
+          ),
+        ]);
+
+        expect(programs.single.channelId, 'm3u-editor-channel-key');
+        expect(programs.single.title, 'Plain Short EPG Title');
+        expect(programs.single.description, 'Plain short EPG description');
+      },
+    );
   });
 
   group('M3UParser contract', () {
@@ -511,10 +695,15 @@ class FakeXtreamTransport {
   FakeXtreamTransport(this.responses);
 
   final Map<String, Object?> responses;
+  final List<XtreamRequest> requests = <XtreamRequest>[];
   Map<String, String> lastHeaders = const {};
+  FutureOr<Object?> Function(XtreamRequest request)? onRequest;
 
   Future<Object?> call(XtreamRequest request) async {
+    requests.add(request);
     lastHeaders = request.headers;
+    final handler = onRequest;
+    if (handler != null) return handler(request);
     final action = request.action ?? 'auth';
     final response = responses[action];
     if (response == null) {

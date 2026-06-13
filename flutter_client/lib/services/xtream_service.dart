@@ -97,6 +97,7 @@ class XtreamService {
 
   static const _clientHeader = 'X-M3UE-Client';
   static const _clientValue = 'm3u-tv';
+  static const _epgBatchSize = 100;
 
   final XtreamTransport _transport;
   final CacheService? _cache;
@@ -189,6 +190,14 @@ class XtreamService {
           return VodItem.fromXtream(json, getVodStreamUrl(id, extension));
         })
         .toList(growable: false);
+  }
+
+  Future<VodInfo> getVodInfo(int vodId) async {
+    final response = await _request(
+      'get_vod_info',
+      params: {'vod_id': '$vodId'},
+    );
+    return VodInfo.fromXtream(_asMap(response));
   }
 
   Future<List<Series>> getSeries({String? categoryId}) async {
@@ -339,21 +348,32 @@ class XtreamService {
     int limit = 8,
   }) async {
     if (channels.isEmpty) return const <EpgProgram>[];
-    final response = await _request(
-      'get_epg_batch',
-      params: {
-        'stream_ids': channels
-            .map((Channel channel) => '${channel.id}')
-            .join(','),
-        'limit': '$limit',
-      },
-    );
-    final channelIdsByStream = <String, String>{
-      for (final channel in channels)
-        '${channel.id}':
-            channel.epgChannelId ?? channel.tvgName ?? channel.name,
-    };
-    return _parseEpgPrograms(response, channelIdsByStream: channelIdsByStream);
+    final programs = <EpgProgram>[];
+    for (var start = 0; start < channels.length; start += _epgBatchSize) {
+      final chunk = channels
+          .skip(start)
+          .take(_epgBatchSize)
+          .toList(growable: false);
+      final response = await _request(
+        'get_epg_batch',
+        params: {
+          'stream_ids': chunk
+              .map((Channel channel) => '${channel.id}')
+              .join(','),
+          'limit': '$limit',
+        },
+      );
+      final channelIdsByStream = <String, String>{
+        for (final channel in chunk)
+          '${channel.id}':
+              channel.epgChannelId ?? channel.tvgName ?? channel.name,
+      };
+      programs.addAll(
+        _parseEpgPrograms(response, channelIdsByStream: channelIdsByStream),
+      );
+    }
+    programs.sort((a, b) => a.start.compareTo(b.start));
+    return programs;
   }
 
   String getLiveStreamUrl(int streamId, {String format = 'm3u8'}) {
@@ -524,10 +544,10 @@ EpgProgram? _epgProgramFromMap(
   if (start == null || end == null || !end.isAfter(start)) return null;
   return EpgProgram(
     channelId: channelId,
-    title: _decodePossiblyBase64(
+    title: _decodeBase64WhenApplicable(
       _stringOrNull(json['title']) ?? _stringOrNull(json['name']) ?? '',
     ),
-    description: _decodePossiblyBase64(
+    description: _decodeBase64WhenApplicable(
       _stringOrNull(json['description']) ?? _stringOrNull(json['desc']) ?? '',
     ),
     start: start,
@@ -564,10 +584,15 @@ DateTime _fromEpoch(int value) {
   return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
 }
 
-String _decodePossiblyBase64(String value) {
+String _decodeBase64WhenApplicable(String value) {
   if (value.isEmpty) return value;
+  final text = value.trim();
+  if (text.length % 4 != 0 ||
+      !RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(text)) {
+    return value;
+  }
   try {
-    final normalized = base64.normalize(value);
+    final normalized = base64.normalize(text);
     final decoded = utf8.decode(
       base64.decode(normalized),
       allowMalformed: false,

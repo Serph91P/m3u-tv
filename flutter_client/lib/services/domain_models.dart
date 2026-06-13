@@ -3,17 +3,21 @@
 enum ContentType { live, vod, episode }
 
 class UserCredentials {
-  const UserCredentials({required this.server, required this.username, required this.password});
+  const UserCredentials({
+    required this.server,
+    required this.username,
+    required this.password,
+  });
 
   final String server;
   final String username;
   final String password;
 
   UserCredentials normalized() => UserCredentials(
-        server: server.replaceAll(RegExp(r'/+$'), ''),
-        username: username,
-        password: password,
-      );
+    server: server.replaceAll(RegExp(r'/+$'), ''),
+    username: username,
+    password: password,
+  );
 }
 
 class Category {
@@ -24,15 +28,18 @@ class Category {
   final int parentId;
 
   factory Category.fromXtream(Map<String, Object?> json) => Category(
-        id: '${json['category_id'] ?? ''}',
-        name: '${json['category_name'] ?? ''}',
-        parentId: _asInt(json['parent_id']),
-      );
+    id: '${json['category_id'] ?? ''}',
+    name: '${json['category_name'] ?? ''}',
+    parentId: _asInt(json['parent_id']),
+  );
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is Category && id == other.id && name == other.name && parentId == other.parentId;
+      other is Category &&
+          id == other.id &&
+          name == other.name &&
+          parentId == other.parentId;
 
   @override
   int get hashCode => Object.hash(id, name, parentId);
@@ -64,7 +71,8 @@ class Channel {
   final String? tvgName;
   final Map<String, String> headers;
 
-  factory Channel.fromXtream(Map<String, Object?> json, String streamUrl) => Channel(
+  factory Channel.fromXtream(Map<String, Object?> json, String streamUrl) =>
+      Channel(
         id: _asInt(json['stream_id']),
         name: '${json['name'] ?? ''}',
         streamUrl: streamUrl,
@@ -93,7 +101,8 @@ class VodItem {
   final String? categoryId;
   final double? rating;
 
-  factory VodItem.fromXtream(Map<String, Object?> json, String streamUrl) => VodItem(
+  factory VodItem.fromXtream(Map<String, Object?> json, String streamUrl) =>
+      VodItem(
         id: _asInt(json['stream_id']),
         name: '${json['name'] ?? ''}',
         streamUrl: streamUrl,
@@ -102,6 +111,82 @@ class VodItem {
         categoryId: _asNullableString(json['category_id']),
         rating: _asDoubleOrNull(json['rating_5based'] ?? json['rating']),
       );
+}
+
+class VodInfo {
+  const VodInfo({
+    required this.id,
+    required this.name,
+    this.plot,
+    this.genre,
+    this.director,
+    this.cast,
+    this.releaseDate,
+    this.year,
+    this.duration,
+    this.rating,
+    this.coverUrl,
+    this.containerExtension,
+  });
+
+  final int id;
+  final String name;
+  final String? plot;
+  final String? genre;
+  final String? director;
+  final String? cast;
+  final String? releaseDate;
+  final String? year;
+  final String? duration;
+  final double? rating;
+  final String? coverUrl;
+  final String? containerExtension;
+
+  factory VodInfo.fromXtream(Map<String, Object?> json) {
+    final info = _asMap(json['info']);
+    final movieData = _asMap(json['movie_data']);
+
+    Object? pick(List<String> keys) {
+      for (final source in [info, movieData, json]) {
+        for (final key in keys) {
+          if (source.containsKey(key)) return source[key];
+        }
+      }
+      return null;
+    }
+
+    final releaseDate = _asNullableString(
+      pick(['release_date', 'releasedate', 'releaseDate']),
+    );
+    final year =
+        _asNullableString(pick(['year'])) ?? _yearFromDate(releaseDate);
+
+    return VodInfo(
+      id: _asInt(pick(['stream_id', 'vod_id', 'id'])),
+      name: _asNullableString(pick(['name', 'title'])) ?? '',
+      plot: _asNullableString(pick(['plot', 'description', 'desc'])),
+      genre: _asNullableString(pick(['genre'])),
+      director: _asNullableString(pick(['director'])),
+      cast: _asNullableString(pick(['cast', 'actors'])),
+      releaseDate: releaseDate,
+      year: year,
+      duration: _durationText(
+        pick([
+          'duration',
+          'duration_secs',
+          'duration_seconds',
+          'episode_run_time',
+        ]),
+      ),
+      rating: _asDoubleOrNull(pick(['rating_5based', 'rating'])),
+      coverUrl: _asNullableString(
+        pick(['cover_big', 'movie_image', 'stream_icon', 'cover']),
+      ),
+      containerExtension: _asNullableString(
+        pick(['container_extension', 'containerExtension']),
+      ),
+    );
+  }
 }
 
 class Series {
@@ -122,17 +207,21 @@ class Series {
   final double? rating;
 
   factory Series.fromXtream(Map<String, Object?> json) => Series(
-        id: _asInt(json['series_id']),
-        name: '${json['name'] ?? ''}',
-        coverUrl: _asNullableString(json['cover']),
-        categoryId: _asNullableString(json['category_id']),
-        plot: _asNullableString(json['plot']),
-        rating: _asDoubleOrNull(json['rating_5based'] ?? json['rating']),
-      );
+    id: _asInt(json['series_id']),
+    name: '${json['name'] ?? ''}',
+    coverUrl: _asNullableString(json['cover']),
+    categoryId: _asNullableString(json['category_id']),
+    plot: _asNullableString(json['plot']),
+    rating: _asDoubleOrNull(json['rating_5based'] ?? json['rating']),
+  );
 }
 
 class Season {
-  const Season({required this.number, required this.name, this.episodeCount = 0});
+  const Season({
+    required this.number,
+    required this.name,
+    this.episodeCount = 0,
+  });
 
   final int number;
   final String name;
@@ -168,7 +257,9 @@ class Episode {
   final String? streamUrl;
 
   factory Episode.fromXtream(Map<String, Object?> json, {String? streamUrl}) {
-    final info = (json['info'] as Map?)?.cast<String, Object?>() ?? const <String, Object?>{};
+    final info =
+        (json['info'] as Map?)?.cast<String, Object?>() ??
+        const <String, Object?>{};
     return Episode(
       id: '${json['id'] ?? ''}',
       episodeNumber: _asInt(json['episode_num']),
@@ -182,7 +273,11 @@ class Episode {
 }
 
 class SeriesInfo {
-  const SeriesInfo({required this.series, required this.seasons, required this.episodesBySeason});
+  const SeriesInfo({
+    required this.series,
+    required this.seasons,
+    required this.episodesBySeason,
+  });
 
   final Series series;
   final List<Season> seasons;
@@ -206,7 +301,11 @@ class EpgProgram {
 }
 
 class EpgCurrentNext {
-  const EpgCurrentNext({required this.current, this.next, required this.progress});
+  const EpgCurrentNext({
+    required this.current,
+    this.next,
+    required this.progress,
+  });
 
   final EpgProgram current;
   final EpgProgram? next;
@@ -214,7 +313,12 @@ class EpgCurrentNext {
 }
 
 class Viewer {
-  const Viewer({required this.id, required this.ulid, required this.name, required this.isAdmin});
+  const Viewer({
+    required this.id,
+    required this.ulid,
+    required this.name,
+    required this.isAdmin,
+  });
 
   final int id;
   final String ulid;
@@ -222,18 +326,27 @@ class Viewer {
   final bool isAdmin;
 
   factory Viewer.fromJson(Map<String, Object?> json) => Viewer(
-        id: _asInt(json['id']),
-        ulid: '${json['ulid'] ?? ''}',
-        name: '${json['name'] ?? ''}',
-        isAdmin: json['is_admin'] == true,
-      );
+    id: _asInt(json['id']),
+    ulid: '${json['ulid'] ?? ''}',
+    name: '${json['name'] ?? ''}',
+    isAdmin: json['is_admin'] == true,
+  );
 
-  Map<String, Object?> toJson() => {'id': id, 'ulid': ulid, 'name': name, 'is_admin': isAdmin};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'ulid': ulid,
+    'name': name,
+    'is_admin': isAdmin,
+  };
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is Viewer && id == other.id && ulid == other.ulid && name == other.name && isAdmin == other.isAdmin;
+      other is Viewer &&
+          id == other.id &&
+          ulid == other.ulid &&
+          name == other.name &&
+          isAdmin == other.isAdmin;
 
   @override
   int get hashCode => Object.hash(id, ulid, name, isAdmin);
@@ -260,27 +373,34 @@ class Progress {
   final int? seriesId;
   final int? seasonNumber;
 
-  factory Progress.fromJson(Map<String, Object?> json, {String? viewerId}) => Progress(
+  factory Progress.fromJson(Map<String, Object?> json, {String? viewerId}) =>
+      Progress(
         viewerId: viewerId ?? '${json['viewer_id'] ?? ''}',
         contentType: contentTypeFromWire('${json['content_type'] ?? 'vod'}'),
         streamId: _asInt(json['stream_id']),
         positionSeconds: _asInt(json['position_seconds']),
-        durationSeconds: json.containsKey('duration_seconds') ? _asInt(json['duration_seconds']) : null,
+        durationSeconds: json.containsKey('duration_seconds')
+            ? _asInt(json['duration_seconds'])
+            : null,
         completed: json['completed'] == true || json['completed'] == 1,
-        seriesId: json.containsKey('series_id') ? _asInt(json['series_id']) : null,
-        seasonNumber: json.containsKey('season_number') ? _asInt(json['season_number']) : null,
+        seriesId: json.containsKey('series_id')
+            ? _asInt(json['series_id'])
+            : null,
+        seasonNumber: json.containsKey('season_number')
+            ? _asInt(json['season_number'])
+            : null,
       );
 
   Map<String, Object?> toJson() => {
-        'viewer_id': viewerId,
-        'content_type': contentType.wireName,
-        'stream_id': streamId,
-        'position_seconds': positionSeconds,
-        if (durationSeconds != null) 'duration_seconds': durationSeconds,
-        'completed': completed,
-        if (seriesId != null) 'series_id': seriesId,
-        if (seasonNumber != null) 'season_number': seasonNumber,
-      };
+    'viewer_id': viewerId,
+    'content_type': contentType.wireName,
+    'stream_id': streamId,
+    'position_seconds': positionSeconds,
+    if (durationSeconds != null) 'duration_seconds': durationSeconds,
+    'completed': completed,
+    if (seriesId != null) 'series_id': seriesId,
+    if (seasonNumber != null) 'season_number': seasonNumber,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -296,22 +416,31 @@ class Progress {
           seasonNumber == other.seasonNumber;
 
   @override
-  int get hashCode => Object.hash(viewerId, contentType, streamId, positionSeconds, durationSeconds, completed, seriesId, seasonNumber);
+  int get hashCode => Object.hash(
+    viewerId,
+    contentType,
+    streamId,
+    positionSeconds,
+    durationSeconds,
+    completed,
+    seriesId,
+    seasonNumber,
+  );
 }
 
 extension ContentTypeWire on ContentType {
   String get wireName => switch (this) {
-        ContentType.live => 'live',
-        ContentType.vod => 'vod',
-        ContentType.episode => 'episode',
-      };
+    ContentType.live => 'live',
+    ContentType.vod => 'vod',
+    ContentType.episode => 'episode',
+  };
 }
 
 ContentType contentTypeFromWire(String value) => switch (value) {
-      'live' => ContentType.live,
-      'episode' => ContentType.episode,
-      _ => ContentType.vod,
-    };
+  'live' => ContentType.live,
+  'episode' => ContentType.episode,
+  _ => ContentType.vod,
+};
 
 int _asInt(Object? value) {
   if (value is int) return value;
@@ -329,4 +458,34 @@ String? _asNullableString(Object? value) {
   if (value == null) return null;
   final text = '$value';
   return text.isEmpty ? null : text;
+}
+
+Map<String, Object?> _asMap(Object? value) {
+  if (value is Map<String, Object?>) return value;
+  if (value is Map) return value.cast<String, Object?>();
+  return const <String, Object?>{};
+}
+
+String? _durationText(Object? value) {
+  if (value == null) return null;
+  if (value is num) return _durationFromSeconds(value.toInt());
+  final text = '$value'.trim();
+  if (text.isEmpty) return null;
+  final seconds = int.tryParse(text);
+  if (seconds != null && seconds > 300) return _durationFromSeconds(seconds);
+  return text;
+}
+
+String _durationFromSeconds(int seconds) {
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds % 3600) ~/ 60;
+  if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
+  if (hours > 0) return '${hours}h';
+  return '${minutes}m';
+}
+
+String? _yearFromDate(String? value) {
+  if (value == null || value.length < 4) return null;
+  final match = RegExp(r'\d{4}').firstMatch(value);
+  return match?.group(0);
 }
