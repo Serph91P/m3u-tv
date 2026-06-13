@@ -1,5 +1,7 @@
 // ignore_for_file: prefer_initializing_formals
 
+import 'dart:convert';
+
 import 'cache_service.dart';
 import 'domain_models.dart';
 import 'xtream_http_transport_stub.dart'
@@ -38,9 +40,7 @@ class XtreamHttpException implements Exception {
   String toString() {
     final action = uri.queryParameters['action'];
     final safeUri = uri.replace(
-      queryParameters: <String, String>{
-        if (action != null) 'action': action,
-      },
+      queryParameters: <String, String>{if (action != null) 'action': action},
     );
     final serverDetail = serverMessage == null || serverMessage!.isEmpty
         ? ''
@@ -53,7 +53,14 @@ class XtreamHttpException implements Exception {
 }
 
 class XtreamRequest {
-  const XtreamRequest({required this.credentials, required this.headers, this.action, this.params = const {}, this.body = const {}, this.method = 'GET'});
+  const XtreamRequest({
+    required this.credentials,
+    required this.headers,
+    this.action,
+    this.params = const {},
+    this.body = const {},
+    this.method = 'GET',
+  });
 
   final UserCredentials credentials;
   final String? action;
@@ -63,16 +70,20 @@ class XtreamRequest {
   final String method;
 
   Map<String, Object?> toDebugMap() => {
-        'server': credentials.server,
-        'action': action,
-        'params': params,
-        'body': body,
-        'method': method,
-      };
+    'server': credentials.server,
+    'action': action,
+    'params': params,
+    'body': body,
+    'method': method,
+  };
 }
 
 class XtreamAuthResponse {
-  const XtreamAuthResponse({required this.isAuthenticated, this.status, this.m3uEditorVersion});
+  const XtreamAuthResponse({
+    required this.isAuthenticated,
+    this.status,
+    this.m3uEditorVersion,
+  });
 
   final bool isAuthenticated;
   final String? status;
@@ -81,8 +92,8 @@ class XtreamAuthResponse {
 
 class XtreamService {
   XtreamService({XtreamTransport? transport, CacheService? cache})
-      : _transport = transport ?? createDefaultXtreamTransport(),
-        _cache = cache;
+    : _transport = transport ?? createDefaultXtreamTransport(),
+      _cache = cache;
 
   static const _clientHeader = 'X-M3UE-Client';
   static const _clientValue = 'm3u-tv';
@@ -98,7 +109,11 @@ class XtreamService {
 
   Future<XtreamAuthResponse> authenticate(UserCredentials credentials) async {
     final normalized = credentials.normalized();
-    final response = await _requestWithCredentials(normalized, null, headers: const {_clientHeader: _clientValue});
+    final response = await _requestWithCredentials(
+      normalized,
+      null,
+      headers: const {_clientHeader: _clientValue},
+    );
     final json = _asMap(response);
 
     if (json.containsKey('error')) {
@@ -109,13 +124,21 @@ class XtreamService {
     final auth = _asInt(userInfo['auth']);
     final status = '${userInfo['status'] ?? userInfo['message'] ?? ''}';
     if (auth != 1) {
-      final code = status.toLowerCase().contains('exp') ? AuthErrorCode.expired : AuthErrorCode.invalidCredentials;
-      throw XtreamAuthException(code, status.isEmpty ? 'Authentication failed' : status);
+      final code = status.toLowerCase().contains('exp')
+          ? AuthErrorCode.expired
+          : AuthErrorCode.invalidCredentials;
+      throw XtreamAuthException(
+        code,
+        status.isEmpty ? 'Authentication failed' : status,
+      );
     }
 
     final m3uEditor = json['m3u_editor'];
     if (m3uEditor is! Map) {
-      throw const XtreamAuthException(AuthErrorCode.notM3UEditor, 'This app requires an m3u-editor backend.');
+      throw const XtreamAuthException(
+        AuthErrorCode.notM3UEditor,
+        'This app requires an m3u-editor backend.',
+      );
     }
 
     _credentials = normalized;
@@ -132,68 +155,127 @@ class XtreamService {
     _isM3UEditor = false;
   }
 
-  Future<List<Category>> getLiveCategories() async => _categories('get_live_categories');
-  Future<List<Category>> getVodCategories() async => _categories('get_vod_categories');
-  Future<List<Category>> getSeriesCategories() async => _categories('get_series_categories');
+  Future<List<Category>> getLiveCategories() async =>
+      _categories('get_live_categories');
+  Future<List<Category>> getVodCategories() async =>
+      _categories('get_vod_categories');
+  Future<List<Category>> getSeriesCategories() async =>
+      _categories('get_series_categories');
 
   Future<List<Channel>> getLiveStreams({String? categoryId}) async {
-    final response = await _request('get_live_streams', params: {if (categoryId != null) 'category_id': categoryId});
-    return _asList(response).map((item) {
-      final json = _asMap(item);
-      final id = _asInt(json['stream_id']);
-      return Channel.fromXtream(json, getLiveStreamUrl(id));
-    }).toList(growable: false);
+    final response = await _request(
+      'get_live_streams',
+      params: {if (categoryId != null) 'category_id': categoryId},
+    );
+    return _asList(response)
+        .map((item) {
+          final json = _asMap(item);
+          final id = _asInt(json['stream_id']);
+          return Channel.fromXtream(json, getLiveStreamUrl(id));
+        })
+        .toList(growable: false);
   }
 
   Future<List<VodItem>> getVodStreams({String? categoryId}) async {
-    final response = await _request('get_vod_streams', params: {if (categoryId != null) 'category_id': categoryId});
-    return _asList(response).map((item) {
-      final json = _asMap(item);
-      final id = _asInt(json['stream_id']);
-      final extension = '${json['container_extension'] ?? 'mp4'}';
-      return VodItem.fromXtream(json, getVodStreamUrl(id, extension));
-    }).toList(growable: false);
+    final response = await _request(
+      'get_vod_streams',
+      params: {if (categoryId != null) 'category_id': categoryId},
+    );
+    return _asList(response)
+        .map((item) {
+          final json = _asMap(item);
+          final id = _asInt(json['stream_id']);
+          final extension = '${json['container_extension'] ?? 'mp4'}';
+          return VodItem.fromXtream(json, getVodStreamUrl(id, extension));
+        })
+        .toList(growable: false);
   }
 
   Future<List<Series>> getSeries({String? categoryId}) async {
-    final response = await _request('get_series', params: {if (categoryId != null) 'category_id': categoryId});
-    return _asList(response).map((item) => Series.fromXtream(_asMap(item))).toList(growable: false);
+    final response = await _request(
+      'get_series',
+      params: {if (categoryId != null) 'category_id': categoryId},
+    );
+    return _asList(
+      response,
+    ).map((item) => Series.fromXtream(_asMap(item))).toList(growable: false);
   }
 
   Future<SeriesInfo> getSeriesInfo(int seriesId) async {
-    final response = await _request('get_series_info', params: {'series_id': '$seriesId'});
+    final response = await _request(
+      'get_series_info',
+      params: {'series_id': '$seriesId'},
+    );
     final json = _asMap(response);
     final series = Series.fromXtream(_asMap(json['info']));
-    final seasons = _asList(json['seasons']).map((item) => Season.fromXtream(_asMap(item))).toList();
+    final seasons = _asList(
+      json['seasons'],
+    ).map((item) => Season.fromXtream(_asMap(item))).toList();
     final episodeMap = <int, List<Episode>>{};
     final rawEpisodes = _asMap(json['episodes']);
     for (final entry in rawEpisodes.entries) {
       final seasonNumber = int.tryParse(entry.key) ?? 0;
-      episodeMap[seasonNumber] = _asList(entry.value).map((item) {
-        final episode = Episode.fromXtream(_asMap(item));
-        return Episode(
-          id: episode.id,
-          episodeNumber: episode.episodeNumber,
-          title: episode.title,
-          containerExtension: episode.containerExtension,
-          seasonNumber: episode.seasonNumber == 0 ? seasonNumber : episode.seasonNumber,
-          plot: episode.plot,
-          streamUrl: getSeriesStreamUrl(episode.id, episode.containerExtension),
-        );
-      }).toList(growable: false);
+      episodeMap[seasonNumber] = _asList(entry.value)
+          .map((item) {
+            final episode = Episode.fromXtream(_asMap(item));
+            return Episode(
+              id: episode.id,
+              episodeNumber: episode.episodeNumber,
+              title: episode.title,
+              containerExtension: episode.containerExtension,
+              seasonNumber: episode.seasonNumber == 0
+                  ? seasonNumber
+                  : episode.seasonNumber,
+              plot: episode.plot,
+              streamUrl: getSeriesStreamUrl(
+                episode.id,
+                episode.containerExtension,
+              ),
+            );
+          })
+          .toList(growable: false);
     }
     final resolvedSeasons = seasons.isNotEmpty
         ? seasons
-        : episodeMap.keys.map((number) => Season(number: number, name: 'Season $number', episodeCount: episodeMap[number]!.length)).toList();
-    return SeriesInfo(series: series, seasons: resolvedSeasons, episodesBySeason: episodeMap);
+        : episodeMap.keys
+              .map(
+                (number) => Season(
+                  number: number,
+                  name: 'Season $number',
+                  episodeCount: episodeMap[number]!.length,
+                ),
+              )
+              .toList();
+    return SeriesInfo(
+      series: series,
+      seasons: resolvedSeasons,
+      episodesBySeason: episodeMap,
+    );
   }
 
-  Future<List<Viewer>> getViewers() async => _asList(await _request('get_viewers')).map((item) => Viewer.fromJson(_asMap(item))).toList(growable: false);
+  Future<List<Viewer>> getViewers() async => _asList(
+    await _request('get_viewers'),
+  ).map((item) => Viewer.fromJson(_asMap(item))).toList(growable: false);
 
-  Future<Viewer> createViewer(String name) async => Viewer.fromJson(_asMap(await _request('create_viewer', method: 'POST', body: {'name': name})));
+  Future<Viewer> createViewer(String name) async => Viewer.fromJson(
+    _asMap(
+      await _request('create_viewer', method: 'POST', body: {'name': name}),
+    ),
+  );
 
-  Future<Progress?> getProgress(String viewerId, ContentType contentType, int streamId) async {
-    final response = await _request('get_progress', params: {'viewer_id': viewerId, 'content_type': contentType.wireName, 'stream_id': '$streamId'});
+  Future<Progress?> getProgress(
+    String viewerId,
+    ContentType contentType,
+    int streamId,
+  ) async {
+    final response = await _request(
+      'get_progress',
+      params: {
+        'viewer_id': viewerId,
+        'content_type': contentType.wireName,
+        'stream_id': '$streamId',
+      },
+    );
     if (response == null) return null;
     return Progress.fromJson(_asMap(response), viewerId: viewerId);
   }
@@ -206,18 +288,72 @@ class XtreamService {
     );
   }
 
-  Future<List<Progress>> getSeriesProgress(String viewerId, int seriesId) async {
-    final response = await _request('get_series_progress', params: {'viewer_id': viewerId, 'series_id': '$seriesId'});
-    return _asList(response).map((item) => Progress.fromJson(_asMap(item), viewerId: viewerId)).toList(growable: false);
+  Future<List<Progress>> getSeriesProgress(
+    String viewerId,
+    int seriesId,
+  ) async {
+    final response = await _request(
+      'get_series_progress',
+      params: {'viewer_id': viewerId, 'series_id': '$seriesId'},
+    );
+    return _asList(response)
+        .map((item) => Progress.fromJson(_asMap(item), viewerId: viewerId))
+        .toList(growable: false);
   }
 
-  Future<List<Progress>> getRecentlyWatched(String viewerId, {ContentType? type, int limit = 20}) async {
-    final response = await _request('get_recently_watched', params: {
-      'viewer_id': viewerId,
-      'limit': '$limit',
-      if (type != null) 'type': type.wireName,
-    });
-    return _asList(response).map((item) => Progress.fromJson(_asMap(item), viewerId: viewerId)).toList(growable: false);
+  Future<List<Progress>> getRecentlyWatched(
+    String viewerId, {
+    ContentType? type,
+    int limit = 20,
+  }) async {
+    final response = await _request(
+      'get_recently_watched',
+      params: {
+        'viewer_id': viewerId,
+        'limit': '$limit',
+        if (type != null) 'type': type.wireName,
+      },
+    );
+    return _asList(response)
+        .map((item) => Progress.fromJson(_asMap(item), viewerId: viewerId))
+        .toList(growable: false);
+  }
+
+  Future<List<EpgProgram>> getShortEpg(
+    int streamId, {
+    String? channelId,
+    int limit = 8,
+  }) async {
+    final response = await _request(
+      'get_short_epg',
+      params: {'stream_id': '$streamId', 'limit': '$limit'},
+    );
+    return _parseEpgPrograms(
+      response,
+      fallbackChannelId: channelId ?? '$streamId',
+    );
+  }
+
+  Future<List<EpgProgram>> getEpgBatch(
+    List<Channel> channels, {
+    int limit = 8,
+  }) async {
+    if (channels.isEmpty) return const <EpgProgram>[];
+    final response = await _request(
+      'get_epg_batch',
+      params: {
+        'stream_ids': channels
+            .map((Channel channel) => '${channel.id}')
+            .join(','),
+        'limit': '$limit',
+      },
+    );
+    final channelIdsByStream = <String, String>{
+      for (final channel in channels)
+        '${channel.id}':
+            channel.epgChannelId ?? channel.tvgName ?? channel.name,
+    };
+    return _parseEpgPrograms(response, channelIdsByStream: channelIdsByStream);
   }
 
   String getLiveStreamUrl(int streamId, {String format = 'm3u8'}) {
@@ -237,15 +373,28 @@ class XtreamService {
 
   Future<List<Category>> _categories(String action) async {
     final response = await _request(action);
-    final categories = _asList(response).map((item) => Category.fromXtream(_asMap(item))).toList(growable: false);
+    final categories = _asList(
+      response,
+    ).map((item) => Category.fromXtream(_asMap(item))).toList(growable: false);
     if (action == 'get_live_categories') {
       await _cache?.set('liveCategories', categories);
     }
     return categories;
   }
 
-  Future<Object?> _request(String action, {Map<String, String> params = const {}, Map<String, String> body = const {}, String method = 'GET'}) {
-    return _requestWithCredentials(_requireCredentials(), action, params: params, body: body, method: method);
+  Future<Object?> _request(
+    String action, {
+    Map<String, String> params = const {},
+    Map<String, String> body = const {},
+    String method = 'GET',
+  }) {
+    return _requestWithCredentials(
+      _requireCredentials(),
+      action,
+      params: params,
+      body: body,
+      method: method,
+    );
   }
 
   Future<Object?> _requestWithCredentials(
@@ -256,13 +405,28 @@ class XtreamService {
     Map<String, String> headers = const {},
     String method = 'GET',
   }) {
-    final requestHeaders = <String, String>{'Accept': 'application/json', if (_isM3UEditor) _clientHeader: _clientValue, ...headers};
-    return _transport(XtreamRequest(credentials: credentials, action: action, params: params, body: body, headers: requestHeaders, method: method));
+    final requestHeaders = <String, String>{
+      'Accept': 'application/json',
+      if (_isM3UEditor) _clientHeader: _clientValue,
+      ...headers,
+    };
+    return _transport(
+      XtreamRequest(
+        credentials: credentials,
+        action: action,
+        params: params,
+        body: body,
+        headers: requestHeaders,
+        method: method,
+      ),
+    );
   }
 
   UserCredentials _requireCredentials() {
     final credentials = _credentials;
-    if (credentials == null) throw StateError('Xtream credentials not configured');
+    if (credentials == null) {
+      throw StateError('Xtream credentials not configured');
+    }
     return credentials;
   }
 }
@@ -273,10 +437,149 @@ Map<String, Object?> _asMap(Object? value) {
   return const <String, Object?>{};
 }
 
-List<Object?> _asList(Object? value) => value is List ? value.cast<Object?>() : const <Object?>[];
+List<Object?> _asList(Object? value) =>
+    value is List ? value.cast<Object?>() : const <Object?>[];
 
 int _asInt(Object? value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse('$value') ?? 0;
+}
+
+List<EpgProgram> _parseEpgPrograms(
+  Object? response, {
+  String? fallbackChannelId,
+  Map<String, String> channelIdsByStream = const <String, String>{},
+}) {
+  final programs = <EpgProgram>[];
+  void addPrograms(Object? raw, String? channelId) {
+    for (final item in _epgListingList(raw)) {
+      final program = _epgProgramFromMap(
+        _asMap(item),
+        channelId,
+        channelIdsByStream,
+      );
+      if (program != null) programs.add(program);
+    }
+  }
+
+  if (response is Map) {
+    final json = response.cast<String, Object?>();
+    final listings =
+        json['epg_listings'] ??
+        json['listings'] ??
+        json['programmes'] ??
+        json['programs'];
+    if (listings != null) {
+      addPrograms(listings, fallbackChannelId);
+    } else {
+      for (final entry in json.entries) {
+        final resolved = channelIdsByStream[entry.key] ?? entry.key;
+        addPrograms(entry.value, resolved);
+      }
+    }
+  } else {
+    addPrograms(response, fallbackChannelId);
+  }
+  programs.sort((a, b) => a.start.compareTo(b.start));
+  return programs;
+}
+
+List<Object?> _epgListingList(Object? value) {
+  if (value is List) return value.cast<Object?>();
+  if (value is Map) {
+    final json = value.cast<String, Object?>();
+    return _asList(
+      json['epg_listings'] ??
+          json['listings'] ??
+          json['programmes'] ??
+          json['programs'],
+    );
+  }
+  return const <Object?>[];
+}
+
+EpgProgram? _epgProgramFromMap(
+  Map<String, Object?> json,
+  String? fallbackChannelId,
+  Map<String, String> channelIdsByStream,
+) {
+  final streamId = _stringOrNull(json['stream_id']);
+  final channelId =
+      _stringOrNull(json['channel_id']) ??
+      _stringOrNull(json['epg_channel_id']) ??
+      (streamId == null ? null : channelIdsByStream[streamId]) ??
+      fallbackChannelId;
+  if (channelId == null || channelId.isEmpty) return null;
+  final start = _parseEpgTime(
+    json['start_timestamp'] ?? json['start'] ?? json['start_time'],
+  );
+  final end = _parseEpgTime(
+    json['stop_timestamp'] ??
+        json['end_timestamp'] ??
+        json['end'] ??
+        json['stop'] ??
+        json['end_time'],
+  );
+  if (start == null || end == null || !end.isAfter(start)) return null;
+  return EpgProgram(
+    channelId: channelId,
+    title: _decodePossiblyBase64(
+      _stringOrNull(json['title']) ?? _stringOrNull(json['name']) ?? '',
+    ),
+    description: _decodePossiblyBase64(
+      _stringOrNull(json['description']) ?? _stringOrNull(json['desc']) ?? '',
+    ),
+    start: start,
+    end: end,
+  );
+}
+
+DateTime? _parseEpgTime(Object? value) {
+  if (value == null) return null;
+  if (value is int) return _fromEpoch(value);
+  if (value is num) return _fromEpoch(value.toInt());
+  final text = '$value'.trim();
+  if (text.isEmpty) return null;
+  final numeric = int.tryParse(text);
+  if (numeric != null) return _fromEpoch(numeric);
+  final parsed = DateTime.tryParse(text);
+  if (parsed != null) return parsed.isUtc ? parsed : parsed.toUtc();
+  final xtream = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$',
+  ).firstMatch(text);
+  if (xtream == null) return null;
+  return DateTime.utc(
+    int.parse(xtream.group(1)!),
+    int.parse(xtream.group(2)!),
+    int.parse(xtream.group(3)!),
+    int.parse(xtream.group(4)!),
+    int.parse(xtream.group(5)!),
+    int.parse(xtream.group(6)!),
+  );
+}
+
+DateTime _fromEpoch(int value) {
+  final milliseconds = value > 9999999999 ? value : value * 1000;
+  return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+}
+
+String _decodePossiblyBase64(String value) {
+  if (value.isEmpty) return value;
+  try {
+    final normalized = base64.normalize(value);
+    final decoded = utf8.decode(
+      base64.decode(normalized),
+      allowMalformed: false,
+    );
+    return decoded.isEmpty ? value : decoded;
+  } on FormatException {
+    return value;
+  }
+}
+
+String? _stringOrNull(Object? value) {
+  if (value == null) return null;
+  final text = '$value';
+  return text.isEmpty ? null : text;
 }

@@ -9,6 +9,7 @@ import 'domain_models.dart';
 import 'epg_service.dart';
 import 'favorites_service.dart';
 import 'm3u_parser.dart';
+import 'persistent_store.dart';
 import 'resume_service.dart';
 import 'secure_storage.dart';
 import 'viewer_service.dart';
@@ -27,10 +28,16 @@ class AppStateController extends ChangeNotifier {
     ViewerService? viewerService,
     EpgService? epgService,
     M3UParser? m3uParser,
+    PersistentJsonStore? persistentStore,
   }) {
-    final resolvedSecureStorage = secureStorage ?? InMemorySecureStorage();
+    final store = persistentStore ?? PersistentJsonStore();
+    final resolvedSecureStorage =
+        secureStorage ?? FileSecureStorage(store: store);
+    final resolvedCacheService = cacheService ?? CacheService(store: store);
     final resolvedXtreamService =
-        xtreamService ?? authNotifier?.xtreamService ?? XtreamService();
+        xtreamService ??
+        authNotifier?.xtreamService ??
+        XtreamService(cache: resolvedCacheService);
     return AppStateController._(
       authNotifier:
           authNotifier ??
@@ -40,10 +47,10 @@ class AppStateController extends ChangeNotifier {
           ),
       xtreamService: resolvedXtreamService,
       secureStorage: resolvedSecureStorage,
-      cacheService: cacheService ?? CacheService(),
-      favoritesService: favoritesService ?? FavoritesService(),
-      resumeService: resumeService ?? ResumeService(),
-      viewerService: viewerService ?? ViewerService(),
+      cacheService: resolvedCacheService,
+      favoritesService: favoritesService ?? FavoritesService(store: store),
+      resumeService: resumeService ?? ResumeService(store: store),
+      viewerService: viewerService ?? ViewerService(store: store),
       epgService: epgService ?? EpgService(),
       m3uParser: m3uParser ?? M3UParser(),
     );
@@ -239,6 +246,8 @@ class AppStateController extends ChangeNotifier {
       ]);
 
       final viewers = results[6] as List<Viewer>;
+      final channels = results[3] as List<Channel>;
+      await _loadXtreamEpg(channels);
       final activeViewer = await viewerService.resolveActiveViewer(viewers);
       final progress = activeViewer == null
           ? const <Progress>[]
@@ -249,7 +258,7 @@ class AppStateController extends ChangeNotifier {
       await cacheService.set('liveCategories', results[0] as List<Category>);
       await cacheService.set('vodCategories', results[1] as List<Category>);
       await cacheService.set('seriesCategories', results[2] as List<Category>);
-      await cacheService.set('liveStreams', results[3] as List<Channel>);
+      await cacheService.set('liveStreams', channels);
       await cacheService.set('vodStreams', results[4] as List<VodItem>);
       await cacheService.set('seriesStreams', results[5] as List<Series>);
       await secureStorage.write(
@@ -261,7 +270,7 @@ class AppStateController extends ChangeNotifier {
       _liveCategories = results[0] as List<Category>;
       _vodCategories = results[1] as List<Category>;
       _seriesCategories = results[2] as List<Category>;
-      _channels = results[3] as List<Channel>;
+      _channels = channels;
       _vodItems = results[4] as List<VodItem>;
       _seriesList = results[5] as List<Series>;
       _activeViewer = activeViewer;
@@ -281,6 +290,17 @@ class AppStateController extends ChangeNotifier {
     }
     final local = await resumeService.all(viewerId);
     return <Progress>{...remote, ...local}.toList(growable: false);
+  }
+
+  Future<void> _loadXtreamEpg(List<Channel> channels) async {
+    try {
+      final programs = await xtreamService.getEpgBatch(channels);
+      if (programs.isNotEmpty) {
+        epgService.loadPrograms(programs);
+      }
+    } catch (_) {
+      epgService.clear();
+    }
   }
 
   Future<void> _loadSavedM3uSource() async {

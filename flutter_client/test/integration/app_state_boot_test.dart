@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/resume_service.dart';
 import 'package:m3u_tv/services/secure_storage.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
@@ -91,6 +93,20 @@ void main() {
         await restarted.boot();
 
         expect(restarted.channels.single.name, 'BBC One');
+        expect(
+          restarted.epgService
+              .lookupForChannel(restarted.channels.single)
+              ?.current
+              .title,
+          'News at Noon',
+        );
+        expect(
+          restarted.epgService
+              .lookupForChannel(restarted.channels.single)
+              ?.next
+              ?.title,
+          'Afternoon News',
+        );
         expect(await restarted.favoritesService.isFavorite(101), isTrue);
         expect(restarted.progressList.single.streamId, 201);
         expect(restarted.progressList.single.positionSeconds, 91);
@@ -162,6 +178,76 @@ void main() {
         expect(_visibleText(tester), contains('M3U parse error'));
         expect(_visibleText(tester), isNot(contains('fixture-password')));
         expect(_visibleText(tester), isNot(contains('fixture-user')));
+      },
+    );
+
+    test(
+      'production defaults persist state across controller instances',
+      () async {
+        final directory = await io.Directory.systemTemp.createTemp(
+          'm3u-tv-state-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final stateFile = io.File('${directory.path}/state.json');
+        final store = PersistentJsonStore(file: stateFile);
+
+        final first = AppStateController(
+          persistentStore: store,
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        expect(
+          await first.connectXtream(
+            const UserCredentials(
+              server: 'https://fixture.example',
+              username: 'fixture-user',
+              password: 'fixture-password',
+            ),
+          ),
+          isTrue,
+        );
+        await first.favoritesService.add(101);
+        await first.resumeService.save(
+          const Progress(
+            viewerId: 'viewer-admin',
+            contentType: ContentType.vod,
+            streamId: 201,
+            positionSeconds: 91,
+            durationSeconds: 600,
+          ),
+        );
+        final cachedChannels = await first.cacheService.get<List<Channel>>(
+          'liveStreams',
+        );
+        expect(cachedChannels?.data.single.name, 'BBC One');
+
+        final restarted = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        await restarted.boot();
+
+        expect(restarted.sourceType, AppSourceType.xtream);
+        expect(restarted.channels.single.name, 'BBC One');
+        expect(
+          restarted.epgService
+              .lookupForChannel(restarted.channels.single)
+              ?.current
+              .title,
+          'News at Noon',
+        );
+        expect(await restarted.favoritesService.isFavorite(101), isTrue);
+        expect(restarted.activeViewer?.ulid, 'viewer-admin');
+        expect(restarted.progressList.single.positionSeconds, 91);
+        expect(
+          (await restarted.cacheService.get<List<Channel>>(
+            'liveStreams',
+          ))?.data.single.name,
+          'BBC One',
+        );
       },
     );
   });
@@ -279,6 +365,38 @@ class _FakeXtreamTransport {
           },
         ],
         'get_recently_watched': <Map<String, Object?>>[],
+        'get_epg_batch': <String, Object?>{
+          '101': <Map<String, Object?>>[
+            <String, Object?>{
+              'stream_id': 101,
+              'title': base64Encode(utf8.encode('News at Noon')),
+              'description': base64Encode(utf8.encode('Fixture bulletin')),
+              'start_timestamp':
+                  DateTime.now()
+                      .subtract(const Duration(minutes: 10))
+                      .millisecondsSinceEpoch ~/
+                  1000,
+              'stop_timestamp':
+                  DateTime.now()
+                      .add(const Duration(minutes: 20))
+                      .millisecondsSinceEpoch ~/
+                  1000,
+            },
+            <String, Object?>{
+              'stream_id': 101,
+              'title': base64Encode(utf8.encode('Afternoon News')),
+              'description': 'Next fixture',
+              'start': DateTime.now()
+                  .add(const Duration(minutes: 20))
+                  .toUtc()
+                  .toIso8601String(),
+              'end': DateTime.now()
+                  .add(const Duration(minutes: 50))
+                  .toUtc()
+                  .toIso8601String(),
+            },
+          ],
+        },
       });
 
   final Map<String, Object?> responses;
