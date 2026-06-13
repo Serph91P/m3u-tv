@@ -2,91 +2,201 @@ import 'package:flutter/material.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
-class VodDetailsScreen extends StatelessWidget {
-  const VodDetailsScreen({super.key, required this.item});
+class VodDetailsScreen extends StatefulWidget {
+  const VodDetailsScreen({super.key, required this.item, this.xtreamService});
 
   final VodItem item;
+  final XtreamService? xtreamService;
+
+  @override
+  State<VodDetailsScreen> createState() => _VodDetailsScreenState();
+}
+
+class _VodDetailsScreenState extends State<VodDetailsScreen> {
+  late final Future<VodInfo?>? _future = widget.xtreamService?.getVodInfo(
+    widget.item.id,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.item.name)),
+      body: SafeArea(
+        child: _future == null
+            ? _VodDetailsBody(item: widget.item)
+            : FutureBuilder<VodInfo?>(
+                future: _future,
+                builder: (context, snapshot) {
+                  return _VodDetailsBody(
+                    item: widget.item,
+                    info: snapshot.hasError ? null : snapshot.data,
+                    isLoading: snapshot.connectionState != ConnectionState.done,
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
+class _VodDetailsBody extends StatelessWidget {
+  const _VodDetailsBody({
+    required this.item,
+    this.info,
+    this.isLoading = false,
+  });
+
+  final VodItem item;
+  final VodInfo? info;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(item.name)),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 220,
-                child: AspectRatio(
-                  aspectRatio: 0.68,
-                  child: ResilientMediaImage(
-                    imageUrl: item.logoUrl,
-                    fallbackIcon: Icons.movie,
-                    borderRadius: 16,
-                  ),
-                ),
+    final details = _ResolvedVodDetails(item, info);
+
+    return Padding(
+      padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 220,
+            child: AspectRatio(
+              aspectRatio: 0.68,
+              child: ResilientMediaImage(
+                imageUrl: details.coverUrl,
+                fallbackIcon: Icons.movie,
+                borderRadius: MediaBrowsingMetrics.cardRadius,
+                fallbackTitle: details.name,
               ),
-              const SizedBox(width: 32),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.name, style: theme.textTheme.headlineMedium),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        _MetadataChip(label: item.containerExtension.toUpperCase()),
-                        if (item.rating != null)
-                          _MetadataChip(label: 'Rating ${item.rating}'),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Movie details',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Ready to play in-app.',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const Spacer(),
-                    FilledButton.icon(
-                      autofocus: true,
-                      onPressed: () => _play(context),
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Play movie'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: MediaBrowsingMetrics.pagePadding),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(details.name, style: theme.textTheme.headlineMedium),
+                  const SizedBox(height: MediaBrowsingMetrics.itemGap),
+                  Wrap(
+                    spacing: MediaBrowsingMetrics.itemGap,
+                    runSpacing: MediaBrowsingMetrics.chipGap,
+                    children: [
+                      if (details.year != null)
+                        _MetadataChip(label: details.year!),
+                      if (details.genre != null)
+                        _MetadataChip(label: details.genre!),
+                      if (details.duration != null)
+                        _MetadataChip(label: details.duration!),
+                      if (details.rating != null)
+                        _MetadataChip(label: 'Rating ${details.rating}'),
+                      if (details.containerExtension != null)
+                        _MetadataChip(
+                          label: details.containerExtension!.toUpperCase(),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+                  FilledButton.icon(
+                    autofocus: true,
+                    onPressed: () => _play(context, details),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Play movie'),
+                  ),
+                  const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+                  if (isLoading) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+                  ],
+                  Text(
+                    details.plot ?? 'No synopsis available.',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (details.director != null || details.cast != null) ...[
+                    const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+                    if (details.director != null)
+                      _CreditLine(label: 'Director', value: details.director!),
+                    if (details.cast != null)
+                      _CreditLine(label: 'Cast', value: details.cast!),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  void _play(BuildContext context) {
+  void _play(BuildContext context, _ResolvedVodDetails details) {
     Navigator.of(context).pushNamed(
       RouteNames.player,
       arguments: PlayerArgs(
         streamUrl: item.streamUrl,
-        title: item.name,
+        title: details.name,
         type: 'vod',
         streamId: item.id,
         metadata: <String, Object?>{
-          'container_extension': item.containerExtension,
+          if (details.containerExtension != null)
+            'container_extension': details.containerExtension,
+          if (details.duration != null) 'duration': details.duration,
+          if (details.rating != null) 'rating': details.rating,
         },
+      ),
+    );
+  }
+}
+
+class _ResolvedVodDetails {
+  _ResolvedVodDetails(this.item, this.info);
+
+  final VodItem item;
+  final VodInfo? info;
+
+  String get name => _notEmpty(info?.name) ?? item.name;
+  String? get plot => _notEmpty(info?.plot);
+  String? get genre => _notEmpty(info?.genre);
+  String? get director => _notEmpty(info?.director);
+  String? get cast => _notEmpty(info?.cast);
+  String? get year => _notEmpty(info?.year) ?? _notEmpty(info?.releaseDate);
+  String? get duration => _notEmpty(info?.duration);
+  double? get rating => info?.rating ?? item.rating;
+  String? get coverUrl => _notEmpty(info?.coverUrl) ?? _notEmpty(item.logoUrl);
+  String? get containerExtension =>
+      _notEmpty(info?.containerExtension) ?? item.containerExtension;
+}
+
+class _CreditLine extends StatelessWidget {
+  const _CreditLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: MediaBrowsingMetrics.chipGap),
+      child: RichText(
+        text: TextSpan(
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            TextSpan(text: value),
+          ],
+        ),
       ),
     );
   }
@@ -106,4 +216,9 @@ class _MetadataChip extends StatelessWidget {
       side: BorderSide(color: colorScheme.outlineVariant),
     );
   }
+}
+
+String? _notEmpty(String? value) {
+  final text = value?.trim();
+  return text == null || text.isEmpty ? null : text;
 }

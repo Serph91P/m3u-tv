@@ -464,6 +464,7 @@ class _ContentNavigator extends StatelessWidget {
     final router = buildAppRouter(
       mainRouteBuilder: _buildMainRoute,
       xtreamService: appState.xtreamService,
+      epgService: appState.epgService,
       playbackOrchestratorBuilder: playbackOrchestratorBuilder,
       playerRouteBuilder: playerRouteBuilder,
     );
@@ -483,7 +484,7 @@ class _ContentNavigator extends StatelessWidget {
         title: channel.name,
         type: 'live',
         streamId: channel.id,
-        epgChannelId: channel.epgChannelId,
+        epgChannelId: channel.epgChannelId ?? channel.tvgName ?? channel.name,
         headers: channel.headers,
       ),
     );
@@ -665,6 +666,9 @@ class _HomeScreen extends StatelessWidget {
               imageUrl: item.logoUrl,
               subtitle: item.rating == null ? 'Movie' : '★ ${item.rating}',
               fallbackIcon: Icons.movie,
+              imageFit: BoxFit.contain,
+              imageAspectRatio: 2 / 3,
+              fallbackTitle: item.name,
               onTap: () => onVodSelect(item),
             ),
           )
@@ -680,6 +684,9 @@ class _HomeScreen extends StatelessWidget {
               imageUrl: series.coverUrl,
               subtitle: series.rating == null ? 'Series' : '★ ${series.rating}',
               fallbackIcon: Icons.tv,
+              imageFit: BoxFit.contain,
+              imageAspectRatio: 2 / 3,
+              fallbackTitle: series.name,
               onTap: () => onSeriesSelect(series),
             ),
           )
@@ -737,6 +744,9 @@ class _HomeScreen extends StatelessWidget {
         imageUrl: item.logoUrl,
         subtitle: 'Stream ${progress.streamId}',
         fallbackIcon: Icons.play_circle_outline,
+        imageFit: BoxFit.contain,
+        imageAspectRatio: 2 / 3,
+        fallbackTitle: item.name,
         onTap: () => onProgressSelect(progress),
       );
     }
@@ -752,6 +762,9 @@ class _HomeScreen extends StatelessWidget {
         imageUrl: series.coverUrl,
         subtitle: 'Episode ${progress.streamId}',
         fallbackIcon: Icons.play_circle_outline,
+        imageFit: BoxFit.contain,
+        imageAspectRatio: 2 / 3,
+        fallbackTitle: series.name,
         onTap: () => onProgressSelect(progress),
       );
     }

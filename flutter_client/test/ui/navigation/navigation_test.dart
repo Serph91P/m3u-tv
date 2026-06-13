@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/app/app_shell.dart';
+import 'package:m3u_tv/features/player/player_screen.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
@@ -12,6 +13,7 @@ import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/resume_service.dart';
 import 'package:m3u_tv/services/secure_storage.dart';
@@ -145,6 +147,39 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
+    testWidgets('Player route receives supplied EPG service', (tester) async {
+      final epgService = EpgService();
+      await tester.pumpWidget(
+        MaterialApp(
+          onGenerateRoute: buildAppRouter(
+            epgService: epgService,
+            playbackOrchestratorBuilder: _testPlaybackOrchestrator,
+          ),
+          initialRoute: RouteNames.home,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nav = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        nav.pushNamed(
+          RouteNames.player,
+          arguments: const PlayerArgs(
+            streamUrl: 'http://example.com/stream.m3u8',
+            title: 'Test Channel',
+            type: 'live',
+            epgChannelId: 'bbc.one',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final player = tester.widget<PlayerScreen>(find.byType(PlayerScreen));
+      expect(identical(player.epgService, epgService), isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('Details route pushes via inner navigator', (tester) async {
       await tester.pumpWidget(const _TestApp(deviceType: DeviceType.tv));
       await tester.pumpAndSettle();
@@ -224,6 +259,42 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('selecting live channel passes name as EPG fallback', (
+    tester,
+  ) async {
+    PlayerArgs? capturedArgs;
+    final appState = _testAppState(xtreamService: _NavigationXtreamService());
+    addTearDown(appState.dispose);
+    await appState.connectXtream(
+      const UserCredentials(
+        server: 'http://example.com',
+        username: 'user',
+        password: 'pass',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _TestApp(
+        deviceType: DeviceType.tv,
+        appState: appState,
+        playerRouteBuilder: (PlayerArgs args) {
+          capturedArgs = args;
+          return _testPlayerRoute(args);
+        },
+      ),
+    );
+    await _pumpAppFrame(tester);
+
+    await tester.tap(_sidebarText('Live TV'));
+    await _pumpAppFrame(tester);
+    await tester.tap(find.text('Route News').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(capturedArgs?.epgChannelId, 'Route News');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('selecting Home continue watching movie opens player route', (
     tester,
   ) async {
@@ -265,36 +336,37 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('selecting movie from app shell opens details then player route', (
-    tester,
-  ) async {
-    final appState = _testAppState(xtreamService: _NavigationXtreamService());
-    addTearDown(appState.dispose);
-    await appState.connectXtream(
-      const UserCredentials(
-        server: 'http://example.com',
-        username: 'user',
-        password: 'pass',
-      ),
-    );
+  testWidgets(
+    'selecting movie from app shell opens details then player route',
+    (tester) async {
+      final appState = _testAppState(xtreamService: _NavigationXtreamService());
+      addTearDown(appState.dispose);
+      await appState.connectXtream(
+        const UserCredentials(
+          server: 'http://example.com',
+          username: 'user',
+          password: 'pass',
+        ),
+      );
 
-    await tester.pumpWidget(
-      _TestApp(deviceType: DeviceType.tv, appState: appState),
-    );
-    await _pumpAppFrame(tester);
+      await tester.pumpWidget(
+        _TestApp(deviceType: DeviceType.tv, appState: appState),
+      );
+      await _pumpAppFrame(tester);
 
-    await tester.tap(_sidebarText('Movies'));
-    await _pumpAppFrame(tester);
-    await tester.tap(find.text('Route Movie').last);
-    await _pumpAppFrame(tester);
+      await tester.tap(_sidebarText('Movies'));
+      await _pumpAppFrame(tester);
+      await tester.tap(find.text('Route Movie').last);
+      await _pumpAppFrame(tester);
 
-    expect(find.text('Play movie'), findsOneWidget);
-    await tester.tap(find.text('Play movie'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Player route: Route Movie'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+      expect(find.text('Play movie'), findsOneWidget);
+      await tester.tap(find.text('Play movie'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Player route: Route Movie'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('selecting series from app shell opens series details route', (
     tester,
@@ -352,7 +424,9 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('TV layout does not overflow at tiny constraints', (tester) async {
+  testWidgets('TV layout does not overflow at tiny constraints', (
+    tester,
+  ) async {
     final previousOnError = FlutterError.onError;
     final errors = <FlutterErrorDetails>[];
     FlutterError.onError = errors.add;
@@ -365,7 +439,8 @@ void main() {
 
     expect(
       errors.where(
-        (details) => details.exceptionAsString().contains('RenderFlex overflowed'),
+        (details) =>
+            details.exceptionAsString().contains('RenderFlex overflowed'),
       ),
       isEmpty,
     );
@@ -582,10 +657,15 @@ Future<void> _pumpAppFrame(WidgetTester tester) async {
 
 /// Test app that wraps AppShell with a controlled device type.
 class _TestApp extends StatefulWidget {
-  const _TestApp({required this.deviceType, this.appState});
+  const _TestApp({
+    required this.deviceType,
+    this.appState,
+    this.playerRouteBuilder,
+  });
 
   final DeviceType deviceType;
   final AppStateController? appState;
+  final Widget Function(PlayerArgs args)? playerRouteBuilder;
 
   @override
   State<_TestApp> createState() => _TestAppState();
@@ -611,7 +691,7 @@ class _TestAppState extends State<_TestApp> {
         deviceType: widget.deviceType,
         appState: _appState,
         playbackOrchestratorBuilder: _testPlaybackOrchestrator,
-        playerRouteBuilder: _testPlayerRoute,
+        playerRouteBuilder: widget.playerRouteBuilder ?? _testPlayerRoute,
       ),
     );
   }
@@ -779,6 +859,16 @@ class _NavigationXtreamService extends XtreamService {
       plot: 'Route series plot',
     ),
   ];
+
+  @override
+  Future<VodInfo> getVodInfo(int vodId) async => const VodInfo(
+    id: 201,
+    name: 'Route Movie',
+    plot: 'Route movie plot',
+    genre: 'Adventure',
+    duration: '90m',
+    containerExtension: 'mp4',
+  );
 
   @override
   Future<SeriesInfo> getSeriesInfo(int seriesId) async => const SeriesInfo(
