@@ -22,6 +22,88 @@ class MediaBrowsingMetrics {
   static const double previewCardHeight = 148;
 }
 
+class InlineMediaSearchField extends StatefulWidget {
+  const InlineMediaSearchField({
+    required this.query,
+    required this.onChanged,
+    this.hintText = 'Search...',
+    this.autofocus = false,
+    this.focusNode,
+    this.textInputAction = TextInputAction.search,
+    super.key,
+  });
+
+  final String query;
+  final ValueChanged<String> onChanged;
+  final String hintText;
+  final bool autofocus;
+  final FocusNode? focusNode;
+  final TextInputAction textInputAction;
+
+  @override
+  State<InlineMediaSearchField> createState() => _InlineMediaSearchFieldState();
+}
+
+class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.query);
+  }
+
+  @override
+  void didUpdateWidget(InlineMediaSearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.query != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: widget.query,
+        selection: TextSelection.collapsed(offset: widget.query.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _clear() {
+    _controller.clear();
+    widget.onChanged('');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return TextField(
+      controller: _controller,
+      focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
+      textInputAction: widget.textInputAction,
+      decoration: InputDecoration(
+        hintText: widget.hintText,
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: widget.query.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                icon: const Icon(Icons.clear),
+                onPressed: _clear,
+              ),
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHigh,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
+        ),
+      ),
+      onChanged: widget.onChanged,
+    );
+  }
+}
+
 class ResilientMediaImage extends StatelessWidget {
   const ResilientMediaImage({
     required this.imageUrl,
@@ -29,6 +111,8 @@ class ResilientMediaImage extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.aspectRatio,
+    this.fallbackTitle,
     this.borderRadius = MediaBrowsingMetrics.posterRadius,
     super.key,
   });
@@ -38,15 +122,17 @@ class ResilientMediaImage extends StatelessWidget {
   final double? width;
   final double? height;
   final BoxFit fit;
+  final double? aspectRatio;
+  final String? fallbackTitle;
   final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fallback = _MediaImageFallback(icon: fallbackIcon);
+    final fallback = _MediaImageFallback(icon: fallbackIcon, title: fallbackTitle);
     final url = imageUrl;
 
-    return ClipRRect(
+    final image = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: SizedBox(
         width: width,
@@ -77,19 +163,55 @@ class ResilientMediaImage extends StatelessWidget {
         ),
       ),
     );
+    if (aspectRatio == null) return image;
+    return AspectRatio(aspectRatio: aspectRatio!, child: image);
   }
 }
 
 class _MediaImageFallback extends StatelessWidget {
-  const _MediaImageFallback({required this.icon});
+  const _MediaImageFallback({required this.icon, this.title});
 
   final IconData icon;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Icon(icon, size: 48, color: colorScheme.onSurfaceVariant),
+    final fallbackTitle = title;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Center(child: Icon(icon, size: 48, color: colorScheme.onSurfaceVariant)),
+        if (fallbackTitle != null && fallbackTitle.isNotEmpty)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    colorScheme.surface.withValues(alpha: 0.82),
+                  ],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(MediaBrowsingMetrics.chipGap),
+                child: Text(
+                  fallbackTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -356,6 +478,9 @@ class MediaPreviewItem {
     required this.onTap,
     this.imageUrl,
     this.subtitle,
+    this.imageFit = BoxFit.cover,
+    this.imageAspectRatio,
+    this.fallbackTitle,
   });
 
   final String title;
@@ -363,6 +488,9 @@ class MediaPreviewItem {
   final String? subtitle;
   final IconData fallbackIcon;
   final VoidCallback onTap;
+  final BoxFit imageFit;
+  final double? imageAspectRatio;
+  final String? fallbackTitle;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -451,6 +579,9 @@ class MediaPreviewCard extends StatelessWidget {
                   child: ResilientMediaImage(
                     imageUrl: item.imageUrl,
                     fallbackIcon: item.fallbackIcon,
+                    fit: item.imageFit,
+                    aspectRatio: item.imageAspectRatio,
+                    fallbackTitle: item.fallbackTitle,
                     borderRadius: 0,
                   ),
                 ),
