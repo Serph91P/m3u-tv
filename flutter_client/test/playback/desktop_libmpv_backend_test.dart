@@ -23,7 +23,8 @@ void main() {
               return <String, Object?>{
                 'ok': false,
                 'code': BackendUnavailableException.unavailableCode,
-                'error': 'libmpv shared library not found; tried libmpv.so.2',
+                'error':
+                    'mpv_create returned null; library=libmpv.so.2; LC_NUMERIC=C; ensure LC_NUMERIC is C or C.UTF-8 before creating libmpv',
               };
             });
         final backend = DesktopLibmpvBackend(channel: channel);
@@ -40,6 +41,8 @@ void main() {
         await pumpEventQueue();
         expect(errors, hasLength(1));
         expect(errors.single.code, BackendUnavailableException.unavailableCode);
+        expect(errors.single.message, contains('library=libmpv.so.2'));
+        expect(errors.single.message, contains('LC_NUMERIC=C'));
         expect(errors.single.recoverable, isTrue);
         expect(backend.textureId, isNull);
 

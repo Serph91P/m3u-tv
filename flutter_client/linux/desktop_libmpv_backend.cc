@@ -2,6 +2,7 @@
 
 #include <dlfcn.h>
 #include <gdk/gdk.h>
+#include <locale.h>
 #ifdef GDK_WINDOWING_WAYLAND
 #include <gdk/gdkwayland.h>
 #endif
@@ -227,6 +228,20 @@ std::string DisplayDetails(const DisplayInfo& display) {
   return details.str();
 }
 
+std::string CurrentNumericLocale() {
+  const char* locale = setlocale(LC_NUMERIC, nullptr);
+  return locale == nullptr ? "unknown" : locale;
+}
+
+std::string MpvCreateNullError(const LibmpvApi& api) {
+  std::ostringstream error;
+  error << "mpv_create returned null; library="
+        << (api.library_name.empty() ? "unknown" : api.library_name)
+        << "; LC_NUMERIC=" << CurrentNumericLocale()
+        << "; ensure LC_NUMERIC is C or C.UTF-8 before creating libmpv";
+  return error.str();
+}
+
 FlValue* ProbeResult() {
   LibmpvApi& api = Api();
   const DisplayInfo display = GetDisplayInfo();
@@ -356,8 +371,11 @@ FlMethodResponse* Load(FlValue* args) {
     return LoadFailure(kBackendUnavailableCode, "Flutter texture registrar unavailable");
   }
 
+  setlocale(LC_NUMERIC, "C");
   mpv_handle* handle = api.create();
-  if (handle == nullptr) return LoadFailure("desktop-libmpv-load-failed", "mpv_create returned null");
+  if (handle == nullptr) {
+    return LoadFailure("desktop-libmpv-load-failed", MpvCreateNullError(api));
+  }
 
   api.set_option_string(handle, "terminal", "no");
   api.set_option_string(handle, "config", "no");
