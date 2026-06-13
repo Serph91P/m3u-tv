@@ -414,11 +414,15 @@ class AppStateController extends ChangeNotifier {
   Future<void> _loadXtreamEpg(List<Channel> channels) async {
     try {
       final programs = await xtreamService.getEpgBatch(channels);
+      if (kDebugMode) {
+        debugPrint('[EPG] getEpgBatch → ${programs.length} programs for ${channels.length} channels');
+      }
       if (programs.isNotEmpty) {
         epgService.loadPrograms(programs);
         notifyListeners();
       }
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) debugPrint('[EPG] getEpgBatch failed: $e');
       // Don't clear existing EPG data on a batch failure — a transient network
       // error shouldn't wipe a previously loaded guide.
     }

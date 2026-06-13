@@ -525,11 +525,16 @@ EpgProgram? _epgProgramFromMap(
   Map<String, String> channelIdsByStream,
 ) {
   final streamId = _stringOrNull(json['stream_id']);
+  // Prefer the caller-resolved key (fallbackChannelId, derived from the
+  // stream→channel mapping) so that EpgService stores programs under the same
+  // key that lookupForChannel() will later use.  The program's own channel_id
+  // field refers to the EPG source's internal ID, which differs from the TVG
+  // ID carried in channel.epgChannelId and is therefore useless for lookups.
   final channelId =
+      fallbackChannelId ??
       _stringOrNull(json['channel_id']) ??
       _stringOrNull(json['epg_channel_id']) ??
-      (streamId == null ? null : channelIdsByStream[streamId]) ??
-      fallbackChannelId;
+      (streamId == null ? null : channelIdsByStream[streamId]);
   if (channelId == null || channelId.isEmpty) return null;
   final start = _parseEpgTime(
     json['start_timestamp'] ?? json['start'] ?? json['start_time'],
