@@ -7,7 +7,9 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
 
     // The app shell should render with the Home placeholder
     expect(find.text('Home'), findsAtLeast(1));
