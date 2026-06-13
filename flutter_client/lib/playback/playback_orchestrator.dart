@@ -66,6 +66,12 @@ class PlaybackOrchestrator {
   Stream<PlaybackState> get onState => _stateController.stream;
   Stream<PlaybackError> get onError => _errorController.stream;
   PlaybackBackend? get activeBackend => _activeBackend;
+  int? get activeTextureId {
+    final adapter = _activeAdapter;
+    if (adapter is! VideoTextureProvider) return null;
+    return (adapter as VideoTextureProvider).textureId;
+  }
+
   List<String> get diagnostics => List<String>.unmodifiable(_diagnostics);
 
   Future<void> open(PlaybackSource source) async {

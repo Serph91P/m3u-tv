@@ -18,6 +18,10 @@ abstract class PlayerAdapter {
   Future<void> setPlaybackSpeed(double speed);
 }
 
+abstract class VideoTextureProvider {
+  int? get textureId;
+}
+
 class FallbackPlayerAdapter implements PlayerAdapter {
   FallbackPlayerAdapter({required this.primary, required this.fallback})
     : _active = primary;

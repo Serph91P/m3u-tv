@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'playback_capabilities.dart';
 import 'player_adapter.dart';
 
-class DesktopLibmpvBackend implements PlayerAdapter {
+class DesktopLibmpvBackend implements PlayerAdapter, VideoTextureProvider {
   DesktopLibmpvBackend({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel(_channelName);
 
@@ -23,6 +23,7 @@ class DesktopLibmpvBackend implements PlayerAdapter {
   int? _handle;
   int? _textureId;
 
+  @override
   int? get textureId => _textureId;
 
   @override

@@ -348,8 +348,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
             autofocus: true,
             child: Stack(
               children: [
-                // Video surface placeholder
-                const Center(child: SizedBox.expand()),
+                Positioned.fill(
+                  child: _VideoSurface(
+                    textureId: widget.orchestrator.activeTextureId,
+                  ),
+                ),
 
                 // Loading indicator
                 if (_status == PlaybackStatus.loading && _errorMessage == null)
@@ -467,6 +470,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoSurface extends StatelessWidget {
+  const _VideoSurface({required this.textureId});
+
+  final int? textureId;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = textureId;
+    if (id == null) return const ColoredBox(color: Colors.black);
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Texture(textureId: id),
         ),
       ),
     );
