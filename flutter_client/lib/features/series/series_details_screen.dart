@@ -119,6 +119,16 @@ class _SeriesDetailsBody extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(info.series.name, style: theme.textTheme.headlineMedium),
+                if (info.series.rating != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '★ ${info.series.rating}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
                 if (info.series.plot != null) ...[
                   const SizedBox(height: 12),
                   Text(

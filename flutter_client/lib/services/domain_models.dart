@@ -109,7 +109,7 @@ class VodItem {
         containerExtension: '${json['container_extension'] ?? 'mp4'}',
         logoUrl: _asNullableString(json['stream_icon']),
         categoryId: _asNullableString(json['category_id']),
-        rating: _asDoubleOrNull(json['rating_5based'] ?? json['rating']),
+        rating: _asDoubleOrNull(json['rating']),
       );
 }
 
@@ -178,7 +178,7 @@ class VodInfo {
           'episode_run_time',
         ]),
       ),
-      rating: _asDoubleOrNull(pick(['rating_5based', 'rating'])),
+      rating: _asDoubleOrNull(info['rating']),
       coverUrl: _asNullableString(
         pick(['cover_big', 'movie_image', 'stream_icon', 'cover']),
       ),
@@ -212,7 +212,7 @@ class Series {
     coverUrl: _asNullableString(json['cover']),
     categoryId: _asNullableString(json['category_id']),
     plot: _asNullableString(json['plot']),
-    rating: _asDoubleOrNull(json['rating_5based'] ?? json['rating']),
+    rating: _asDoubleOrNull(json['rating']),
   );
 }
 

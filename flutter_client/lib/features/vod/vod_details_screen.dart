@@ -94,7 +94,7 @@ class _VodDetailsBody extends StatelessWidget {
                       if (details.duration != null)
                         _MetadataChip(label: details.duration!),
                       if (details.rating != null)
-                        _MetadataChip(label: 'Rating ${details.rating}'),
+                        _MetadataChip(label: '★ ${details.rating}'),
                       if (details.containerExtension != null)
                         _MetadataChip(
                           label: details.containerExtension!.toUpperCase(),
