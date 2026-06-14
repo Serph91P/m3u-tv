@@ -116,6 +116,7 @@ class ResilientMediaImage extends StatelessWidget {
     this.aspectRatio,
     this.fallbackTitle,
     this.borderRadius = MediaBrowsingMetrics.posterRadius,
+    this.backgroundColor,
     super.key,
   });
 
@@ -127,6 +128,7 @@ class ResilientMediaImage extends StatelessWidget {
   final double? aspectRatio;
   final String? fallbackTitle;
   final double borderRadius;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +142,7 @@ class ResilientMediaImage extends StatelessWidget {
         width: width,
         height: height,
         child: DecoratedBox(
-          decoration: BoxDecoration(color: colorScheme.surfaceContainerHighest),
+          decoration: BoxDecoration(color: backgroundColor ?? colorScheme.surfaceContainerHighest),
           child: url == null || url.isEmpty
               ? fallback
               : Image.network(
@@ -481,6 +483,7 @@ class MediaPreviewItem {
     this.imageAspectRatio,
     this.fallbackTitle,
     this.imagePadding = EdgeInsets.zero,
+    this.imageBackgroundColor,
   });
 
   final String title;
@@ -492,6 +495,7 @@ class MediaPreviewItem {
   final double? imageAspectRatio;
   final String? fallbackTitle;
   final EdgeInsets imagePadding;
+  final Color? imageBackgroundColor;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -596,6 +600,7 @@ class MediaPreviewCard extends StatelessWidget {
                       fit: item.imageFit,
                       aspectRatio: item.imageAspectRatio,
                       fallbackTitle: item.fallbackTitle,
+                      backgroundColor: item.imageBackgroundColor,
                       borderRadius: 0,
                     ),
                   ),

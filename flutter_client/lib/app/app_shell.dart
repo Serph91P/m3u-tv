@@ -695,6 +695,8 @@ class _HomeScreen extends StatelessWidget {
                   ?? 'Live channel',
               fallbackIcon: Icons.live_tv,
               imageFit: BoxFit.contain,
+              imagePadding: const EdgeInsets.all(10),
+              imageBackgroundColor: Colors.transparent,
               onTap: () => onChannelSelect(channel),
             ),
           )
