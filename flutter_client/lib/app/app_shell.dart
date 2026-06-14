@@ -293,16 +293,21 @@ class NavigationSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     const routes = RouteNames.mainRoutes;
     final theme = Theme.of(context);
-    const width = 200.0;
+    final expanded = sidebarActive;
+    final width = expanded ? 200.0 : 64.0;
 
-    return AnimatedContainer(
+    return MouseRegion(
+      onEnter: (_) => onActivateSidebar(),
+      onExit: (_) => onDeactivateSidebar(),
+      child: AnimatedContainer(
       duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
       width: width,
-      color: theme.colorScheme.surfaceContainerHighest,
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest),
       child: FocusScope(
         node: scopeNode,
         onKeyEvent: (node, event) {
-          // Right arrow: move focus to content
           if (event is KeyDownEvent &&
               event.logicalKey == LogicalKeyboardKey.arrowRight) {
             onDeactivateSidebar();
@@ -314,24 +319,29 @@ class NavigationSidebar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Logo header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-              child: Row(
-                children: [
-                  SvgPicture.asset(
-                    'assets/icons/logo.svg',
-                    width: 36,
-                    height: 36,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'M3U TV',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
+            SizedBox(
+              height: 72,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+                child: Row(
+                  children: [
+                    SvgPicture.asset(
+                      'assets/icons/logo.svg',
+                      width: 36,
+                      height: 36,
                     ),
-                  ),
-                ],
+                    if (expanded) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        'M3U TV',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
             Divider(
@@ -348,6 +358,7 @@ class NavigationSidebar extends StatelessWidget {
                   label: RouteNames.routeLabels[routes[index]] ?? routes[index],
                   icon: _routeIcon(routes[index]),
                   selected: index == currentIndex,
+                  expanded: expanded,
                   focusNode: focusNodes[index],
                   onTap: () => onNavigate(index),
                 ),
@@ -356,7 +367,8 @@ class NavigationSidebar extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   IconData _routeIcon(String route) => switch (route) {
@@ -379,6 +391,7 @@ class SidebarDestinationItem extends StatefulWidget {
     required this.selected,
     required this.focusNode,
     required this.onTap,
+    this.expanded = true,
   });
 
   final String label;
@@ -386,6 +399,7 @@ class SidebarDestinationItem extends StatefulWidget {
   final bool selected;
   final FocusNode focusNode;
   final VoidCallback onTap;
+  final bool expanded;
 
   @override
   State<SidebarDestinationItem> createState() => _SidebarDestinationItemState();
@@ -457,16 +471,18 @@ class _SidebarDestinationItemState extends State<SidebarDestinationItem> {
           child: Row(
             children: [
               Icon(widget.icon, color: foregroundColor, size: 24),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: foregroundColor,
+              if (widget.expanded) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foregroundColor,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
+              ],
             ],
           ),
         ),
