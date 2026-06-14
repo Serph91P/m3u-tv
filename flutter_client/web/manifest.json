@@ -1,6 +1,6 @@
 {
-    "name": "m3u_tv",
-    "short_name": "m3u_tv",
+    "name": "M3U TV",
+    "short_name": "M3U TV",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0a0a0f",
