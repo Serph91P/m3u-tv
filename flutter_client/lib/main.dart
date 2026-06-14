@@ -15,13 +15,29 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const primary = Color(0xFF4f39f6);
+    const secondary = Color(0xFFec003f);
+    const background = Color(0xFF18181b);
+
     return MaterialApp(
       title: 'M3U TV',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: ColorScheme.fromSeed(seedColor: primary),
         useMaterial3: true,
       ),
-      darkTheme: ThemeData.dark(useMaterial3: true),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme:
+            ColorScheme.fromSeed(
+              seedColor: primary,
+              brightness: Brightness.dark,
+            ).copyWith(
+              primary: primary,
+              secondary: secondary,
+              surface: background,
+              surfaceContainerLowest: background,
+            ),
+      ),
       themeMode: ThemeMode.dark,
       home: Builder(
         builder: (context) => AppShell(

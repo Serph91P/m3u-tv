@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:m3u_tv/features/live_tv/live_tv_screen.dart';
 import 'package:m3u_tv/features/search/search_screen.dart';
 import 'package:m3u_tv/features/series/series_screen.dart';
@@ -309,17 +310,50 @@ class NavigationSidebar extends StatelessWidget {
           }
           return KeyEventResult.ignored;
         },
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: List.generate(routes.length, (index) {
-            return SidebarDestinationItem(
-              label: RouteNames.routeLabels[routes[index]] ?? routes[index],
-              icon: _routeIcon(routes[index]),
-              selected: index == currentIndex,
-              focusNode: focusNodes[index],
-              onTap: () => onNavigate(index),
-            );
-          }),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Logo header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              child: Row(
+                children: [
+                  SvgPicture.asset(
+                    'assets/icons/logo.svg',
+                    width: 36,
+                    height: 36,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'M3U TV',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 8),
+            // Nav items
+            ...List.generate(routes.length, (index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                child: SidebarDestinationItem(
+                  label: RouteNames.routeLabels[routes[index]] ?? routes[index],
+                  icon: _routeIcon(routes[index]),
+                  selected: index == currentIndex,
+                  focusNode: focusNodes[index],
+                  onTap: () => onNavigate(index),
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
