@@ -20,6 +20,8 @@ class MediaBrowsingMetrics {
   static const double logoSize = 56;
   static const double previewCardWidth = 172;
   static const double previewCardHeight = 148;
+  static const double posterCardWidth = 180;
+  static const double posterCardHeight = 300;
 }
 
 class InlineMediaSearchField extends StatefulWidget {
@@ -478,6 +480,7 @@ class MediaPreviewItem {
     this.imageFit = BoxFit.cover,
     this.imageAspectRatio,
     this.fallbackTitle,
+    this.imagePadding = EdgeInsets.zero,
   });
 
   final String title;
@@ -488,6 +491,7 @@ class MediaPreviewItem {
   final BoxFit imageFit;
   final double? imageAspectRatio;
   final String? fallbackTitle;
+  final EdgeInsets imagePadding;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -495,12 +499,14 @@ class MediaPreviewSection extends StatefulWidget {
     required this.title,
     required this.emptyLabel,
     required this.items,
+    this.posterStyle = false,
     super.key,
   });
 
   final String title;
   final String emptyLabel;
   final List<MediaPreviewItem> items;
+  final bool posterStyle;
 
   @override
   State<MediaPreviewSection> createState() => _MediaPreviewSectionState();
@@ -529,7 +535,10 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
             Text(widget.emptyLabel)
           else
             SizedBox(
-              height: MediaBrowsingMetrics.previewCardHeight + 16,
+              height: (widget.posterStyle
+                      ? MediaBrowsingMetrics.posterCardHeight
+                      : MediaBrowsingMetrics.previewCardHeight) +
+                  16,
               child: Scrollbar(
                 controller: _controller,
                 thumbVisibility: true,
@@ -541,8 +550,10 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
                   itemCount: visibleItems.length,
                   separatorBuilder: (_, __) =>
                       const SizedBox(width: MediaBrowsingMetrics.itemGap),
-                  itemBuilder: (context, index) =>
-                      MediaPreviewCard(item: visibleItems[index]),
+                  itemBuilder: (context, index) => MediaPreviewCard(
+                    item: visibleItems[index],
+                    posterStyle: widget.posterStyle,
+                  ),
                 ),
               ),
             ),
@@ -553,15 +564,19 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
 }
 
 class MediaPreviewCard extends StatelessWidget {
-  const MediaPreviewCard({required this.item, super.key});
+  const MediaPreviewCard({required this.item, this.posterStyle = false, super.key});
 
   final MediaPreviewItem item;
+  final bool posterStyle;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isRating = item.subtitle?.startsWith('★') ?? false;
     return SizedBox(
-      width: MediaBrowsingMetrics.previewCardWidth,
+      width: posterStyle
+          ? MediaBrowsingMetrics.posterCardWidth
+          : MediaBrowsingMetrics.previewCardWidth,
       child: Focus(
         child: Material(
           color: colorScheme.surfaceContainerHigh,
@@ -573,13 +588,16 @@ class MediaPreviewCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  child: ResilientMediaImage(
-                    imageUrl: item.imageUrl,
-                    fallbackIcon: item.fallbackIcon,
-                    fit: item.imageFit,
-                    aspectRatio: item.imageAspectRatio,
-                    fallbackTitle: item.fallbackTitle,
-                    borderRadius: 0,
+                  child: Padding(
+                    padding: item.imagePadding,
+                    child: ResilientMediaImage(
+                      imageUrl: item.imageUrl,
+                      fallbackIcon: item.fallbackIcon,
+                      fit: item.imageFit,
+                      aspectRatio: item.imageAspectRatio,
+                      fallbackTitle: item.fallbackTitle,
+                      borderRadius: 0,
+                    ),
                   ),
                 ),
                 Padding(
@@ -589,18 +607,24 @@ class MediaPreviewCard extends StatelessWidget {
                     children: [
                       Text(
                         item.title,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: posterStyle ? FontWeight.normal : FontWeight.w700,
                         ),
-                        maxLines: 1,
+                        maxLines: posterStyle ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       if (item.subtitle != null) ...[
                         const SizedBox(height: 2),
                         Text(
                           item.subtitle!,
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(color: colorScheme.onSurfaceVariant),
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: posterStyle && isRating
+                                ? const Color(0xFFFFCC00)
+                                : colorScheme.onSurfaceVariant,
+                            fontWeight: posterStyle && isRating
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

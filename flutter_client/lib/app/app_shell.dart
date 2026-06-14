@@ -694,6 +694,7 @@ class _HomeScreen extends StatelessWidget {
                   ?? channel.groupTitle
                   ?? 'Live channel',
               fallbackIcon: Icons.live_tv,
+              imageFit: BoxFit.contain,
               onTap: () => onChannelSelect(channel),
             ),
           )
@@ -702,6 +703,7 @@ class _HomeScreen extends StatelessWidget {
     final moviesSection = MediaPreviewSection(
       title: 'Movies',
       emptyLabel: 'No Movies available',
+      posterStyle: true,
       items: appState.vodItems
           .map(
             (VodItem item) => MediaPreviewItem(
@@ -718,6 +720,7 @@ class _HomeScreen extends StatelessWidget {
     final seriesSection = MediaPreviewSection(
       title: 'Series',
       emptyLabel: 'No Series available',
+      posterStyle: true,
       items: appState.seriesList
           .map(
             (Series series) => MediaPreviewItem(
