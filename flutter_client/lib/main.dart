@@ -33,6 +33,7 @@ class MyApp extends StatelessWidget {
               brightness: Brightness.dark,
             ).copyWith(
               primary: primary,
+              onPrimary: Colors.white,
               secondary: secondary,
               surface: background,
               surfaceContainerLowest: background,
