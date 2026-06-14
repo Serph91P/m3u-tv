@@ -260,11 +260,10 @@ class _ScrollableCategoryBarState extends State<ScrollableCategoryBar> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 72,
+      height: 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: MediaBrowsingMetrics.chipGap,
-          vertical: MediaBrowsingMetrics.chipGap,
         ),
         child: Row(
           children: [
@@ -279,14 +278,12 @@ class _ScrollableCategoryBarState extends State<ScrollableCategoryBar> {
             ),
             const SizedBox(width: MediaBrowsingMetrics.chipGap),
             Expanded(
-              child: Scrollbar(
-                controller: _controller,
-                thumbVisibility: true,
-                trackVisibility: true,
+              child: SizedBox(
+                height: 40,
                 child: ListView.separated(
                   controller: _controller,
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: EdgeInsets.zero,
                   itemCount: widget.tabs.length,
                   separatorBuilder: (_, __) =>
                       const SizedBox(width: MediaBrowsingMetrics.chipGap),
