@@ -68,27 +68,31 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isConfigured = isConfiguredOverride ?? authNotifier.isConfigured;
     if (!isConfigured) {
-      return ConnectionForm(
-        onConnect:
-            onConnect ?? (credentials) => authNotifier.connect(credentials),
-        isLoading: authNotifier.isLoading,
-        error: sourceError ?? authNotifier.error,
+      return Scaffold(
+        body: ConnectionForm(
+          onConnect:
+              onConnect ?? (credentials) => authNotifier.connect(credentials),
+          isLoading: authNotifier.isLoading,
+          error: sourceError ?? authNotifier.error,
+        ),
       );
     }
 
-    return _ConnectedView(
-      authNotifier: authNotifier,
-      activeViewer: activeViewer,
-      viewers: viewers,
-      sourceLabel: sourceLabel,
-      sourceError: sourceError,
-      epgRefreshInterval: epgRefreshInterval,
-      epgRefreshOptions: epgRefreshOptions,
-      onDisconnect: onDisconnect ?? () => authNotifier.disconnect(),
-      onSwitchViewer: onSwitchViewer,
-      onCreateViewer: onCreateViewer,
-      onClearCache: onClearCache,
-      onEpgIntervalChanged: onEpgIntervalChanged,
+    return Scaffold(
+      body: _ConnectedView(
+        authNotifier: authNotifier,
+        activeViewer: activeViewer,
+        viewers: viewers,
+        sourceLabel: sourceLabel,
+        sourceError: sourceError,
+        epgRefreshInterval: epgRefreshInterval,
+        epgRefreshOptions: epgRefreshOptions,
+        onDisconnect: onDisconnect ?? () => authNotifier.disconnect(),
+        onSwitchViewer: onSwitchViewer,
+        onCreateViewer: onCreateViewer,
+        onClearCache: onClearCache,
+        onEpgIntervalChanged: onEpgIntervalChanged,
+      ),
     );
   }
 }
