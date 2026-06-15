@@ -36,7 +36,7 @@ Cross-platform TV front-end player for the [M3U Editor web app](https://github.c
 
 - Flutter SDK available via the CLI (ability to run `flutter` and `dart` commands)
 - **Android/Android TV**: Android Studio with emulator or device when running platform builds
-   - **NOTE**: use `http://10.0.2.2` to access `localhost` via the emulator. E.g., if running the editor via `php artisan serve` on your local machine, you can access it in the emulator via: `http://10.0.2.2:8000`.
+   - **NOTE**: If running the editor via `docker` on your local machine, you can access it in the emulator via: `http://10.0.2.2:36400`. Run `adb reverse tcp:36400 tcp:36400` to route `localhost` so images and streams work too. 
 - **Apple platforms**: Xcode when running iOS/macOS feasibility builds
 
 ### Installation

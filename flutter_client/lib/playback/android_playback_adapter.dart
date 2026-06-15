@@ -51,7 +51,7 @@ class AndroidBackendCapabilities {
   }
 }
 
-class AndroidPlaybackAdapter implements PlayerAdapter {
+class AndroidPlaybackAdapter implements PlayerAdapter, VideoTextureProvider {
   AndroidPlaybackAdapter({
     required AndroidPlaybackProbe probe,
     AndroidMedia3Host? media3Host,
@@ -70,6 +70,10 @@ class AndroidPlaybackAdapter implements PlayerAdapter {
   StreamSubscription<AndroidMedia3Event>? _eventSubscription;
 
   PlaybackBackend _activeBackend = PlaybackBackend.androidExoPlayer;
+  int? _textureId;
+
+  @override
+  int? get textureId => _textureId;
   PlaybackState _state = const PlaybackState.idle(
     backend: PlaybackBackend.androidExoPlayer,
   );
@@ -185,6 +189,7 @@ class AndroidPlaybackAdapter implements PlayerAdapter {
     if (_activeBackend == PlaybackBackend.androidExoPlayer) {
       await _media3Host.stop();
     }
+    _textureId = null;
     _emit(_state.copyWith(status: PlaybackStatus.stopped));
   }
 
@@ -280,6 +285,11 @@ class AndroidPlaybackAdapter implements PlayerAdapter {
         ),
       );
       return;
+    }
+
+    // Capture the Flutter texture ID sent by the native plugin on first load.
+    if (event.textureId != null) {
+      _textureId = event.textureId;
     }
 
     final status = switch (event.type) {
@@ -394,6 +404,7 @@ class AndroidMedia3Event {
     required this.type,
     this.uri,
     this.position,
+    this.textureId,
     this.code,
     this.message,
     this.recoverable = false,
@@ -406,6 +417,7 @@ class AndroidMedia3Event {
       position: map['positionMs'] is num
           ? Duration(milliseconds: (map['positionMs']! as num).round())
           : null,
+      textureId: (map['textureId'] as num?)?.toInt(),
       code: map['code'] as String?,
       message: map['message'] as String?,
       recoverable: map['recoverable'] == true,
@@ -415,6 +427,7 @@ class AndroidMedia3Event {
   final AndroidMedia3EventType type;
   final String? uri;
   final Duration? position;
+  final int? textureId;
   final String? code;
   final String? message;
   final bool recoverable;

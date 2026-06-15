@@ -11,6 +11,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -117,8 +118,12 @@ class Media3PlaybackPlugin(
         val userAgent = source["userAgent"] as? String
         val startPositionMs = (source["startPositionMs"] as? Number)?.toLong() ?: 0L
 
-        val textureEntry = textures.createSurfaceTexture()
-        val surface = Surface(textureEntry.surfaceTexture())
+        // SurfaceProducer works correctly with Flutter's Impeller renderer.
+        // SurfaceTexture has a known black-screen bug with Impeller on Android.
+        val surfaceProducer = textures.createSurfaceProducer()
+        surfaceProducer.setSize(1920, 1080)
+        val surface = surfaceProducer.getSurface()
+
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
         if (userAgent != null) {
@@ -129,9 +134,9 @@ class Media3PlaybackPlugin(
             .build()
         val state = PlayerState(
             player = player,
-            textureEntry = textureEntry,
+            surfaceProducer = surfaceProducer,
             surface = surface,
-            textureId = textureEntry.id(),
+            textureId = surfaceProducer.id(),
             uri = uri,
         )
         playerState = state
@@ -142,6 +147,7 @@ class Media3PlaybackPlugin(
         player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)), startPositionMs)
         emit("buffering", uri = uri, positionMs = startPositionMs, textureId = state.textureId)
         player.prepare()
+        player.play()
     }
 
     private fun requirePlayer(): ExoPlayer = playerState?.player ?: throw IllegalStateException("No Media3 player is loaded")
@@ -152,7 +158,7 @@ class Media3PlaybackPlugin(
         mediaSession = null
         state.player.release()
         state.surface.release()
-        state.textureEntry.release()
+        state.surfaceProducer.release()
         playerState = null
         emit("disposed")
     }
@@ -177,6 +183,13 @@ class Media3PlaybackPlugin(
     }
 
     private inner class Media3Listener : Player.Listener {
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            val state = playerState ?: return
+            if (videoSize.width > 0 && videoSize.height > 0) {
+                state.surfaceProducer.setSize(videoSize.width, videoSize.height)
+            }
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             val player = playerState?.player ?: return
             when (playbackState) {
@@ -212,7 +225,7 @@ class Media3PlaybackPlugin(
 
     private data class PlayerState(
         val player: ExoPlayer,
-        val textureEntry: TextureRegistry.SurfaceTextureEntry,
+        val surfaceProducer: TextureRegistry.SurfaceProducer,
         val surface: Surface,
         val textureId: Long,
         val uri: String,

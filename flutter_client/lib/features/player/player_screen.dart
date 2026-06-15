@@ -391,6 +391,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
           },
           child: Focus(
             autofocus: true,
+            onKeyEvent: (node, event) {
+              // Any key press while the overlay is hidden brings it back.
+              if (event is KeyDownEvent &&
+                  !_overlayVisible &&
+                  !_showResumePrompt &&
+                  _errorMessage == null) {
+                _showOverlay();
+              }
+              return KeyEventResult.ignored;
+            },
             child: Stack(
               children: [
                 Positioned.fill(
