@@ -148,7 +148,7 @@ flutter test
 - [x] Continue watching
 - [x] Favorites/Watchlist
 - [x] Search functionality
-- [/] Desktop build - in progress
+- [ ] Desktop builds
 - [ ] Parental controls
 - [ ] Stream quality selection
 - [ ] Catchup/DVR support
