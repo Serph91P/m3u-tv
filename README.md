@@ -2,7 +2,7 @@
 
 ![logo](./favicon.png)
 
-Cross-platform TV front-end player for the [M3U Editor web app](https://github.com/m3ue/m3u-editor). The primary client is the Flutter app in `flutter_client/`; the former React Native/Expo client is retained only as a legacy migration reference.
+Cross-platform TV front-end player for the [M3U Editor web app](https://github.com/m3ue/m3u-editor). The primary client is the Flutter app in `flutter_client/`.
 
 ## Features
 
@@ -24,14 +24,11 @@ Cross-platform TV front-end player for the [M3U Editor web app](https://github.c
 | Android/iOS/iPadOS | Flutter client (`flutter_client/`) |
 | Apple TV (tvOS) | Migration feasibility tracked; Flutter tvOS remains gated on embedder support |
 
-Electron desktop support is retired from the active target architecture. The former Electron implementation is preserved only as a legacy behavior reference in `legacy/electron-reference/`; it is not part of install, build, or release commands.
-
 ## Tech Stack
 
 - [Flutter](https://flutter.dev/) and Dart in `flutter_client/`
 - Flutter widget, service, playback, and migration test suites covering parity behavior
 - In-process playback architecture with platform backend fallbacks documented in `docs/migration/playback-backend-matrix.md`
-- Legacy React Native/Expo sources remain only for migration reference until final archival/deletion
 
 ## Getting Started
 
@@ -46,7 +43,7 @@ Electron desktop support is retired from the active target architecture. The for
 ```bash
 cd m3u-tv
 cd flutter_client
-/tmp/flutter/bin/flutter pub get
+flutter pub get
 ```
 
 ### Running the App
@@ -54,23 +51,15 @@ cd flutter_client
 #### Flutter client
 
 ```bash
-/tmp/flutter/bin/flutter run
+flutter run
 ```
 
 Quality gates for the primary client:
 
 ```bash
-/tmp/flutter/bin/flutter analyze
-/tmp/flutter/bin/flutter test
+flutter analyze
+flutter test
 ```
-
-#### React Native/Expo — Legacy Migration Reference
-
-The root `package.json` keeps only `legacy:rn:*` scripts for historical comparison while migration evidence remains open. Do not use RN/Expo commands for active release builds; new app work and verification should happen in `flutter_client/`.
-
-#### Desktop (Electron) — Retired Legacy Reference
-
-Electron is no longer an active development or release target. Do not use it as a new desktop shell or release path. The retired implementation remains in `legacy/electron-reference/` only to preserve documented behavior; parity coverage is tracked in `docs/migration/parity-matrix.md` and final gate evidence is saved under `.omo/evidence/`.
 
 ## Configuration
 
@@ -119,10 +108,6 @@ The app will authenticate and fetch your content categories. Credentials are sto
 - Xtream API connection management
 - Connection status and statistics
 
-## Retired Electron Playback Reference
-
-The legacy Electron code documented two desktop playback behaviors: embedded mpv via IPC and external-player fallback through mpv, VLC, or the system default handler. That code is reference-only in `legacy/electron-reference/`; active builds must not depend on Electron scripts or `electron-builder` release metadata.
-
 Keyboard shortcuts:
 
 | Shortcut | Action |
@@ -139,32 +124,6 @@ This app is designed to work with the M3U Editor backend which provides Xtream A
 
 To use with M3U Editor, use your M3U Editor server URL and credentials from a Playlist or PlaylistAuth.
 
-## Project Structure
-
-```
-m3u-tv/
-├── legacy/
-│   └── electron-reference/ # Retired Electron behavior reference; not built
-│       ├── main.js         # BrowserWindow, IPC handlers, mpv integration
-│       ├── mpvController.js
-│       └── preload.js
-├── flutter_client/      # Primary Flutter app and parity test suite
-├── modules/
-│   └── react-native-mpv/   # Legacy RN native module reference
-├── plugins/            # Expo config plugins
-├── src/
-│   ├── components/     # Shared UI components
-│   ├── context/        # React context providers
-│   ├── hooks/          # Custom hooks (platform-split where needed)
-│   ├── navigation/     # React Navigation setup and types
-│   ├── screens/        # Screen components (platform-split where needed)
-│   ├── services/       # API, cache, storage services
-│   ├── theme/          # Colors, typography, spacing
-│   ├── types/          # TypeScript types
-│   └── utils/          # Utilities
-├── docs/migration/     # Migration evidence, feasibility notes, parity matrix
-└── app.config.js       # Legacy Expo config reference
-```
 
 ## Development
 
@@ -172,18 +131,9 @@ m3u-tv/
 
 ```bash
 cd flutter_client
-/tmp/flutter/bin/flutter analyze
-/tmp/flutter/bin/flutter test
+flutter analyze
+flutter test
 ```
-
-Legacy RN/Expo commands, when needed for migration comparison only, are namespaced as `legacy:rn:*` in the root `package.json`.
-
-### Migration Evidence
-
-- Parity matrix: `docs/migration/parity-matrix.md`
-- Playback backend matrix: `docs/migration/playback-backend-matrix.md`
-- Electron retirement rationale: `docs/migration/electron-retirement.md`
-- Task evidence: `.omo/evidence/`
 
 ### Adding New Screens
 
@@ -198,7 +148,7 @@ Legacy RN/Expo commands, when needed for migration comparison only, are namespac
 - [x] Continue watching
 - [x] Favorites/Watchlist
 - [x] Search functionality
-- [x] Desktop (Electron) behavior captured as retired legacy reference
+- [/] Desktop build - in progress
 - [ ] Parental controls
 - [ ] Stream quality selection
 - [ ] Catchup/DVR support
