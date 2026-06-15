@@ -255,7 +255,7 @@ class _ScrollableCategoryBarState extends State<ScrollableCategoryBar> {
       height: 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: MediaBrowsingMetrics.chipGap,
+          horizontal: MediaBrowsingMetrics.contentPadding,
         ),
         child: Row(
           children: [
