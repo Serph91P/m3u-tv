@@ -65,6 +65,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _showResumePrompt = false;
   bool _overlayVisible = true;
 
+  // Focus node handed to the play/pause button in PlaybackControls so that
+  // _showOverlay() can move focus there explicitly (autofocus alone won't
+  // steal focus from the outer Focus that already holds it).
+  final FocusNode _controlsFocusNode = FocusNode();
+
   Timer? _loadingTimer;
   Timer? _overlayHideTimer;
   Timer? _progressTimer;
@@ -95,6 +100,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _overlayHideTimer?.cancel();
     _progressTimer?.cancel();
     _epgTimer?.cancel();
+    _controlsFocusNode.dispose();
     unawaited(_stateSubscription?.cancel());
     unawaited(_errorSubscription?.cancel());
     unawaited(widget.orchestrator.stop());
@@ -345,6 +351,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _showOverlay() {
     setState(() => _overlayVisible = true);
     _scheduleOverlayHide();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _overlayVisible) _controlsFocusNode.requestFocus();
+    });
   }
 
   void _hideOverlay() {
@@ -481,6 +490,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     onSeek: _seekTo,
                     onBack: _goBack,
                     fallbackReason: _fallbackReason,
+                    playPauseFocusNode: _controlsFocusNode,
                   ),
 
                 if (_overlayVisible &&

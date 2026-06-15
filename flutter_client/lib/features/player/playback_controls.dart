@@ -1,3 +1,4 @@
+import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/features/player/format_time.dart';
@@ -18,6 +19,7 @@ class PlaybackControls extends StatelessWidget {
     required this.onSeek,
     required this.onBack,
     this.fallbackReason,
+    this.playPauseFocusNode,
     super.key,
   });
 
@@ -30,6 +32,7 @@ class PlaybackControls extends StatelessWidget {
   final ValueChanged<Duration> onSeek;
   final VoidCallback onBack;
   final String? fallbackReason;
+  final FocusNode? playPauseFocusNode;
 
   static const Duration seekStep = Duration(seconds: 10);
 
@@ -45,16 +48,18 @@ class PlaybackControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      padding: const EdgeInsets.all(40),
-      color: Colors.black26,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          _buildHeader(colorScheme),
-          const Spacer(),
-          _buildControlsBar(colorScheme),
-        ],
+    return DpadRegion(
+      child: Container(
+        padding: const EdgeInsets.all(40),
+        color: Colors.black26,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _buildHeader(colorScheme),
+            const Spacer(),
+            _buildControlsBar(colorScheme),
+          ],
+        ),
       ),
     );
   }
@@ -62,18 +67,26 @@ class PlaybackControls extends StatelessWidget {
   Widget _buildHeader(ColorScheme colorScheme) {
     return Row(
       children: [
-        GestureDetector(
-          onTap: onBack,
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(
-              color: Colors.black54,
-              shape: BoxShape.circle,
+        DpadFocusable(
+          onSelect: onBack,
+          effects: const [
+            DpadBorderEffect(
+              borderRadius: BorderRadius.all(Radius.circular(50)),
             ),
-            child: Icon(
-              Icons.arrow_back,
-              color: colorScheme.onSurface,
-              size: 24,
+          ],
+          child: GestureDetector(
+            onTap: onBack,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.arrow_back,
+                color: colorScheme.onSurface,
+                size: 24,
+              ),
             ),
           ),
         ),
@@ -169,6 +182,8 @@ class PlaybackControls extends StatelessWidget {
           icon: isPlaying ? Icons.pause : Icons.play_arrow,
           onTap: onPlayPause,
           colorScheme: colorScheme,
+          autofocus: playPauseFocusNode == null,
+          focusNode: playPauseFocusNode,
         ),
         if (!isLive)
           _ControlButton(
@@ -210,24 +225,33 @@ class _ControlButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.colorScheme,
+    this.autofocus = false,
+    this.focusNode,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final ColorScheme colorScheme;
+  final bool autofocus;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        decoration: BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.circular(8),
+    return DpadFocusable(
+      autofocus: autofocus,
+      focusNode: focusNode,
+      onSelect: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: Colors.white10,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 22, color: colorScheme.onSurface),
         ),
-        child: Icon(icon, size: 22, color: colorScheme.onSurface),
       ),
     );
   }
