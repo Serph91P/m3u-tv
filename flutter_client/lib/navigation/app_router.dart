@@ -6,7 +6,7 @@ import 'package:m3u_tv/features/vod/vod_details_screen.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/playback/android_playback_adapter.dart';
 import 'package:m3u_tv/playback/apple_avkit_backend.dart';
-import 'package:m3u_tv/playback/desktop_libmpv_backend.dart';
+import 'package:m3u_tv/playback/media_kit_desktop_adapter.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
@@ -171,7 +171,7 @@ RouteFactory buildAppRouter({
                 args: args,
                 orchestrator:
                     playbackOrchestratorBuilder?.call() ??
-                    _buildPlaybackOrchestrator(),
+                    buildPlaybackOrchestrator(),
                 epgService: epgService ?? EpgService(),
                 xtreamService: xtreamService,
               ),
@@ -256,7 +256,7 @@ PageRoute<void> _buildSlideRoute(RouteSettings settings, Widget screen) {
   );
 }
 
-PlaybackOrchestrator _buildPlaybackOrchestrator() {
+PlaybackOrchestrator buildPlaybackOrchestrator() {
   final platform = _playbackPlatformForCurrentTarget();
   final adapters = <PlaybackBackend, PlayerAdapter>{};
 
@@ -272,7 +272,7 @@ PlaybackOrchestrator _buildPlaybackOrchestrator() {
   } else if (platform == PlaybackPlatform.apple) {
     adapters[PlaybackBackend.appleAvKit] = AppleAvKitBackend();
   } else if (platform == PlaybackPlatform.desktop) {
-    adapters[PlaybackBackend.desktopLibmpv] = DesktopLibmpvBackend();
+    adapters[PlaybackBackend.desktopLibmpv] = MediaKitDesktopAdapter();
   }
 
   return PlaybackOrchestrator(

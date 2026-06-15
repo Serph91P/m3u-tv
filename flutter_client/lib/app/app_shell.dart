@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:m3u_tv/features/live_tv/live_tv_screen.dart';
+import 'package:m3u_tv/features/player/player_screen.dart';
 import 'package:m3u_tv/features/search/search_screen.dart';
 import 'package:m3u_tv/features/series/series_screen.dart';
 import 'package:m3u_tv/features/settings/settings_screen.dart';
@@ -51,6 +52,9 @@ class AppShellState extends State<AppShell> {
   late final AppStateController _appState;
   late final bool _ownsAppState;
 
+  PlayerArgs? _playerArgs;
+  PlaybackOrchestrator? _playerOrchestrator;
+
   // Focus nodes for sidebar items
   final List<FocusNode> _sidebarFocusNodes = [];
   final FocusScopeNode _contentFocusNode = FocusScopeNode();
@@ -83,6 +87,7 @@ class AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _playerOrchestrator?.dispose().ignore();
     for (final node in _sidebarFocusNodes) {
       node.dispose();
     }
@@ -143,7 +148,40 @@ class AppShellState extends State<AppShell> {
     );
   }
 
+  void _openPlayer(PlayerArgs args) {
+    final oldOrch = _playerOrchestrator;
+    final newOrch =
+        widget.playbackOrchestratorBuilder?.call() ??
+        buildPlaybackOrchestrator();
+    setState(() {
+      _playerArgs = args;
+      _playerOrchestrator = newOrch;
+    });
+    // Dispose old orchestrator after the frame so it can finish stopping.
+    if (oldOrch != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => oldOrch.dispose().ignore(),
+      );
+    }
+  }
+
+  void _closePlayer() {
+    final orch = _playerOrchestrator;
+    setState(() {
+      _playerArgs = null;
+      _playerOrchestrator = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => orch?.dispose().ignore(),
+    );
+  }
+
   bool _handleBackPress() {
+    if (_playerArgs != null) {
+      _closePlayer();
+      return true;
+    }
+
     final nav = _navigatorKey.currentState;
     if (nav != null && nav.canPop()) {
       nav.pop();
@@ -163,7 +201,7 @@ class AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final useSidebar = shouldUseSidebar(widget.deviceType);
 
-    return Shortcuts(
+    final shell = Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.escape): const _BackIntent(),
         LogicalKeySet(LogicalKeyboardKey.goBack): const _BackIntent(),
@@ -194,6 +232,28 @@ class AppShellState extends State<AppShell> {
         ),
       ),
     );
+
+    final args = _playerArgs;
+    final orch = _playerOrchestrator;
+    if (args == null || orch == null) return shell;
+
+    return Stack(
+      children: [
+        shell,
+        Positioned.fill(
+          child:
+              widget.playerRouteBuilder?.call(args) ??
+              PlayerScreen(
+                key: ValueKey(args.streamUrl),
+                args: args,
+                orchestrator: orch,
+                epgService: _appState.epgService,
+                xtreamService: _appState.xtreamService,
+                onClose: _closePlayer,
+              ),
+        ),
+      ],
+    );
   }
 
   Widget _buildTvLayout() {
@@ -208,6 +268,7 @@ class AppShellState extends State<AppShell> {
                 currentIndex: _currentIndex,
                 appState: _appState,
                 onConnected: () => _navigateTo(0),
+                onOpenPlayer: _openPlayer,
                 playbackOrchestratorBuilder: widget.playbackOrchestratorBuilder,
                 playerRouteBuilder: widget.playerRouteBuilder,
               ),
@@ -237,6 +298,7 @@ class AppShellState extends State<AppShell> {
                         appState: _appState,
                         onSidebarActivate: _activateSidebar,
                         onConnected: () => _navigateTo(0),
+                        onOpenPlayer: _openPlayer,
                         playbackOrchestratorBuilder:
                             widget.playbackOrchestratorBuilder,
                         playerRouteBuilder: widget.playerRouteBuilder,
@@ -273,6 +335,7 @@ class AppShellState extends State<AppShell> {
         currentIndex: _currentIndex,
         appState: _appState,
         onConnected: () => _navigateTo(0),
+        onOpenPlayer: _openPlayer,
         playbackOrchestratorBuilder: widget.playbackOrchestratorBuilder,
         playerRouteBuilder: widget.playerRouteBuilder,
       ),
@@ -557,6 +620,7 @@ class _ContentNavigator extends StatelessWidget {
     required this.appState,
     this.onSidebarActivate,
     this.onConnected,
+    this.onOpenPlayer,
     this.playbackOrchestratorBuilder,
     this.playerRouteBuilder,
   });
@@ -566,6 +630,7 @@ class _ContentNavigator extends StatelessWidget {
   final AppStateController appState;
   final VoidCallback? onSidebarActivate;
   final VoidCallback? onConnected;
+  final void Function(PlayerArgs args)? onOpenPlayer;
   final PlaybackOrchestrator Function()? playbackOrchestratorBuilder;
   final Widget Function(PlayerArgs args)? playerRouteBuilder;
 
@@ -589,17 +654,14 @@ class _ContentNavigator extends StatelessWidget {
   }
 
   void _openChannel(Channel channel) {
-    unawaited(
-      navigatorKey.currentState?.pushNamed(
-        RouteNames.player,
-        arguments: PlayerArgs(
-          streamUrl: channel.streamUrl,
-          title: channel.name,
-          type: 'live',
-          streamId: channel.id,
-          epgChannelId: channel.epgChannelId ?? channel.tvgName ?? channel.name,
-          headers: channel.headers,
-        ),
+    onOpenPlayer?.call(
+      PlayerArgs(
+        streamUrl: channel.streamUrl,
+        title: channel.name,
+        type: 'live',
+        streamId: channel.id,
+        epgChannelId: channel.epgChannelId ?? channel.tvgName ?? channel.name,
+        headers: channel.headers,
       ),
     );
   }
@@ -623,19 +685,16 @@ class _ContentNavigator extends StatelessWidget {
   }
 
   void _playVod(VodItem item, {double? startPosition}) {
-    unawaited(
-      navigatorKey.currentState?.pushNamed(
-        RouteNames.player,
-        arguments: PlayerArgs(
-          streamUrl: item.streamUrl,
-          title: item.name,
-          type: 'vod',
-          streamId: item.id,
-          startPosition: startPosition,
-          metadata: <String, Object?>{
-            'container_extension': item.containerExtension,
-          },
-        ),
+    onOpenPlayer?.call(
+      PlayerArgs(
+        streamUrl: item.streamUrl,
+        title: item.name,
+        type: 'vod',
+        streamId: item.id,
+        startPosition: startPosition,
+        metadata: <String, Object?>{
+          'container_extension': item.containerExtension,
+        },
       ),
     );
   }

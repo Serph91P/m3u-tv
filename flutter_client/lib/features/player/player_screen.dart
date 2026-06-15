@@ -22,6 +22,7 @@ class PlayerScreen extends StatefulWidget {
     required this.epgService,
     this.xtreamService,
     this.progressReporter,
+    this.onClose,
     super.key,
   });
 
@@ -30,6 +31,7 @@ class PlayerScreen extends StatefulWidget {
   final EpgService epgService;
   final XtreamService? xtreamService;
   final void Function(Progress progress)? progressReporter;
+  final VoidCallback? onClose;
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -293,7 +295,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _goBack() {
     if (_disposed || !mounted) return;
-    Navigator.of(context).pop();
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   void _togglePlayPause() {

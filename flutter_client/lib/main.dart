@@ -1,16 +1,23 @@
 import 'dart:io';
 
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/app/app_shell.dart';
 import 'package:m3u_tv/app/device_type_resolver.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/secure_storage.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // MediaKit (libmpv) is only used on desktop. Android uses ExoPlayer and
+  // iOS uses AVKit — neither bundle libmpv, so skip initialization there.
+  if (!kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows)) {
+    MediaKit.ensureInitialized();
+  }
   final appState = await _buildAppState();
   final nativeTelevisionHint = await resolveNativeTelevisionHint();
   runApp(MyApp(nativeTelevisionHint: nativeTelevisionHint, appState: appState));
