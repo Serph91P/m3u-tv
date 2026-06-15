@@ -323,7 +323,7 @@ void main() {
       await tester.pumpWidget(_settingsApp(notifier));
       await tester.pumpAndSettle();
 
-      expect(find.byType(ConnectionForm), findsOneWidget);
+      expect(find.text('Server URL'), findsOneWidget);
     });
 
     testWidgets('shows source error on connection form when content load fails', (tester) async {
@@ -338,7 +338,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.byType(ConnectionForm), findsOneWidget);
+      expect(find.text('Server URL'), findsOneWidget);
       expect(find.textContaining('Xtream HTTP 401'), findsOneWidget);
     });
 
@@ -362,7 +362,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should show the connected view with status
-      expect(find.text('Connection Status'), findsOneWidget);
+      expect(find.text('Connection'), findsOneWidget);
       expect(find.text('Connected'), findsWidgets);
     });
 
@@ -431,7 +431,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should show the viewer section with the viewer name
-      expect(find.byType(ViewerSelector), findsOneWidget);
+      expect(find.text('Active Viewer'), findsOneWidget);
       expect(find.text('Admin'), findsWidgets);
     });
   });

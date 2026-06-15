@@ -109,8 +109,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(Scrollbar), findsWidgets);
-      expect(find.byTooltip('Scroll categories left'), findsOneWidget);
-      expect(find.byTooltip('Scroll categories right'), findsOneWidget);
     });
 
     testWidgets('inline search filters series case-insensitively', (

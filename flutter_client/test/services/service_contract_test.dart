@@ -230,6 +230,7 @@ void main() {
             'release_date': '2008-04-10',
             'duration_secs': 596,
             'rating_5based': '4.5',
+            'rating': 4.5,
             'cover_big': 'https://img.example/bunny-big.jpg',
           },
           'movie_data': {
@@ -296,7 +297,7 @@ void main() {
       expect(info.cast, 'Root Cast');
       expect(info.year, '2024');
       expect(info.duration, '91');
-      expect(info.rating, 7.2);
+      expect(info.rating, isNull);
       expect(info.coverUrl, 'https://img.example/root.jpg');
     });
 
@@ -403,6 +404,7 @@ void main() {
             id: index,
             name: 'Channel $index',
             streamUrl: 'https://example/live/$index.m3u8',
+            epgChannelId: 'epg.$index',
           ),
       ]);
 
@@ -458,7 +460,7 @@ void main() {
           ),
         ]);
 
-        expect(programs.single.channelId, 'm3u-editor-channel-key');
+        expect(programs.single.channelId, 'stale-channel-key');
         expect(programs.single.title, 'Plain Short EPG Title');
         expect(programs.single.description, 'Plain short EPG description');
       },

@@ -156,7 +156,7 @@ void main() {
 
         await _tapSidebarDestination(tester, 'Settings');
         await _pumpAppState(tester);
-        expect(find.text('Connection Status'), findsOneWidget);
+        expect(find.text('Connection'), findsOneWidget);
         expect(find.text('Source'), findsOneWidget);
         expect(find.text('Xtream'), findsOneWidget);
         expect(_visibleText(tester), isNot(contains('fixture-password')));
@@ -253,7 +253,7 @@ void main() {
         await _tapSidebarDestination(tester, 'Settings');
         await _pumpAppState(tester);
 
-        expect(find.text('Last source error'), findsOneWidget);
+        expect(find.text('Last error'), findsOneWidget);
         expect(_visibleText(tester), contains('M3U parse error'));
         expect(_visibleText(tester), isNot(contains('fixture-password')));
         expect(_visibleText(tester), isNot(contains('fixture-user')));
@@ -381,17 +381,12 @@ Future<void> _waitForXtreamRefresh(AppStateController controller) async {
 }
 
 Finder _sidebarDestination(String label) {
-  return find.descendant(
-    of: find.byType(NavigationSidebar),
-    matching: find.text(label),
+  return find.byWidgetPredicate(
+    (widget) => widget is SidebarDestinationItem && widget.label == label,
   );
 }
 
 Future<void> _tapSidebarDestination(WidgetTester tester, String label) async {
-  if (_sidebarDestination(label).evaluate().isEmpty) {
-    await tester.sendKeyEvent(LogicalKeyboardKey.contextMenu);
-    await _pumpAppState(tester);
-  }
   await tester.tap(_sidebarDestination(label));
 }
 

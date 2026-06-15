@@ -131,10 +131,12 @@ class _TestApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData.dark(useMaterial3: true),
-      home: EpgScreen(
-        channels: channels,
-        epgService: epgService,
-        onChannelSelect: onChannelSelect ?? (_) {},
+      home: Scaffold(
+        body: EpgScreen(
+          channels: channels,
+          epgService: epgService,
+          onChannelSelect: onChannelSelect ?? (_) {},
+        ),
       ),
     );
   }

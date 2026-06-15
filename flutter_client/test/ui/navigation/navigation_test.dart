@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,6 +28,7 @@ void main() {
       await tester.pumpWidget(const _TestApp(deviceType: DeviceType.tv));
       await tester.pumpAndSettle();
 
+      await _expandSidebar(tester);
       // Home text appears in both sidebar and content area
       expect(find.text('Home'), findsAtLeast(1));
       expect(
@@ -79,7 +81,7 @@ void main() {
       await tester.pumpWidget(const _TestApp(deviceType: DeviceType.tv));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Search'));
+      await tester.tap(_sidebarText('Search'));
       await tester.pumpAndSettle();
 
       expect(
@@ -92,7 +94,7 @@ void main() {
       await tester.pumpWidget(const _TestApp(deviceType: DeviceType.tv));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Settings'));
+      await tester.tap(_sidebarText('Settings'));
       await tester.pumpAndSettle();
 
       expect(find.text('Server URL'), findsOneWidget);
@@ -104,8 +106,10 @@ void main() {
       await tester.pumpWidget(const _TestApp(deviceType: DeviceType.tv));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Settings'));
+      await tester.tap(_sidebarText('Settings'));
       await tester.pumpAndSettle();
+
+      await _expandSidebar(tester);
 
       expect(
         find.descendant(
@@ -643,10 +647,19 @@ NavigatorState _findInnerNavigator(WidgetTester tester) {
 }
 
 Finder _sidebarText(String label) {
-  return find.descendant(
-    of: find.byType(NavigationSidebar),
-    matching: find.text(label),
+  return find.byWidgetPredicate(
+    (widget) => widget is SidebarDestinationItem && widget.label == label,
   );
+}
+
+Future<void> _expandSidebar(WidgetTester tester) async {
+  final finder = find.descendant(
+    of: find.byType(NavigationSidebar),
+    matching: find.byType(MouseRegion),
+  );
+  final mouseRegion = tester.widget<MouseRegion>(finder.first);
+  mouseRegion.onEnter?.call(const PointerEnterEvent());
+  await tester.pumpAndSettle();
 }
 
 Future<void> _pumpAppFrame(WidgetTester tester) async {
