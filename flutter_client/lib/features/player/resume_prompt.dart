@@ -73,10 +73,9 @@ class ResumePrompt extends StatelessWidget {
                     child: const Text('Resume'),
                   ),
                   const SizedBox(width: 16),
-                  OutlinedButton(
+                  FilledButton.tonal(
                     onPressed: onStartOver,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: colorScheme.onSurface,
+                    style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
                         vertical: 12,

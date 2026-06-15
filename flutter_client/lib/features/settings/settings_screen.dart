@@ -450,7 +450,7 @@ class _ConnectedView extends StatelessWidget {
                   child: DpadFocusable(
                     autofocus: epgRefreshOptions.isEmpty,
                     onSelect: onClearCache,
-                    child: OutlinedButton.icon(
+                    child: FilledButton.icon(
                       onPressed: onClearCache,
                       icon: const Icon(Icons.refresh),
                       label: const Text('Clear Cache & Refresh'),
@@ -469,11 +469,11 @@ class _ConnectedView extends StatelessWidget {
               width: double.infinity,
               child: DpadFocusable(
                 onSelect: onDisconnect,
-                child: OutlinedButton(
+                child: FilledButton(
                   onPressed: onDisconnect,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
-                    side: BorderSide(color: theme.colorScheme.error),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: theme.colorScheme.onError,
                   ),
                   child: const Text('Disconnect'),
                 ),
@@ -685,7 +685,7 @@ class _ViewerManagementDialogState extends State<_ViewerManagementDialog> {
                     DpadFocusable(
                       autofocus: others.isEmpty,
                       onSelect: () => setState(() => _showAddForm = true),
-                      child: OutlinedButton.icon(
+                      child: FilledButton.icon(
                         onPressed: () =>
                             setState(() => _showAddForm = true),
                         icon: const Icon(Icons.person_add),
