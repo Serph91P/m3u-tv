@@ -93,7 +93,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // Steal focus from the content area (autofocus won't do this if another
     // widget already holds focus when the player opens via the AppShell Stack).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _screenFocusNode.requestFocus();
+      if (mounted) {
+        // Overlay is visible on open — focus the play/pause button directly
+        // so D-pad traversal works immediately. Falls back to _screenFocusNode
+        // if somehow the overlay was already hidden.
+        if (_overlayVisible) {
+          _controlsFocusNode.requestFocus();
+        } else {
+          _screenFocusNode.requestFocus();
+        }
+      }
     });
     _checkResumePrompt();
     _startPlayback();
@@ -142,6 +151,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  // Sets the error state and reclaims _screenFocusNode after the next frame.
+  // PlaybackControls is hidden when _errorMessage is set, so without this the
+  // escape-to-close Shortcuts would have no focused node to route through.
+  void _setErrorMessage(String message) {
+    setState(() {
+      _errorMessage = message;
+      _status = PlaybackStatus.idle;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_disposed) _screenFocusNode.requestFocus();
+    });
+  }
+
   void _startPlayback() {
     _stateSubscription = widget.orchestrator.onState.listen(_handleState);
     _errorSubscription = widget.orchestrator.onError.listen(_handleError);
@@ -152,12 +174,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     unawaited(
       widget.orchestrator.open(source).catchError((Object error) {
-        if (!_disposed && mounted) {
-          setState(() {
-            _errorMessage = error.toString();
-            _status = PlaybackStatus.idle;
-          });
-        }
+        if (!_disposed && mounted) _setErrorMessage(error.toString());
       }),
     );
   }
@@ -169,11 +186,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
           mounted &&
           (_status == PlaybackStatus.loading ||
               _status == PlaybackStatus.idle)) {
-        setState(() {
-          _errorMessage =
-              'Stream loading timed out. The server may be unreachable or the stream URL is invalid.';
-          _status = PlaybackStatus.idle;
-        });
+        _setErrorMessage(
+          'Stream loading timed out. The server may be unreachable or the stream URL is invalid.',
+        );
       }
     });
   }
@@ -254,10 +269,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
-    setState(() {
-      _errorMessage = error.message;
-      _status = PlaybackStatus.idle;
-    });
+    _setErrorMessage(error.message);
   }
 
   void _startProgressReporting() {
@@ -445,12 +457,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
             focusNode: _screenFocusNode,
             autofocus: true,
             onKeyEvent: (node, event) {
-              // Any key press while the overlay is hidden brings it back.
               if (event is KeyDownEvent &&
                   !_overlayVisible &&
                   !_showResumePrompt &&
                   _errorMessage == null) {
-                _showOverlay();
+                // Don't intercept back/escape — let the Shortcuts above handle
+                // it as a direct back action. Intercepting it here would set
+                // _overlayVisible = true, causing _handleBack() to call
+                // _hideOverlay() instead of _goBack(), making back a no-op.
+                final key = event.logicalKey;
+                final isBack =
+                    key == LogicalKeyboardKey.escape ||
+                    key == LogicalKeyboardKey.goBack;
+                if (!isBack) _showOverlay();
               }
               return KeyEventResult.ignored;
             },
@@ -541,7 +560,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     !_showResumePrompt &&
                     _errorMessage == null)
                   Positioned(
-                    top: 56,
+                    top: 40,
                     right: 40,
                     child: _PlaybackDiagnosticsPanel(
                       activeBackend: widget.orchestrator.activeBackend,
