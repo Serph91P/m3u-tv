@@ -523,9 +523,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     _overlayVisible &&
                     !_showResumePrompt)
                   Positioned(
-                    top: 60,
+                    top: 40,
                     left: 104,
-                    right: 40,
+                    width: 420,
                     child: EpgOverlay(
                       currentTitle: _epgData!.current.title,
                       currentProgress: _epgData!.progress,
