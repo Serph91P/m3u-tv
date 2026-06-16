@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:m3u_tv/features/player/epg_overlay.dart';
@@ -72,6 +73,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // Handed to the play/pause button so _showOverlay() can jump focus there.
   final FocusNode _controlsFocusNode = FocusNode();
 
+  // Handed to the "Go back" button on the error screen.
+  final FocusNode _errorButtonFocusNode = FocusNode();
+
   Timer? _loadingTimer;
   Timer? _overlayHideTimer;
   Timer? _progressTimer;
@@ -138,6 +142,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _epgTimer?.cancel();
     _screenFocusNode.dispose();
     _controlsFocusNode.dispose();
+    _errorButtonFocusNode.dispose();
     unawaited(_stateSubscription?.cancel());
     unawaited(_errorSubscription?.cancel());
     unawaited(widget.orchestrator.stop());
@@ -160,7 +165,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _status = PlaybackStatus.idle;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_disposed) _screenFocusNode.requestFocus();
+      if (mounted && !_disposed) _errorButtonFocusNode.requestFocus();
     });
   }
 
@@ -348,6 +353,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _goBack() {
     if (_disposed || !mounted) return;
+    // Return focus to _screenFocusNode before closing. AppShell's restoration
+    // logic (savedFocus / _contentFocusNode fallback) was designed around
+    // _screenFocusNode being the primary focus when the player closes. If a
+    // DpadFocusable child (error button, controls) is primary instead, its
+    // Focus widget unmounts and detaches the node before PlayerScreen.dispose()
+    // runs, breaking the parent chain and causing _willDisposeFocusNode to
+    // corrupt _contentFocusNode._focusedChild.
+    if (!_screenFocusNode.hasPrimaryFocus) {
+      _screenFocusNode.requestFocus();
+    }
     if (widget.onClose != null) {
       widget.onClose!();
     } else {
@@ -523,6 +538,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             textAlign: TextAlign.center,
                             maxLines: 6,
                             overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 24),
+                          DpadFocusable(
+                            focusNode: _errorButtonFocusNode,
+                            onSelect: _goBack,
+                            effects: const [
+                              DpadBorderEffect(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(50),
+                                ),
+                              ),
+                            ],
+                            child: FilledButton.icon(
+                              onPressed: _goBack,
+                              icon: const Icon(Icons.arrow_back),
+                              label: const Text('Go back'),
+                            ),
                           ),
                         ],
                       ),

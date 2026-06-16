@@ -11,6 +11,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.source.UnrecognizedInputFormatException
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
@@ -152,7 +153,7 @@ class Media3PlaybackPlugin(
 
         player.setVideoSurface(surface)
         player.addListener(Media3Listener())
-        player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)), startPositionMs)
+        player.setMediaItem(buildMediaItem(uri, source), startPositionMs)
         emit("buffering", uri = uri, positionMs = startPositionMs, textureId = state.textureId)
         player.prepare()
         player.play()
@@ -219,7 +220,7 @@ class Media3PlaybackPlugin(
 
         override fun onPlayerError(error: PlaybackException) {
             val state = playerState
-            if (state != null && state.retryHlsAsProgressive(error)) {
+            if (state != null && state.retryAsTs(error)) {
                 emit("buffering", uri = state.uri, positionMs = state.player.currentPosition, textureId = state.textureId)
                 state.player.prepare()
                 return
@@ -243,8 +244,8 @@ class Media3PlaybackPlugin(
         val uri: String,
         var retriedHlsAsProgressive: Boolean = false,
     ) {
-        fun retryHlsAsProgressive(error: PlaybackException): Boolean {
-            if (retriedHlsAsProgressive || !error.looksLikeHlsManifestMismatch()) {
+        fun retryAsTs(error: PlaybackException): Boolean {
+            if (retriedHlsAsProgressive || !error.looksLikeFormatMismatch()) {
                 return false
             }
 
@@ -258,6 +259,37 @@ class Media3PlaybackPlugin(
         }
     }
 
+    private fun buildMediaItem(uri: String, source: Map<*, *>): MediaItem {
+        val isLive = source["isLive"] as? Boolean ?: false
+        val metadata = source["metadata"] as? Map<*, *>
+        val containerExtension = metadata?.get("container_extension") as? String
+
+        // For live streams, always hint HLS first (Xtream live URLs have no extension).
+        // For VOD/series, use the container extension from metadata to avoid format sniffing.
+        val mimeType: String? = when {
+            isLive -> MimeTypes.APPLICATION_M3U8
+            containerExtension != null -> mimeTypeFromExtension(containerExtension)
+            else -> null
+        }
+
+        return if (mimeType != null) {
+            MediaItem.Builder().setUri(Uri.parse(uri)).setMimeType(mimeType).build()
+        } else {
+            MediaItem.fromUri(Uri.parse(uri))
+        }
+    }
+
+    private fun mimeTypeFromExtension(ext: String): String? = when (ext.lowercase().trimStart('.')) {
+        "mp4", "m4v" -> MimeTypes.VIDEO_MP4
+        "mkv" -> MimeTypes.VIDEO_MATROSKA
+        "ts" -> MimeTypes.VIDEO_MP2T
+        "m3u8" -> MimeTypes.APPLICATION_M3U8
+        "mov" -> "video/quicktime"
+        "avi" -> "video/avi"
+        "flv" -> "video/x-flv"
+        else -> null
+    }
+
     private fun MethodCall.argumentsMap(): Map<String, Any?> = arguments as? Map<String, Any?> ?: emptyMap()
 
     private fun MethodCall.longArgument(name: String): Long = (argument<Number>(name))?.toLong() ?: 0L
@@ -268,7 +300,9 @@ class Media3PlaybackPlugin(
     }
 }
 
-private fun PlaybackException.looksLikeHlsManifestMismatch(): Boolean {
+private fun PlaybackException.looksLikeFormatMismatch(): Boolean {
+    if (cause is UnrecognizedInputFormatException) return true
     val text = listOfNotNull(message, cause?.message).joinToString("\n")
-    return text.contains("Input does not start with the #EXTM3U header")
+    return text.contains("Input does not start with the #EXTM3U header") ||
+        text.contains("UnrecognizedInputFormatException")
 }

@@ -183,7 +183,7 @@ void main() {
         'android/app/src/main/kotlin/com/m3ue/m3utv/Media3PlaybackPlugin.kt',
       ).readAsStringSync();
 
-      expect(media3Plugin, contains('retryHlsAsProgressive'));
+      expect(media3Plugin, contains('retriedHlsAsProgressive'));
       expect(media3Plugin, contains('MimeTypes.VIDEO_MP2T'));
       expect(
         media3Plugin,
