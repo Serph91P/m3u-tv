@@ -7,6 +7,8 @@ import androidx.annotation.OptIn
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -126,11 +128,17 @@ class Media3PlaybackPlugin(
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
+            .setAllowCrossProtocolRedirects(true)
         if (userAgent != null) {
             httpDataSourceFactory.setUserAgent(userAgent)
         }
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .setUsage(C.USAGE_MEDIA)
+            .build()
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .build()
         val state = PlayerState(
             player = player,
