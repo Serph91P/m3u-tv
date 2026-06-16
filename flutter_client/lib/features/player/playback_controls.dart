@@ -1,5 +1,6 @@
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:m3u_tv/features/player/format_time.dart';
 
@@ -35,14 +36,6 @@ class PlaybackControls extends StatelessWidget {
   final FocusNode? playPauseFocusNode;
 
   static const Duration seekStep = Duration(seconds: 10);
-
-  double _progress() {
-    if (duration.inMilliseconds == 0) return 0;
-    return (currentPosition.inMilliseconds / duration.inMilliseconds).clamp(
-      0.0,
-      1.0,
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,47 +123,10 @@ class PlaybackControls extends StatelessWidget {
   }
 
   Widget _buildProgressBar(ColorScheme colorScheme) {
-    final progress = _progress();
-
-    return Row(
-      children: [
-        SizedBox(
-          width: 60,
-          child: Text(
-            formatTime(currentPosition),
-            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        Expanded(
-          child: Container(
-            height: 6,
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white30,
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: progress,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 60,
-          child: Text(
-            formatTime(duration),
-            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ],
+    return _SeekBar(
+      currentPosition: currentPosition,
+      duration: duration,
+      onSeek: onSeek,
     );
   }
 
@@ -251,6 +207,210 @@ class _ControlButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, size: 22, color: colorScheme.onSurface),
+        ),
+      ),
+    );
+  }
+}
+
+class _SeekBar extends StatefulWidget {
+  const _SeekBar({
+    required this.currentPosition,
+    required this.duration,
+    required this.onSeek,
+  });
+
+  final Duration currentPosition;
+  final Duration duration;
+  final ValueChanged<Duration> onSeek;
+
+  static const Duration _scrubStep = Duration(seconds: 30);
+
+  @override
+  State<_SeekBar> createState() => _SeekBarState();
+}
+
+class _SeekBarState extends State<_SeekBar> {
+  final FocusNode _focusNode = FocusNode();
+  Duration? _scrubPosition;
+  bool _hasFocus = false;
+
+  Duration get _displayPosition => _scrubPosition ?? widget.currentPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_onFocusChange)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    setState(() => _hasFocus = _focusNode.hasFocus);
+    if (!_focusNode.hasFocus && _scrubPosition != null) {
+      _commit();
+    }
+  }
+
+  void _adjustScrub(int direction) {
+    final current = _scrubPosition ?? widget.currentPosition;
+    final next = current + (_SeekBar._scrubStep * direction);
+    setState(() {
+      _scrubPosition = Duration(
+        milliseconds: next.inMilliseconds.clamp(
+          0,
+          widget.duration.inMilliseconds,
+        ),
+      );
+    });
+  }
+
+  void _commit() {
+    final pos = _scrubPosition;
+    if (pos == null) return;
+    setState(() => _scrubPosition = null);
+    widget.onSeek(pos);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final displayPos = _displayPosition;
+    final total = widget.duration;
+    final isScrubbing = _scrubPosition != null;
+    final progress = total.inMilliseconds == 0
+        ? 0.0
+        : (displayPos.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (node, event) {
+        if (!_focusNode.hasFocus) return KeyEventResult.ignored;
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.arrowLeft) {
+          _adjustScrub(-1);
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.arrowRight) {
+          _adjustScrub(1);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: DpadFocusable(
+        focusNode: _focusNode,
+        onSelect: _commit,
+        effects: const [
+          DpadBorderEffect(
+            borderRadius: BorderRadius.all(Radius.circular(4)),
+          ),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 60,
+                child: Text(
+                  formatTime(displayPos),
+                  style: TextStyle(
+                    color: isScrubbing
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                    fontWeight: isScrubbing
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final trackW = constraints.maxWidth;
+                      final fillW = (trackW * progress).clamp(0.0, trackW);
+                      final barH = _hasFocus ? 8.0 : 6.0;
+                      return SizedBox(
+                        height: 16,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: (16 - barH) / 2,
+                              height: barH,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white30,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 0,
+                              top: (16 - barH) / 2,
+                              width: fillW,
+                              height: barH,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                            if (_hasFocus)
+                              Positioned(
+                                left: (fillW - 8).clamp(0, trackW - 16),
+                                top: 0,
+                                child: Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary,
+                                    shape: BoxShape.circle,
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black38,
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 60,
+                child: Text(
+                  formatTime(total),
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

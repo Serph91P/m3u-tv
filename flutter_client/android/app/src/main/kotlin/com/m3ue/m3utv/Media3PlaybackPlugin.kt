@@ -175,6 +175,7 @@ class Media3PlaybackPlugin(
         type: String,
         uri: String? = null,
         positionMs: Long? = null,
+        durationMs: Long? = null,
         textureId: Long? = null,
         code: String? = null,
         message: String? = null,
@@ -183,6 +184,7 @@ class Media3PlaybackPlugin(
         val event = mutableMapOf<String, Any?>("type" to type, "backend" to "androidExoPlayer")
         if (uri != null) event["uri"] = uri
         if (positionMs != null) event["positionMs"] = positionMs
+        if (durationMs != null) event["durationMs"] = durationMs
         if (textureId != null) event["textureId"] = textureId
         if (code != null) event["code"] = code
         if (message != null) event["message"] = message
@@ -200,17 +202,19 @@ class Media3PlaybackPlugin(
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             val player = playerState?.player ?: return
+            val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
             when (playbackState) {
                 Player.STATE_BUFFERING -> emit("buffering", positionMs = player.currentPosition)
-                Player.STATE_READY -> emit(if (player.playWhenReady) "playing" else "ready", positionMs = player.currentPosition)
-                Player.STATE_ENDED -> emit("end", positionMs = player.currentPosition)
+                Player.STATE_READY -> emit(if (player.playWhenReady) "playing" else "ready", positionMs = player.currentPosition, durationMs = dur)
+                Player.STATE_ENDED -> emit("end", positionMs = player.currentPosition, durationMs = dur)
                 Player.STATE_IDLE -> Unit
             }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val player = playerState?.player ?: return
-            emit(if (isPlaying) "playing" else "ready", positionMs = player.currentPosition)
+            val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+            emit(if (isPlaying) "playing" else "ready", positionMs = player.currentPosition, durationMs = dur)
         }
 
         override fun onPlayerError(error: PlaybackException) {

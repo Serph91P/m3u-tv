@@ -306,6 +306,7 @@ class AndroidPlaybackAdapter implements PlayerAdapter, VideoTextureProvider {
         backend: PlaybackBackend.androidExoPlayer,
         status: status,
         position: event.position ?? _state.position,
+        duration: event.duration,
       ),
     );
   }
@@ -404,6 +405,7 @@ class AndroidMedia3Event {
     required this.type,
     this.uri,
     this.position,
+    this.duration,
     this.textureId,
     this.code,
     this.message,
@@ -417,6 +419,9 @@ class AndroidMedia3Event {
       position: map['positionMs'] is num
           ? Duration(milliseconds: (map['positionMs']! as num).round())
           : null,
+      duration: map['durationMs'] is num
+          ? Duration(milliseconds: (map['durationMs']! as num).round())
+          : null,
       textureId: (map['textureId'] as num?)?.toInt(),
       code: map['code'] as String?,
       message: map['message'] as String?,
@@ -427,6 +432,7 @@ class AndroidMedia3Event {
   final AndroidMedia3EventType type;
   final String? uri;
   final Duration? position;
+  final Duration? duration;
   final int? textureId;
   final String? code;
   final String? message;

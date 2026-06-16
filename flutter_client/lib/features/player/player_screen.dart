@@ -75,6 +75,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _loadingTimer;
   Timer? _overlayHideTimer;
   Timer? _progressTimer;
+  Timer? _positionTimer;
   Timer? _epgTimer;
   Future<void>? _epgFetch;
 
@@ -100,12 +101,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _scheduleOverlayHide();
   }
 
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_disposed || !mounted || !_isPlaying || _isLive) return;
+      setState(() {
+        final next = _currentPosition + const Duration(milliseconds: 500);
+        _currentPosition = (_duration > Duration.zero && next > _duration)
+            ? _duration
+            : next;
+      });
+    });
+  }
+
+  void _stopPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = null;
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _loadingTimer?.cancel();
     _overlayHideTimer?.cancel();
     _progressTimer?.cancel();
+    _positionTimer?.cancel();
     _epgTimer?.cancel();
     _screenFocusNode.dispose();
     _controlsFocusNode.dispose();
@@ -189,10 +209,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (state.status == PlaybackStatus.playing) {
         _isPlaying = true;
         _errorMessage = null;
-      } else if (state.status == PlaybackStatus.paused) {
-        _isPlaying = false;
+        if (!_isLive) _startPositionTimer();
+      } else if (state.status == PlaybackStatus.paused ||
+          state.status == PlaybackStatus.buffering) {
+        if (state.status == PlaybackStatus.paused) _isPlaying = false;
+        _stopPositionTimer();
       } else if (state.status == PlaybackStatus.completed) {
         _isPlaying = false;
+        _stopPositionTimer();
         _goBack();
       }
     });
