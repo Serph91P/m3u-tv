@@ -171,18 +171,20 @@ class _VodDetailsBody extends StatelessWidget {
   }
 
   void _play(_ResolvedVodDetails details) {
-    onPlay?.call(PlayerArgs(
-      streamUrl: item.streamUrl,
-      title: details.name,
-      type: 'vod',
-      streamId: item.id,
-      metadata: <String, Object?>{
-        if (details.containerExtension != null)
-          'container_extension': details.containerExtension,
-        if (details.duration != null) 'duration': details.duration,
-        if (details.rating != null) 'rating': details.rating,
-      },
-    ));
+    onPlay?.call(
+      PlayerArgs(
+        streamUrl: item.streamUrl,
+        title: details.name,
+        type: 'vod',
+        streamId: item.id,
+        metadata: <String, Object?>{
+          if (details.containerExtension != null)
+            'container_extension': details.containerExtension,
+          if (details.duration != null) 'duration': details.duration,
+          if (details.rating != null) 'rating': details.rating,
+        },
+      ),
+    );
   }
 }
 

@@ -66,17 +66,19 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
   void _playEpisode(Episode episode) {
     final streamUrl = episode.streamUrl;
     if (streamUrl == null || streamUrl.isEmpty) return;
-    widget.onPlay?.call(PlayerArgs(
-      streamUrl: streamUrl,
-      title: episode.title,
-      type: 'series',
-      streamId: int.tryParse(episode.id),
-      seriesId: widget.seriesId,
-      seasonNumber: episode.seasonNumber,
-      metadata: <String, Object?>{
-        'container_extension': episode.containerExtension,
-      },
-    ));
+    widget.onPlay?.call(
+      PlayerArgs(
+        streamUrl: streamUrl,
+        title: episode.title,
+        type: 'series',
+        streamId: int.tryParse(episode.id),
+        seriesId: widget.seriesId,
+        seasonNumber: episode.seasonNumber,
+        metadata: <String, Object?>{
+          'container_extension': episode.containerExtension,
+        },
+      ),
+    );
   }
 }
 
