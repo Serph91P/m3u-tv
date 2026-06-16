@@ -2,16 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
-import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 class VodDetailsScreen extends StatefulWidget {
-  const VodDetailsScreen({super.key, required this.item, this.xtreamService});
+  const VodDetailsScreen({
+    super.key,
+    required this.item,
+    this.xtreamService,
+    this.onPlay,
+  });
 
   final VodItem item;
   final XtreamService? xtreamService;
+  final void Function(PlayerArgs)? onPlay;
 
   @override
   State<VodDetailsScreen> createState() => _VodDetailsScreenState();
@@ -28,7 +33,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
       appBar: AppBar(title: Text(widget.item.name)),
       body: SafeArea(
         child: _future == null
-            ? _VodDetailsBody(item: widget.item)
+            ? _VodDetailsBody(item: widget.item, onPlay: widget.onPlay)
             : FutureBuilder<VodInfo?>(
                 future: _future,
                 builder: (context, snapshot) {
@@ -36,6 +41,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
                     item: widget.item,
                     info: snapshot.hasError ? null : snapshot.data,
                     isLoading: snapshot.connectionState != ConnectionState.done,
+                    onPlay: widget.onPlay,
                   );
                 },
               ),
@@ -49,11 +55,13 @@ class _VodDetailsBody extends StatelessWidget {
     required this.item,
     this.info,
     this.isLoading = false,
+    this.onPlay,
   });
 
   final VodItem item;
   final VodInfo? info;
   final bool isLoading;
+  final void Function(PlayerArgs)? onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +115,7 @@ class _VodDetailsBody extends StatelessWidget {
                   const SizedBox(height: MediaBrowsingMetrics.contentPadding),
                   FilledButton.icon(
                     autofocus: true,
-                    onPressed: () => _play(context, details),
+                    onPressed: () => _play(details),
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Play movie'),
                   ),
@@ -162,24 +170,19 @@ class _VodDetailsBody extends StatelessWidget {
     );
   }
 
-  void _play(BuildContext context, _ResolvedVodDetails details) {
-    unawaited(
-      Navigator.of(context).pushNamed(
-        RouteNames.player,
-        arguments: PlayerArgs(
-          streamUrl: item.streamUrl,
-          title: details.name,
-          type: 'vod',
-          streamId: item.id,
-          metadata: <String, Object?>{
-            if (details.containerExtension != null)
-              'container_extension': details.containerExtension,
-            if (details.duration != null) 'duration': details.duration,
-            if (details.rating != null) 'rating': details.rating,
-          },
-        ),
-      ),
-    );
+  void _play(_ResolvedVodDetails details) {
+    onPlay?.call(PlayerArgs(
+      streamUrl: item.streamUrl,
+      title: details.name,
+      type: 'vod',
+      streamId: item.id,
+      metadata: <String, Object?>{
+        if (details.containerExtension != null)
+          'container_extension': details.containerExtension,
+        if (details.duration != null) 'duration': details.duration,
+        if (details.rating != null) 'rating': details.rating,
+      },
+    ));
   }
 }
 

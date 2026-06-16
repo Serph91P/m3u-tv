@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
-import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -13,11 +12,13 @@ class SeriesDetailsScreen extends StatefulWidget {
     required this.seriesId,
     required this.seriesName,
     required this.xtreamService,
+    this.onPlay,
   });
 
   final int seriesId;
   final String seriesName;
   final XtreamService xtreamService;
+  final void Function(PlayerArgs)? onPlay;
 
   @override
   State<SeriesDetailsScreen> createState() => _SeriesDetailsScreenState();
@@ -65,22 +66,17 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
   void _playEpisode(Episode episode) {
     final streamUrl = episode.streamUrl;
     if (streamUrl == null || streamUrl.isEmpty) return;
-    unawaited(
-      Navigator.of(context).pushNamed(
-        RouteNames.player,
-        arguments: PlayerArgs(
-          streamUrl: streamUrl,
-          title: episode.title,
-          type: 'series',
-          streamId: int.tryParse(episode.id),
-          seriesId: widget.seriesId,
-          seasonNumber: episode.seasonNumber,
-          metadata: <String, Object?>{
-            'container_extension': episode.containerExtension,
-          },
-        ),
-      ),
-    );
+    widget.onPlay?.call(PlayerArgs(
+      streamUrl: streamUrl,
+      title: episode.title,
+      type: 'series',
+      streamId: int.tryParse(episode.id),
+      seriesId: widget.seriesId,
+      seasonNumber: episode.seasonNumber,
+      metadata: <String, Object?>{
+        'container_extension': episode.containerExtension,
+      },
+    ));
   }
 }
 

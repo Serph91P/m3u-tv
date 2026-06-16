@@ -644,6 +644,7 @@ class _ContentNavigator extends StatelessWidget {
       epgService: appState.epgService,
       playbackOrchestratorBuilder: playbackOrchestratorBuilder,
       playerRouteBuilder: playerRouteBuilder,
+      onOpenPlayer: onOpenPlayer,
     );
 
     return Navigator(

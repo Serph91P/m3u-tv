@@ -112,6 +112,7 @@ RouteFactory buildAppRouter({
   EpgService? epgService,
   PlaybackOrchestrator Function()? playbackOrchestratorBuilder,
   Widget Function(PlayerArgs args)? playerRouteBuilder,
+  void Function(PlayerArgs)? onOpenPlayer,
 }) {
   return (RouteSettings settings) {
     final routeName = settings.name;
@@ -187,7 +188,11 @@ RouteFactory buildAppRouter({
       if (args is DetailsArgs && args.item != null) {
         return _buildSlideRoute(
           settings,
-          VodDetailsScreen(item: args.item!, xtreamService: xtreamService),
+          VodDetailsScreen(
+            item: args.item!,
+            xtreamService: xtreamService,
+            onPlay: onOpenPlayer,
+          ),
         );
       }
       final detailTitle = args is DetailsArgs ? args.vodName : 'Details';
@@ -202,6 +207,7 @@ RouteFactory buildAppRouter({
             seriesId: args.seriesId,
             seriesName: args.seriesName,
             xtreamService: xtreamService,
+            onPlay: onOpenPlayer,
           ),
         );
       }
