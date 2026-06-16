@@ -56,6 +56,7 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   PlayerArgs? _playerArgs;
   PlaybackOrchestrator? _playerOrchestrator;
+  FocusNode? _focusBeforePlayer;
 
   // Focus nodes for sidebar items
   final List<FocusNode> _sidebarFocusNodes = [];
@@ -179,6 +180,15 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final newOrch =
         widget.playbackOrchestratorBuilder?.call() ??
         buildPlaybackOrchestrator();
+    // Save the focused node so we can restore it precisely after the player
+    // closes. _contentFocusNode.requestFocus() alone is unreliable: when
+    // PlayerScreen disposes _screenFocusNode, Flutter's _willDisposeFocusNode
+    // calls requestFocusWithin() on the root scope, which finds the FIRST
+    // focusable in the tree (often the initial route, not the current one)
+    // and corrupts _contentFocusNode._focusedChild before our postFrameCallback
+    // gets a chance to run.
+    final focus = FocusManager.instance.primaryFocus;
+    _focusBeforePlayer = _isInContentScope(focus) ? focus : null;
     setState(() {
       _playerArgs = args;
       _playerOrchestrator = newOrch;
@@ -191,15 +201,34 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  bool _isInContentScope(FocusNode? node) {
+    var current = node;
+    while (current != null) {
+      if (current == _contentFocusNode) return true;
+      current = current.parent;
+    }
+    return false;
+  }
+
   void _closePlayer() {
     final orch = _playerOrchestrator;
+    final savedFocus = _focusBeforePlayer;
+    _focusBeforePlayer = null;
     setState(() {
       _playerArgs = null;
       _playerOrchestrator = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       orch?.dispose().ignore();
-      if (mounted) _contentFocusNode.requestFocus();
+      if (!mounted) return;
+      // Restore to the exact node that had focus before the player opened.
+      // If that node is gone, fall back to the content scope (which uses
+      // whatever _focusedChild it still has).
+      if (savedFocus != null && savedFocus.canRequestFocus) {
+        savedFocus.requestFocus();
+      } else {
+        _contentFocusNode.requestFocus();
+      }
     });
   }
 
