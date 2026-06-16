@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/vod/vod_details_screen.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
-import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 
@@ -60,19 +59,14 @@ void main() {
               containerExtension: 'mkv',
             ),
           ),
-          playerRouteBuilder: (args) {
-            playerArgs = args;
-            return Scaffold(body: Text('Player route: ${args.title}'));
-          },
+          onPlay: (args) => playerArgs = args,
         ),
       );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Play movie'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('Player route: Fixture Movie'), findsOneWidget);
       expect(playerArgs?.streamUrl, 'http://example.com/movie/201.mp4');
       expect(playerArgs?.type, 'vod');
       expect(playerArgs?.metadata['container_extension'], 'mkv');
@@ -81,38 +75,26 @@ void main() {
 }
 
 class _TestApp extends StatelessWidget {
-  const _TestApp({required this.service, this.playerRouteBuilder});
+  const _TestApp({required this.service, this.onPlay});
 
   final XtreamService service;
-  final Widget Function(PlayerArgs args)? playerRouteBuilder;
+  final void Function(PlayerArgs)? onPlay;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData.dark(useMaterial3: true),
-      onGenerateRoute: (settings) {
-        if (settings.name == RouteNames.player &&
-            settings.arguments is PlayerArgs) {
-          final args = settings.arguments! as PlayerArgs;
-          return MaterialPageRoute<void>(
-            builder: (_) =>
-                playerRouteBuilder?.call(args) ??
-                Scaffold(body: Text('Player route: ${args.title}')),
-          );
-        }
-        return MaterialPageRoute<void>(
-          builder: (_) => VodDetailsScreen(
-            item: const VodItem(
-              id: 201,
-              name: 'Fixture Movie',
-              streamUrl: 'http://example.com/movie/201.mp4',
-              containerExtension: 'mp4',
-              rating: 3.5,
-            ),
-            xtreamService: service,
-          ),
-        );
-      },
+      home: VodDetailsScreen(
+        item: const VodItem(
+          id: 201,
+          name: 'Fixture Movie',
+          streamUrl: 'http://example.com/movie/201.mp4',
+          containerExtension: 'mp4',
+          rating: 3.5,
+        ),
+        xtreamService: service,
+        onPlay: onPlay,
+      ),
     );
   }
 }
