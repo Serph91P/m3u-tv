@@ -63,12 +63,28 @@ class _VodDetailsBody extends StatelessWidget {
   final bool isLoading;
   final void Function(PlayerArgs)? onPlay;
 
+  static const double _wideBreakpoint = 600;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final details = _ResolvedVodDetails(item, info);
-    final backdrop = details.backdropUrl;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < _wideBreakpoint) {
+          return _buildNarrow(context, theme, details);
+        }
+        return _buildWide(context, theme, details);
+      },
+    );
+  }
 
+  Widget _buildWide(
+    BuildContext context,
+    ThemeData theme,
+    _ResolvedVodDetails details,
+  ) {
+    final backdrop = details.backdropUrl;
     final content = Padding(
       padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
       child: Row(
@@ -88,65 +104,13 @@ class _VodDetailsBody extends StatelessWidget {
           ),
           const SizedBox(width: MediaBrowsingMetrics.pagePadding),
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(details.name, style: theme.textTheme.headlineMedium),
-                  const SizedBox(height: MediaBrowsingMetrics.itemGap),
-                  Wrap(
-                    spacing: MediaBrowsingMetrics.itemGap,
-                    runSpacing: MediaBrowsingMetrics.chipGap,
-                    children: [
-                      if (details.year != null)
-                        _MetadataChip(label: details.year!),
-                      if (details.genre != null)
-                        _MetadataChip(label: details.genre!),
-                      if (details.duration != null)
-                        _MetadataChip(label: details.duration!),
-                      if (details.rating != null)
-                        _MetadataChip(label: '★ ${details.rating}'),
-                      if (details.containerExtension != null)
-                        _MetadataChip(
-                          label: details.containerExtension!.toUpperCase(),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-                  FilledButton.icon(
-                    autofocus: true,
-                    onPressed: () => _play(details),
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Play movie'),
-                  ),
-                  const SizedBox(height: MediaBrowsingMetrics.pagePadding),
-                  if (isLoading) ...[
-                    const LinearProgressIndicator(),
-                    const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-                  ],
-                  Text(
-                    details.plot ?? 'No synopsis available.',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (details.director != null || details.cast != null) ...[
-                    const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-                    if (details.director != null)
-                      _CreditLine(label: 'Director', value: details.director!),
-                    if (details.cast != null)
-                      _CreditLine(label: 'Cast', value: details.cast!),
-                  ],
-                ],
-              ),
-            ),
+            child: SingleChildScrollView(child: _infoColumn(theme, details)),
           ),
         ],
       ),
     );
 
     if (backdrop == null) return content;
-
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -166,6 +130,118 @@ class _VodDetailsBody extends StatelessWidget {
           ),
         ),
         content,
+      ],
+    );
+  }
+
+  Widget _buildNarrow(
+    BuildContext context,
+    ThemeData theme,
+    _ResolvedVodDetails details,
+  ) {
+    final backdrop = details.backdropUrl;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 220,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (backdrop != null)
+                Image.network(backdrop, fit: BoxFit.cover)
+              else
+                ResilientMediaImage(
+                  imageUrl: details.coverUrl,
+                  fallbackIcon: Icons.movie,
+                  borderRadius: 0,
+                  fallbackTitle: details.name,
+                ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, theme.colorScheme.surface],
+                      stops: const [0.4, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: _infoColumn(theme, details, fullWidthButton: true),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoColumn(
+    ThemeData theme,
+    _ResolvedVodDetails details, {
+    bool fullWidthButton = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(details.name, style: theme.textTheme.headlineMedium),
+        const SizedBox(height: MediaBrowsingMetrics.itemGap),
+        Wrap(
+          spacing: MediaBrowsingMetrics.itemGap,
+          runSpacing: MediaBrowsingMetrics.chipGap,
+          children: [
+            if (details.year != null) _MetadataChip(label: details.year!),
+            if (details.genre != null) _MetadataChip(label: details.genre!),
+            if (details.duration != null)
+              _MetadataChip(label: details.duration!),
+            if (details.rating != null)
+              _MetadataChip(label: '★ ${details.rating}'),
+            if (details.containerExtension != null)
+              _MetadataChip(label: details.containerExtension!.toUpperCase()),
+          ],
+        ),
+        const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+        if (fullWidthButton)
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              autofocus: true,
+              onPressed: () => _play(details),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Play movie'),
+            ),
+          )
+        else
+          FilledButton.icon(
+            autofocus: true,
+            onPressed: () => _play(details),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Play movie'),
+          ),
+        const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+        if (isLoading) ...[
+          const LinearProgressIndicator(),
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+        ],
+        Text(
+          details.plot ?? 'No synopsis available.',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (details.director != null || details.cast != null) ...[
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+          if (details.director != null)
+            _CreditLine(label: 'Director', value: details.director!),
+          if (details.cast != null)
+            _CreditLine(label: 'Cast', value: details.cast!),
+        ],
       ],
     );
   }

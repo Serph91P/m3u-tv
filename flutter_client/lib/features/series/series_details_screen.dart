@@ -95,17 +95,34 @@ class _SeriesDetailsBody extends StatelessWidget {
   final ValueChanged<int> onSeasonSelected;
   final ValueChanged<Episode> onEpisodeSelected;
 
+  static const double _wideBreakpoint = 600;
+
+  int? get _resolvedSeason =>
+      selectedSeason ??
+      (info.seasons.isNotEmpty
+          ? info.seasons.first.number
+          : info.episodesBySeason.keys.firstOrNull);
+
+  List<Episode> _episodes(int? seasonNumber) => seasonNumber == null
+      ? const <Episode>[]
+      : info.episodesBySeason[seasonNumber] ?? const <Episode>[];
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < _wideBreakpoint) {
+          return _buildNarrow(context);
+        }
+        return _buildWide(context);
+      },
+    );
+  }
+
+  Widget _buildWide(BuildContext context) {
     final theme = Theme.of(context);
-    final seasonNumber =
-        selectedSeason ??
-        (info.seasons.isNotEmpty
-            ? info.seasons.first.number
-            : info.episodesBySeason.keys.firstOrNull);
-    final episodes = seasonNumber == null
-        ? const <Episode>[]
-        : info.episodesBySeason[seasonNumber] ?? const <Episode>[];
+    final seasonNumber = _resolvedSeason;
+    final episodes = _episodes(seasonNumber);
     final backdrop = info.series.backdropUrl;
 
     final content = Padding(
@@ -150,51 +167,17 @@ class _SeriesDetailsBody extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 20),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: info.seasons
-                        .map((season) {
-                          final selected = season.number == seasonNumber;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(season.name),
-                              selected: selected,
-                              onSelected: (_) =>
-                                  onSeasonSelected(season.number),
-                            ),
-                          );
-                        })
-                        .toList(growable: false),
-                  ),
+                _SeasonChips(
+                  seasons: info.seasons,
+                  selectedSeason: seasonNumber,
+                  onSeasonSelected: onSeasonSelected,
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: episodes.isEmpty
-                      ? const Center(child: Text('No episodes available'))
-                      : ListView.separated(
-                          itemCount: episodes.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final episode = episodes[index];
-                            return Card(
-                              clipBehavior: Clip.antiAlias,
-                              child: ListTile(
-                                autofocus: index == 0,
-                                leading: CircleAvatar(
-                                  child: Text('${episode.episodeNumber}'),
-                                ),
-                                title: Text(episode.title),
-                                subtitle: episode.plot == null
-                                    ? null
-                                    : Text(episode.plot!),
-                                trailing: const Icon(Icons.play_arrow),
-                                onTap: () => onEpisodeSelected(episode),
-                              ),
-                            );
-                          },
-                        ),
+                  child: _EpisodeList(
+                    episodes: episodes,
+                    onEpisodeSelected: onEpisodeSelected,
+                  ),
                 ),
               ],
             ),
@@ -217,7 +200,6 @@ class _SeriesDetailsBody extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 Image.network(backdrop, fit: BoxFit.cover),
-                // Fade left edge into background
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -230,7 +212,6 @@ class _SeriesDetailsBody extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Fade bottom edge into background
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -249,6 +230,233 @@ class _SeriesDetailsBody extends StatelessWidget {
         ),
         content,
       ],
+    );
+  }
+
+  Widget _buildNarrow(BuildContext context) {
+    final theme = Theme.of(context);
+    final seasonNumber = _resolvedSeason;
+    final episodes = _episodes(seasonNumber);
+    final backdrop = info.series.backdropUrl;
+    final cover = info.series.coverUrl;
+
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Stack(
+            children: [
+              if (backdrop != null)
+                SizedBox(
+                  height: 200,
+                  width: double.infinity,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(backdrop, fit: BoxFit.cover),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                theme.colorScheme.surface,
+                              ],
+                              stops: const [0.4, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Padding(
+                padding: EdgeInsets.only(
+                  top: backdrop != null ? 120 : 16,
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: ResilientMediaImage(
+                        imageUrl: cover,
+                        fallbackIcon: Icons.tv,
+                        width: 100,
+                        height: 148,
+                        borderRadius: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            info.series.name,
+                            style: theme.textTheme.titleLarge,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (info.series.rating != null) ...[
+                            const SizedBox(height: 4),
+                            Chip(
+                              label: Text('★ ${info.series.rating}'),
+                              backgroundColor:
+                                  theme.colorScheme.surfaceContainerHighest,
+                              side: BorderSide(
+                                color: theme.colorScheme.outlineVariant,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (info.series.plot != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                info.series.plot!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _SeasonChips(
+              seasons: info.seasons,
+              selectedSeason: seasonNumber,
+              onSeasonSelected: onSeasonSelected,
+            ),
+          ),
+        ),
+        if (episodes.isEmpty)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: Text('No episodes available')),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            sliver: SliverList.separated(
+              itemCount: episodes.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final episode = episodes[index];
+                return _EpisodeTile(
+                  episode: episode,
+                  autofocus: index == 0,
+                  onTap: () => onEpisodeSelected(episode),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SeasonChips extends StatelessWidget {
+  const _SeasonChips({
+    required this.seasons,
+    required this.selectedSeason,
+    required this.onSeasonSelected,
+  });
+
+  final List<Season> seasons;
+  final int? selectedSeason;
+  final ValueChanged<int> onSeasonSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (seasons.isEmpty) return const SizedBox.shrink();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: seasons
+            .map((season) {
+              final selected = season.number == selectedSeason;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(season.name),
+                  selected: selected,
+                  onSelected: (_) => onSeasonSelected(season.number),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _EpisodeList extends StatelessWidget {
+  const _EpisodeList({required this.episodes, required this.onEpisodeSelected});
+
+  final List<Episode> episodes;
+  final ValueChanged<Episode> onEpisodeSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (episodes.isEmpty) {
+      return const Center(child: Text('No episodes available'));
+    }
+    return ListView.separated(
+      itemCount: episodes.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final episode = episodes[index];
+        return _EpisodeTile(
+          episode: episode,
+          autofocus: index == 0,
+          onTap: () => onEpisodeSelected(episode),
+        );
+      },
+    );
+  }
+}
+
+class _EpisodeTile extends StatelessWidget {
+  const _EpisodeTile({
+    required this.episode,
+    required this.autofocus,
+    required this.onTap,
+  });
+
+  final Episode episode;
+  final bool autofocus;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        autofocus: autofocus,
+        leading: CircleAvatar(child: Text('${episode.episodeNumber}')),
+        title: Text(episode.title),
+        subtitle: episode.plot == null ? null : Text(episode.plot!),
+        trailing: const Icon(Icons.play_arrow),
+        onTap: onTap,
+      ),
     );
   }
 }
