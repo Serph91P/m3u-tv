@@ -18,9 +18,9 @@ import UIKit
     }
 
     private func registerAvKitPlugin(engineBridge: FlutterImplicitEngineBridge) {
-        guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AvKitPlaybackPlugin"),
-              let messenger = registrar.messenger(),
-              let textureRegistry = registrar.textures() else { return }
+        guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AvKitPlaybackPlugin") else { return }
+        let messenger = registrar.messenger()
+        let textureRegistry = registrar.textures()
 
         let plugin = AvKitPlaybackPlugin(textureRegistry: textureRegistry)
         avKitPlugin = plugin
@@ -29,7 +29,7 @@ import UIKit
             name: AvKitPlaybackPlugin.methodChannelName,
             binaryMessenger: messenger
         )
-        methodChannel.setMethodCallHandler { [weak plugin] call, result in
+        methodChannel.setMethodCallHandler { [weak plugin] (call: FlutterMethodCall, result: @escaping FlutterResult) in
             plugin?.handle(call, result: result)
         }
 
