@@ -243,6 +243,7 @@ class _SeekBarState extends State<_SeekBar> {
   Timer? _commitTimer;
   Duration? _scrubPosition;
   bool _hasFocus = false;
+  int _lastPointerSeekMs = 0;
 
   Duration get _displayPosition => _scrubPosition ?? widget.currentPosition;
 
@@ -287,16 +288,31 @@ class _SeekBarState extends State<_SeekBar> {
     if (widget.duration <= Duration.zero || width <= 0) return;
     final clampedX = localDx.clamp(0.0, width);
     final ratio = clampedX / width;
-    final position = Duration(
-      milliseconds: (widget.duration.inMilliseconds * ratio).round(),
-    );
-    setState(() => _scrubPosition = position);
-    _commitTimer?.cancel();
-    widget.onSeek(position);
+    setState(() {
+      _scrubPosition = Duration(
+        milliseconds: (widget.duration.inMilliseconds * ratio).round(),
+      );
+    });
   }
 
-  void _endPointerSeek() {
+  static const _pointerSeekThrottleMs = 400;
+
+  void _firePointerSeekThrottled() {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastPointerSeekMs < _pointerSeekThrottleMs) return;
+    _lastPointerSeekMs = nowMs;
+    final pos = _scrubPosition;
+    if (pos != null) widget.onSeek(pos);
+  }
+
+  void _commitPointerSeek() {
     _commitTimer?.cancel();
+    _commitTimer = null;
+    final pos = _scrubPosition;
+    if (pos == null) return;
+    _lastPointerSeekMs = 0;
+    widget.onSeek(pos);
+    // Keep thumb visible while the player seeks to the new position.
     _commitTimer = Timer(const Duration(milliseconds: 300), () {
       if (mounted) setState(() => _scrubPosition = null);
     });
@@ -371,15 +387,16 @@ class _SeekBarState extends State<_SeekBar> {
                       behavior: HitTestBehavior.opaque,
                       onTapDown: (details) {
                         _seekFromPointer(details.localPosition.dx, trackW);
-                        _endPointerSeek();
                       },
+                      onTap: _commitPointerSeek,
                       onHorizontalDragStart: (details) {
                         _seekFromPointer(details.localPosition.dx, trackW);
                       },
                       onHorizontalDragUpdate: (details) {
                         _seekFromPointer(details.localPosition.dx, trackW);
+                        _firePointerSeekThrottled();
                       },
-                      onHorizontalDragEnd: (_) => _endPointerSeek(),
+                      onHorizontalDragEnd: (_) => _commitPointerSeek(),
                       child: SizedBox(
                         height: 16,
                         child: Stack(
