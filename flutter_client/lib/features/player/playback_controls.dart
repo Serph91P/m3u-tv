@@ -243,7 +243,6 @@ class _SeekBarState extends State<_SeekBar> {
   Timer? _commitTimer;
   Duration? _scrubPosition;
   bool _hasFocus = false;
-  int _lastPointerSeekMs = 0;
 
   Duration get _displayPosition => _scrubPosition ?? widget.currentPosition;
 
@@ -295,22 +294,11 @@ class _SeekBarState extends State<_SeekBar> {
     });
   }
 
-  static const _pointerSeekThrottleMs = 400;
-
-  void _firePointerSeekThrottled() {
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (nowMs - _lastPointerSeekMs < _pointerSeekThrottleMs) return;
-    _lastPointerSeekMs = nowMs;
-    final pos = _scrubPosition;
-    if (pos != null) widget.onSeek(pos);
-  }
-
   void _commitPointerSeek() {
     _commitTimer?.cancel();
     _commitTimer = null;
     final pos = _scrubPosition;
     if (pos == null) return;
-    _lastPointerSeekMs = 0;
     widget.onSeek(pos);
     // Keep thumb visible while the player seeks to the new position.
     _commitTimer = Timer(const Duration(milliseconds: 300), () {
@@ -394,7 +382,6 @@ class _SeekBarState extends State<_SeekBar> {
                       },
                       onHorizontalDragUpdate: (details) {
                         _seekFromPointer(details.localPosition.dx, trackW);
-                        _firePointerSeekThrottled();
                       },
                       onHorizontalDragEnd: (_) => _commitPointerSeek(),
                       child: SizedBox(
