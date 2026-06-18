@@ -272,21 +272,23 @@ class _ScrollableCategoryBarState extends State<ScrollableCategoryBar> {
             Expanded(
               child: SizedBox(
                 height: 40,
-                child: ListView.separated(
-                  controller: _controller,
-                  scrollDirection: Axis.horizontal,
-                  padding: EdgeInsets.zero,
-                  itemCount: widget.tabs.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(width: MediaBrowsingMetrics.chipGap),
-                  itemBuilder: (context, index) {
-                    final tab = widget.tabs[index];
-                    return CategoryFilterChip(
-                      label: tab.name,
-                      isSelected: widget.selectedId == tab.id,
-                      onTap: () => widget.onSelected(tab.id),
-                    );
-                  },
+                child: ExcludeSemantics(
+                  child: ListView.separated(
+                    controller: _controller,
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.zero,
+                    itemCount: widget.tabs.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(width: MediaBrowsingMetrics.chipGap),
+                    itemBuilder: (context, index) {
+                      final tab = widget.tabs[index];
+                      return CategoryFilterChip(
+                        label: tab.name,
+                        isSelected: widget.selectedId == tab.id,
+                        onTap: () => widget.onSelected(tab.id),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -376,16 +378,18 @@ class _ScrollbarGridViewState extends State<ScrollbarGridView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scrollbar(
-      controller: _controller,
-      thumbVisibility: true,
-      trackVisibility: true,
-      child: GridView.builder(
+    return ExcludeSemantics(
+      child: Scrollbar(
         controller: _controller,
-        padding: widget.padding,
-        gridDelegate: widget.gridDelegate,
-        itemCount: widget.itemCount,
-        itemBuilder: widget.itemBuilder,
+        thumbVisibility: true,
+        trackVisibility: true,
+        child: GridView.builder(
+          controller: _controller,
+          padding: widget.padding,
+          gridDelegate: widget.gridDelegate,
+          itemCount: widget.itemCount,
+          itemBuilder: widget.itemBuilder,
+        ),
       ),
     );
   }
@@ -418,15 +422,17 @@ class _ScrollbarListViewState extends State<ScrollbarListView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scrollbar(
-      controller: _controller,
-      thumbVisibility: true,
-      trackVisibility: true,
-      child: ListView.builder(
+    return ExcludeSemantics(
+      child: Scrollbar(
         controller: _controller,
-        padding: widget.padding,
-        itemCount: widget.itemCount,
-        itemBuilder: widget.itemBuilder,
+        thumbVisibility: true,
+        trackVisibility: true,
+        child: ListView.builder(
+          controller: _controller,
+          padding: widget.padding,
+          itemCount: widget.itemCount,
+          itemBuilder: widget.itemBuilder,
+        ),
       ),
     );
   }
@@ -490,52 +496,78 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
   @override
   Widget build(BuildContext context) {
     final visibleItems = widget.items.take(12).toList(growable: false);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: MediaBrowsingMetrics.chipGap),
-          if (visibleItems.isEmpty)
-            Text(widget.emptyLabel)
-          else
-            SizedBox(
-              height:
-                  (widget.posterStyle
-                      ? MediaBrowsingMetrics.posterCardHeight
-                      : MediaBrowsingMetrics.previewCardHeight) +
-                  16,
-              child: DpadRegion(
-                memoryKey: 'preview-row/${widget.title}',
-                horizontalEdge: DpadEdgeBehavior.stop,
-                onEdge: (direction) {
-                  if (direction == TraversalDirection.left) {
-                    widget.onSidebarActivate?.call();
-                  }
-                },
-                child: Scrollbar(
-                  controller: _controller,
-                  thumbVisibility: true,
-                  trackVisibility: true,
-                  child: ListView.separated(
-                    controller: _controller,
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.only(bottom: 12),
-                    itemCount: visibleItems.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(width: MediaBrowsingMetrics.itemGap),
-                    itemBuilder: (context, index) => MediaPreviewCard(
-                      item: visibleItems[index],
-                      posterStyle: widget.posterStyle,
-                      autofocus: index == 0,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Scale card dimensions proportionally on wide TV screens (e.g. tvOS
+        // logical 1920px → scale 1.5). Clamped to 1.0 minimum so mobile and
+        // standard-density Android TV are unaffected.
+        final scale = (constraints.maxWidth / 1280.0).clamp(1.0, 2.0);
+        final cardWidth =
+            (widget.posterStyle
+                ? MediaBrowsingMetrics.posterCardWidth
+                : MediaBrowsingMetrics.previewCardWidth) *
+            scale;
+        final cardHeight =
+            (widget.posterStyle
+                ? MediaBrowsingMetrics.posterCardHeight
+                : MediaBrowsingMetrics.previewCardHeight) *
+            scale;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.title,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: MediaBrowsingMetrics.chipGap),
+              if (visibleItems.isEmpty)
+                Text(widget.emptyLabel)
+              else
+                SizedBox(
+                  height: cardHeight + 16,
+                  // ExcludeSemantics prevents the tvOS framework bug where
+                  // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
+                  // during the semantics flush phase, causing an assertion crash
+                  // when scrolling quickly.
+                  child: ExcludeSemantics(
+                    child: DpadRegion(
+                      memoryKey: 'preview-row/${widget.title}',
+                      horizontalEdge: DpadEdgeBehavior.stop,
+                      onEdge: (direction) {
+                        if (direction == TraversalDirection.left) {
+                          widget.onSidebarActivate?.call();
+                        }
+                      },
+                      child: Scrollbar(
+                        controller: _controller,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        child: ListView.separated(
+                          controller: _controller,
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.only(bottom: 12),
+                          itemCount: visibleItems.length,
+                          separatorBuilder: (_, _) => const SizedBox(
+                            width: MediaBrowsingMetrics.itemGap,
+                          ),
+                          itemBuilder: (context, index) => MediaPreviewCard(
+                            item: visibleItems[index],
+                            posterStyle: widget.posterStyle,
+                            autofocus: index == 0,
+                            cardWidth: cardWidth,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -545,24 +577,29 @@ class MediaPreviewCard extends StatelessWidget {
     required this.item,
     this.posterStyle = false,
     this.autofocus = false,
+    this.cardWidth,
     super.key,
   });
 
   final MediaPreviewItem item;
   final bool posterStyle;
   final bool autofocus;
+  final double? cardWidth;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isRating = item.subtitle?.startsWith('★') ?? false;
+    final width =
+        cardWidth ??
+        (posterStyle
+            ? MediaBrowsingMetrics.posterCardWidth
+            : MediaBrowsingMetrics.previewCardWidth);
     return DpadFocusable(
       autofocus: autofocus,
       onSelect: item.onTap,
       child: SizedBox(
-        width: posterStyle
-            ? MediaBrowsingMetrics.posterCardWidth
-            : MediaBrowsingMetrics.previewCardWidth,
+        width: width,
         child: Material(
           color: colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
