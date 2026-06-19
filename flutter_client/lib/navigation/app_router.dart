@@ -254,6 +254,22 @@ RouteFactory buildAppRouter({
   };
 }
 
+const BoxDecoration _kGradientBg = BoxDecoration(
+  gradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF1a1528), // dark purple tint
+      Color(0xFF09090b), // background
+      Color(0xFF09090b), // slightly deeper
+    ],
+    stops: [0.0, 0.45, 1.0],
+  ),
+);
+
+Widget _withGradient(Widget screen) =>
+    DecoratedBox(decoration: _kGradientBg, child: screen);
+
 MaterialPageRoute<void> _buildRoute(RouteSettings settings, Widget screen) {
   return MaterialPageRoute<void>(
     settings: settings,
