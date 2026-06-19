@@ -1140,18 +1140,25 @@ class _HomeScreen extends StatelessWidget {
       // Use enriched API data when available.
       if (progress.title != null) {
         final hasBackdrop = progress.backdropUrl != null;
-        final subtitle = [
-          if (progress.rating != null) '★ ${progress.rating}',
-          if (progress.runtime != null) progress.runtime!,
-        ].join('  ');
+        final fraction =
+            (progress.durationSeconds != null && progress.durationSeconds! > 0)
+            ? (progress.positionSeconds / progress.durationSeconds!).clamp(
+                0.0,
+                1.0,
+              )
+            : null;
         return MediaPreviewItem(
           title: progress.title!,
           imageUrl: progress.backdropUrl ?? progress.thumbnailUrl,
-          subtitle: subtitle.isNotEmpty ? subtitle : 'Movie',
           fallbackIcon: Icons.movie,
           imageFit: hasBackdrop ? BoxFit.cover : BoxFit.contain,
           imageBackgroundColor: hasBackdrop ? null : Colors.black,
           fallbackTitle: progress.title,
+          progressFraction: fraction,
+          overlayBadges: <String>[
+            if (progress.rating != null) '★ ${progress.rating}',
+            if (progress.runtime != null) progress.runtime!,
+          ],
           onTap: () => onProgressSelect(progress),
         );
       }
@@ -1178,22 +1185,30 @@ class _HomeScreen extends StatelessWidget {
       if (progress.seriesId != null &&
           (progress.seriesName != null || progress.title != null)) {
         final displayTitle = progress.seriesName ?? progress.title!;
-        final subtitle = [
-          if (progress.episodeTitle != null) progress.episodeTitle!,
-          if (progress.rating != null) '★ ${progress.rating}',
-          if (progress.runtime != null) progress.runtime!,
-        ].join('  ');
+        final fraction =
+            (progress.durationSeconds != null && progress.durationSeconds! > 0)
+            ? (progress.positionSeconds / progress.durationSeconds!).clamp(
+                0.0,
+                1.0,
+              )
+            : null;
+        final episodeSubtitle =
+            progress.episodeTitle ??
+            (progress.seasonNumber != null
+                ? 'Season ${progress.seasonNumber}'
+                : null);
         return MediaPreviewItem(
           title: displayTitle,
+          subtitle: episodeSubtitle,
           // Episode-specific thumbnail first; series backdrop as fallback.
           imageUrl: progress.thumbnailUrl ?? progress.backdropUrl,
-          subtitle: subtitle.isNotEmpty
-              ? subtitle
-              : (progress.seasonNumber != null
-                    ? 'Season ${progress.seasonNumber}'
-                    : 'Series'),
           fallbackIcon: Icons.tv,
           fallbackTitle: displayTitle,
+          progressFraction: fraction,
+          overlayBadges: <String>[
+            if (progress.rating != null) '★ ${progress.rating}',
+            if (progress.runtime != null) progress.runtime!,
+          ],
           onTap: () => onProgressSelect(progress),
         );
       }

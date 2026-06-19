@@ -453,6 +453,8 @@ class MediaPreviewItem {
     this.fallbackTitle,
     this.imagePadding = EdgeInsets.zero,
     this.imageBackgroundColor,
+    this.progressFraction,
+    this.overlayBadges = const <String>[],
   });
 
   final String title;
@@ -465,6 +467,12 @@ class MediaPreviewItem {
   final String? fallbackTitle;
   final EdgeInsets imagePadding;
   final Color? imageBackgroundColor;
+
+  /// 0.0–1.0 progress shown as a bar along the bottom of the image.
+  final double? progressFraction;
+
+  /// Short text labels rendered as chips overlaid on the image.
+  final List<String> overlayBadges;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -635,20 +643,97 @@ class MediaPreviewCard extends StatelessWidget {
     double width,
   ) {
     final imageHeight = width * 9 / 16;
+    final hasBadges = item.overlayBadges.isNotEmpty;
+    final hasProgress = item.progressFraction != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: item.imagePadding,
-          child: ResilientMediaImage(
-            imageUrl: item.imageUrl,
-            fallbackIcon: item.fallbackIcon,
+          child: SizedBox(
             width: width,
             height: imageHeight,
-            fit: item.imageFit,
-            fallbackTitle: item.fallbackTitle,
-            backgroundColor: item.imageBackgroundColor,
-            borderRadius: 0,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ResilientMediaImage(
+                  imageUrl: item.imageUrl,
+                  fallbackIcon: item.fallbackIcon,
+                  width: width,
+                  height: imageHeight,
+                  fit: item.imageFit,
+                  fallbackTitle: item.fallbackTitle,
+                  backgroundColor: item.imageBackgroundColor,
+                  borderRadius: 0,
+                ),
+                if (hasBadges || hasProgress)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: imageHeight * 0.45,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.7),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (hasBadges)
+                  Positioned(
+                    right: 6,
+                    bottom: hasProgress ? 9 : 6,
+                    child: Row(
+                      children: [
+                        for (final badge in item.overlayBadges)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  badge,
+                                  style:
+                                      Theme.of(
+                                        context,
+                                      ).textTheme.labelSmall?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                if (hasProgress)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: LinearProgressIndicator(
+                      value: item.progressFraction,
+                      minHeight: 3,
+                      backgroundColor: Colors.white24,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
         Padding(
@@ -668,12 +753,9 @@ class MediaPreviewCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   item.subtitle!,
-                  style:
-                      Theme.of(
-                        context,
-                      ).textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
