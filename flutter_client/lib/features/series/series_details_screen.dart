@@ -565,10 +565,8 @@ class _EpisodeTile extends StatelessWidget {
                           Row(
                             children: [
                               Expanded(
-                                child: RichText(
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  text: TextSpan(
+                                child: Text.rich(
+                                  TextSpan(
                                     style: theme.textTheme.titleSmall,
                                     children: [
                                       TextSpan(
@@ -582,6 +580,8 @@ class _EpisodeTile extends StatelessWidget {
                                       TextSpan(text: episode.title),
                                     ],
                                   ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               const SizedBox(width: 8),

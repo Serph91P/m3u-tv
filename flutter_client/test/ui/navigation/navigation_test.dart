@@ -401,7 +401,7 @@ void main() {
     await _pumpAppFrame(tester);
 
     expect(find.text('Season 1'), findsOneWidget);
-    expect(find.text('Pilot'), findsOneWidget);
+    expect(find.textContaining('Pilot'), findsOneWidget);
     expect(find.text('Route Series'), findsWidgets);
   });
 
@@ -425,7 +425,7 @@ void main() {
     await _pumpAppFrame(tester);
     await tester.tap(find.text('Route Series').last);
     await _pumpAppFrame(tester);
-    await tester.tap(find.text('Pilot'));
+    await tester.tap(find.textContaining('Pilot'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
