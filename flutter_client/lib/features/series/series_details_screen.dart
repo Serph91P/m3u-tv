@@ -589,17 +589,28 @@ class _EpisodeTile extends StatelessWidget {
                             ],
                           ),
                           if (metaChips.isNotEmpty) ...[
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 6),
                             Wrap(
-                              spacing: 8,
+                              spacing: 6,
+                              runSpacing: 4,
                               children: metaChips
                                   .map(
-                                    (chip) => Text(
-                                      chip,
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
+                                    (chip) => Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.surfaceBright,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        chip,
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: colorScheme.onPrimary,
+                                            ),
+                                      ),
                                     ),
                                   )
                                   .toList(),
