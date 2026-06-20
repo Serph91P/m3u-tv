@@ -260,43 +260,41 @@ class _ScrollableCategoryBarState extends State<ScrollableCategoryBar> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 56,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: MediaBrowsingMetrics.contentPadding,
-        ),
-        child: Row(
-          children: [
-            if (widget.leading != null) ...[
-              widget.leading!,
-              const SizedBox(width: MediaBrowsingMetrics.chipGap),
-            ],
-            Expanded(
-              child: SizedBox(
-                height: 40,
-                child: ExcludeSemantics(
-                  child: ListView.separated(
-                    controller: _controller,
-                    scrollDirection: Axis.horizontal,
-                    padding: EdgeInsets.zero,
-                    itemCount: widget.tabs.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(width: MediaBrowsingMetrics.chipGap),
-                    itemBuilder: (context, index) {
-                      final tab = widget.tabs[index];
-                      return CategoryFilterChip(
-                        label: tab.name,
-                        isSelected: widget.selectedId == tab.id,
-                        onTap: () => widget.onSelected(tab.id),
-                      );
-                    },
-                  ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: MediaBrowsingMetrics.contentPadding,
+        vertical: 8,
+      ),
+      child: Row(
+        children: [
+          if (widget.leading != null) ...[
+            widget.leading!,
+            const SizedBox(width: MediaBrowsingMetrics.chipGap),
+          ],
+          Expanded(
+            child: SizedBox(
+              height: 36,
+              child: ExcludeSemantics(
+                child: ListView.separated(
+                  controller: _controller,
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.zero,
+                  itemCount: widget.tabs.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(width: MediaBrowsingMetrics.chipGap),
+                  itemBuilder: (context, index) {
+                    final tab = widget.tabs[index];
+                    return CategoryFilterChip(
+                      label: tab.name,
+                      isSelected: widget.selectedId == tab.id,
+                      onTap: () => widget.onSelected(tab.id),
+                    );
+                  },
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
