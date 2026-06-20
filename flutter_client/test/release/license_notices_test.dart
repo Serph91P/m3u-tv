@@ -160,8 +160,11 @@ void main() {
     () {
       // Android is the active release platform and must use the production ID
       final androidBuildGradle = readFile('android/app/build.gradle.kts');
-      expect(androidBuildGradle, contains('namespace = "com.m3ue.m3utv"'));
-      expect(androidBuildGradle, contains('applicationId = "com.m3ue.m3utv"'));
+      expect(androidBuildGradle, contains('namespace = "dev.sparkison.tv"'));
+      expect(
+        androidBuildGradle,
+        contains('applicationId = "dev.sparkison.tv"'),
+      );
       expect(androidBuildGradle, isNot(contains('com.example')));
 
       // Non-Android platforms are future-gated; they may still have template IDs,

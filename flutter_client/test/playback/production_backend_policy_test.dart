@@ -180,7 +180,7 @@ void main() {
 
     test('Android Media3 retries mislabeled HLS streams as MPEG-TS', () {
       final media3Plugin = File(
-        'android/app/src/main/kotlin/com/m3ue/m3utv/Media3PlaybackPlugin.kt',
+        'android/app/src/main/kotlin/dev/sparkison/tv/Media3PlaybackPlugin.kt',
       ).readAsStringSync();
 
       expect(media3Plugin, contains('retriedHlsAsProgressive'));

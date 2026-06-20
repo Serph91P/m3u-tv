@@ -40,7 +40,7 @@ The workflow does not run Electron builder commands, Electron scripts, or React 
 
 ## Android App ID, Signing, and TV Release Metadata
 
-- Application ID: `com.m3ue.m3utv`; active Android release configuration must not use `com.example` or other template identifiers.
+- Application ID: `dev.sparkison.tv`; active Android release configuration must not use `com.example` or other template identifiers.
 - Release signing is intentionally blocked until external signing material exists. `flutter_client/android/app/build.gradle.kts` reads `ANDROID_KEYSTORE_PATH`, `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD` from Gradle properties, environment variables, or the local ignored file `flutter_client/android/signing.properties`.
 - No debug signing is allowed for release builds. Missing signing values or a missing keystore path must fail release tasks honestly instead of producing a debug-signed production artifact.
 - Android TV launcher metadata must remain present in `flutter_client/android/app/src/main/AndroidManifest.xml`: `android.software.leanback`, optional touchscreen support, application banner, exported main activity, and `LEANBACK_LAUNCHER` category.
