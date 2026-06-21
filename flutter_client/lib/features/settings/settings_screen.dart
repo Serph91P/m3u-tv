@@ -5,11 +5,12 @@ import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/gradient_border_effect.dart';
 
 // M3 buttons and chips use StadiumBorder. A large radius makes the dpad
 // focus border match the pill shape regardless of widget height.
 const _kStadiumEffect = [
-  DpadBorderEffect(borderRadius: BorderRadius.all(Radius.circular(50))),
+  GradientBorderEffect(borderRadius: BorderRadius.all(Radius.circular(50))),
 ];
 
 class SettingsScreen extends StatefulWidget {
@@ -826,7 +827,9 @@ class _IntervalChip extends StatelessWidget {
 
   static const double _radius = 20;
   static const _effects = [
-    DpadBorderEffect(borderRadius: BorderRadius.all(Radius.circular(_radius))),
+    GradientBorderEffect(
+      borderRadius: BorderRadius.all(Radius.circular(_radius)),
+    ),
   ];
 
   @override
