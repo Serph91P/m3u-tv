@@ -196,7 +196,7 @@ class TraktService extends ChangeNotifier {
       body = {
         'show': <String, Object>{
           'title': seriesTitle,
-          if (tmdbId != null) 'ids': <String, Object>{'tmdb': tmdbId},
+          if ((tmdbId ?? 0) > 0) 'ids': <String, Object>{'tmdb': tmdbId!},
         },
         'episode': <String, Object>{'season': season, 'number': episode},
         'progress': progress,
@@ -205,7 +205,7 @@ class TraktService extends ChangeNotifier {
       body = {
         'movie': <String, Object>{
           'title': title,
-          if (tmdbId != null) 'ids': <String, Object>{'tmdb': tmdbId},
+          if ((tmdbId ?? 0) > 0) 'ids': <String, Object>{'tmdb': tmdbId!},
         },
         'progress': progress,
       };
