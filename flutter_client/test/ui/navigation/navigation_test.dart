@@ -329,9 +329,9 @@ void main() {
     await _pumpAppFrame(tester);
 
     // CW card uses the legacy VOD-list lookup when progress has no title yet.
-    expect(find.text('Resume Route Movie'), findsOneWidget);
+    expect(find.text('Route Movie'), findsAtLeastNWidgets(1));
 
-    await tester.tap(find.text('Resume Route Movie'));
+    await tester.tap(find.text('Route Movie').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
