@@ -256,6 +256,21 @@ class XtreamService {
     ).map((item) => Series.fromXtream(_asMap(item))).toList(growable: false);
   }
 
+  Future<List<DvrRecording>> getDvrRecordings() async {
+    final response = await _request('get_dvr_recordings');
+    return _asList(response)
+        .map((item) => DvrRecording.fromXtream(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  Future<DvrRecording> getDvrRecording(String uuid) async {
+    final response = await _request(
+      'get_dvr_recording',
+      params: {'uuid': uuid},
+    );
+    return DvrRecording.fromXtream(_asMap(response));
+  }
+
   Future<SeriesInfo> getSeriesInfo(int seriesId) async {
     final response = await _request(
       'get_series_info',

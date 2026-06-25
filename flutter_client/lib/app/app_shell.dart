@@ -4,6 +4,7 @@ import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:m3u_tv/features/dvr/dvr_recordings_screen.dart';
 import 'package:m3u_tv/features/live_tv/live_tv_screen.dart';
 import 'package:m3u_tv/features/player/player_screen.dart';
 import 'package:m3u_tv/features/player/resume_modal.dart';
@@ -993,6 +994,23 @@ class _ContentNavigator extends StatelessWidget {
     );
   }
 
+  Future<void> _openRecordings() async {
+    await Future<void>.microtask(() {});
+    final savedFocus = FocusManager.instance.primaryFocus;
+    await navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (_) => DvrRecordingsScreen(
+          recordings: appState.dvrRecordings,
+          isLoading: appState.isLoadingContent,
+          isConfigured: appState.isConfigured,
+          onPlay: (args) => onOpenPlayer?.call(args),
+          onSidebarActivate: onSidebarActivate,
+        ),
+      ),
+    );
+    savedFocus?.requestFocus();
+  }
+
   Widget _buildMainRoute(String routeName) {
     return ListenableBuilder(
       listenable: appState,
@@ -1009,6 +1027,7 @@ class _ContentNavigator extends StatelessWidget {
             onVodSelect: _openVod,
             onSeriesSelect: _openSeries,
             onProgressSelect: _openProgress,
+            onRecordingsSelect: _openRecordings,
             onSidebarActivate: onSidebarActivate,
           ),
           RouteNames.search => SearchScreen(
@@ -1083,6 +1102,7 @@ class _HomeScreen extends StatefulWidget {
     required this.onVodSelect,
     required this.onSeriesSelect,
     required this.onProgressSelect,
+    required this.onRecordingsSelect,
     this.onSidebarActivate,
   });
 
@@ -1091,6 +1111,7 @@ class _HomeScreen extends StatefulWidget {
   final void Function(VodItem) onVodSelect;
   final void Function(Series) onSeriesSelect;
   final void Function(Progress) onProgressSelect;
+  final VoidCallback onRecordingsSelect;
   final VoidCallback? onSidebarActivate;
 
   @override
@@ -1137,6 +1158,22 @@ class _HomeScreenState extends State<_HomeScreen> {
       title: 'Continue Watching',
       emptyLabel: 'No Continue Watching available',
       items: continueWatchingItems,
+      landscapeStyle: true,
+      onSidebarActivate: widget.onSidebarActivate,
+    );
+    final recordingsSection = MediaPreviewSection(
+      title: 'DVR',
+      emptyLabel: 'No DVR recordings available',
+      items: [
+        MediaPreviewItem(
+          title: 'DVR Recordings',
+          subtitle: widget.appState.dvrRecordings.isEmpty
+              ? 'Browse completed and in-progress recordings'
+              : '${widget.appState.dvrRecordings.length} recordings',
+          fallbackIcon: Icons.video_library,
+          onTap: widget.onRecordingsSelect,
+        ),
+      ],
       landscapeStyle: true,
       onSidebarActivate: widget.onSidebarActivate,
     );
@@ -1220,6 +1257,7 @@ class _HomeScreenState extends State<_HomeScreen> {
           Text('Connected source: ${appState.sourceLabel}'),
           const SizedBox(height: MediaBrowsingMetrics.pagePadding),
           if (continueWatchingItems.isNotEmpty) continueWatchingSection,
+          recordingsSection,
           liveSection,
           moviesSection,
           seriesSection,
