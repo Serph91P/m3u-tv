@@ -8,6 +8,7 @@ import 'package:m3u_tv/features/dvr/dvr_recordings_screen.dart';
 import 'package:m3u_tv/features/live_tv/live_tv_screen.dart';
 import 'package:m3u_tv/features/player/player_screen.dart';
 import 'package:m3u_tv/features/player/resume_modal.dart';
+import 'package:m3u_tv/features/requests/request_screen.dart';
 import 'package:m3u_tv/features/search/search_screen.dart';
 import 'package:m3u_tv/features/series/series_screen.dart';
 import 'package:m3u_tv/features/settings/settings_screen.dart';
@@ -68,6 +69,9 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   List<String> get _mainRoutes => RouteNames.mainRoutes
       .where((route) => route != RouteNames.dvr || _appState.hasDvrFeature)
+      .where(
+        (route) => route != RouteNames.requests || _appState.hasRequestsFeature,
+      )
       .toList(growable: false);
 
   @override
@@ -573,6 +577,7 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
     RouteNames.vod => Icons.movie,
     RouteNames.series => Icons.tv,
     RouteNames.dvr => Icons.video_library,
+    RouteNames.requests => Icons.playlist_add,
     RouteNames.settings => Icons.settings,
     _ => Icons.circle,
   };
@@ -708,6 +713,7 @@ class NavigationSidebar extends StatelessWidget {
     RouteNames.vod => Icons.movie,
     RouteNames.series => Icons.tv,
     RouteNames.dvr => Icons.video_library,
+    RouteNames.requests => Icons.playlist_add,
     RouteNames.settings => Icons.settings,
     _ => Icons.circle,
   };
@@ -1096,6 +1102,10 @@ class _ContentNavigator extends StatelessWidget {
             isLoading: appState.isLoadingContent,
             isConfigured: appState.isConfigured,
             onPlay: (args) => onOpenPlayer?.call(args),
+            onSidebarActivate: onSidebarActivate,
+          ),
+          RouteNames.requests => RequestScreen(
+            isConfigured: appState.isConfigured,
             onSidebarActivate: onSidebarActivate,
           ),
           RouteNames.settings => SettingsScreen(
