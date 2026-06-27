@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
+import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
 const double _kChannelColW = 128;
 const double _kTimeHeaderH = 28;
@@ -476,37 +477,29 @@ class _ProgramsRow extends StatelessWidget {
       final fgColor = isCurrent
           ? colorScheme.onPrimaryContainer
           : colorScheme.onSecondaryContainer;
-      final borderColor = isCurrent
-          ? colorScheme.primary.withValues(alpha: 0.6)
-          : colorScheme.outline.withValues(alpha: 0.25);
-
       blocks.add(
         Positioned(
           left: left + 1,
           top: isCurrent ? 2 : 4,
           height: rowHeight - (isCurrent ? 4 : 8),
           width: width - 2,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: borderColor),
+          child: DpadInkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Text(
+                p.title,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: fgColor,
+                  fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Text(
-                  p.title,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: fgColor,
-                    fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
