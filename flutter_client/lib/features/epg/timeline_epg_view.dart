@@ -6,6 +6,9 @@ import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
+typedef CatchupProgramSelect =
+    void Function(Channel channel, EpgProgram program);
+
 const double _kChannelColW = 128;
 const double _kTimeHeaderH = 28;
 const double _kRowH = 60;
@@ -22,12 +25,14 @@ class TimelineEpgView extends StatefulWidget {
     required this.channels,
     required this.epgService,
     required this.onChannelSelect,
+    this.onCatchupProgramSelect,
     this.windowHours = 6,
   });
 
   final List<Channel> channels;
   final EpgService epgService;
   final void Function(Channel) onChannelSelect;
+  final CatchupProgramSelect? onCatchupProgramSelect;
 
   /// How many hours the visible window spans (default 6).
   final int windowHours;
@@ -260,7 +265,20 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                               pixelsPerMinute: _kPxPerMin,
                               totalWidth: _totalW,
                               rowHeight: _kRowH,
-                              onTap: () => widget.onChannelSelect(channel),
+                              onTap: (program) {
+                                final canReplay =
+                                    channel.catchupSupported &&
+                                    program.end.isBefore(DateTime.now());
+                                if (canReplay &&
+                                    widget.onCatchupProgramSelect != null) {
+                                  widget.onCatchupProgramSelect!(
+                                    channel,
+                                    program,
+                                  );
+                                  return;
+                                }
+                                widget.onChannelSelect(channel);
+                              },
                             ),
                           ),
                         );
@@ -346,7 +364,59 @@ class _ChannelCell extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (channel.catchupSupported) ...[
+            const SizedBox(width: 4),
+            _CatchupBadge(days: channel.catchupDays),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _CatchupBadge extends StatelessWidget {
+  const _CatchupBadge({this.days});
+
+  final int? days;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final label = days == null
+        ? 'Catchup available'
+        : 'Catchup available: ${days}d';
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: colorScheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: colorScheme.tertiary.withValues(alpha: 0.55),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.replay_rounded,
+              size: 12,
+              color: colorScheme.onTertiaryContainer,
+            ),
+            if (days != null) ...[
+              const SizedBox(width: 2),
+              Text(
+                '${days}d',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onTertiaryContainer,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -446,7 +516,7 @@ class _ProgramsRow extends StatelessWidget {
   final double pixelsPerMinute;
   final double totalWidth;
   final double rowHeight;
-  final VoidCallback onTap;
+  final void Function(EpgProgram program) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -477,6 +547,9 @@ class _ProgramsRow extends StatelessWidget {
       final fgColor = isCurrent
           ? colorScheme.onPrimaryContainer
           : colorScheme.onSecondaryContainer;
+      final borderColor = isCurrent
+          ? colorScheme.primary.withValues(alpha: 0.6)
+          : colorScheme.outline.withValues(alpha: 0.25);
       blocks.add(
         Positioned(
           left: left + 1,
@@ -484,12 +557,16 @@ class _ProgramsRow extends StatelessWidget {
           height: rowHeight - (isCurrent ? 4 : 8),
           width: width - 2,
           child: DpadInkWell(
-            onTap: onTap,
+            key: ValueKey(
+              'timeline-program-${p.channelId}-${p.start.toIso8601String()}',
+            ),
+            onTap: () => onTap(p),
             borderRadius: BorderRadius.circular(6),
             child: Container(
               decoration: BoxDecoration(
                 color: bgColor,
                 borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: borderColor),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               child: Text(
