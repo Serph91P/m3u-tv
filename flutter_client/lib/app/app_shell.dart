@@ -875,6 +875,9 @@ class _ContentNavigator extends StatelessWidget {
       key: navigatorKey,
       onGenerateRoute: router,
       initialRoute: currentRoute,
+      onGenerateInitialRoutes: (navigator, initialRoute) => [
+        router(RouteSettings(name: initialRoute))!,
+      ],
     );
   }
 
