@@ -6,6 +6,7 @@ import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/tv_notification_store.dart'
     show StoredTvNotification, TvNotificationChannel;
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 
 const _kStadiumEffect = [
@@ -101,12 +102,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
             child: Text('Notifications', style: theme.textTheme.headlineMedium),
           ),
-          TabBar(
+          DpadTabBar(
             controller: _tabController,
-            tabs: const [
-              Tab(text: 'Notifications'),
-              Tab(text: 'Channel Settings'),
-            ],
+            tabs: const ['Notifications', 'Channel Settings'],
           ),
           Expanded(
             child: TabBarView(

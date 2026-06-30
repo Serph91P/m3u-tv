@@ -98,6 +98,19 @@ class MyApp extends StatelessWidget {
               surfaceContainerHigh: card,
               surfaceContainerHighest: elevated,
             ),
+        tabBarTheme: TabBarThemeData(
+          overlayColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.pressed)) {
+              return Colors.white.withValues(alpha: 0.16);
+            }
+            // Focused (D-pad) and hovered look identical.
+            if (states.contains(WidgetState.focused) ||
+                states.contains(WidgetState.hovered)) {
+              return Colors.white.withValues(alpha: 0.10);
+            }
+            return null;
+          }),
+        ),
         snackBarTheme: SnackBarThemeData(
           backgroundColor: primary,
           contentTextStyle: const TextStyle(

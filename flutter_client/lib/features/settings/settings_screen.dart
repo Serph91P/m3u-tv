@@ -7,6 +7,7 @@ import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 const _kStadiumEffect = [
   GradientBorderEffect(borderRadius: BorderRadius.all(Radius.circular(50))),
 ];
+
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -409,12 +411,9 @@ class _ConnectedViewState extends State<_ConnectedView>
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
           child: Text('Settings', style: theme.textTheme.headlineMedium),
         ),
-        TabBar(
+        DpadTabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'General'),
-            Tab(text: 'Integrations'),
-          ],
+          tabs: const ['General', 'Integrations'],
         ),
         Expanded(
           child: TabBarView(
