@@ -279,6 +279,9 @@ class AppStateController extends ChangeNotifier {
       final (session, unread) = await _tvNotificationService.fetchUnread(
         credentials,
       );
+      // Older server versions don't return Reverb config — skip WebSocket setup
+      // rather than hammering a connection that can never succeed.
+      if (session.channelName.isEmpty || session.reverb.appKey.isEmpty) return;
       for (final item in unread) {
         _tvNotificationController.add(item);
         unawaited(_tvNotificationService.markRead(credentials, item.id));
