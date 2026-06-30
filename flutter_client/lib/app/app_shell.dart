@@ -16,6 +16,7 @@ import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/tv_notification_service.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
@@ -55,6 +56,7 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late final bool _ownsAppState;
 
   DateTime? _lastBackPress;
+  StreamSubscription<TvNotificationItem>? _tvNotificationSub;
 
   PlayerArgs? _playerArgs;
   PlaybackOrchestrator? _playerOrchestrator;
@@ -74,6 +76,7 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _appState = widget.appState ?? AppStateController();
     _ownsAppState = widget.appState == null;
     _appState.addListener(_onAppStateChanged);
+    _tvNotificationSub = _appState.tvNotifications.listen(_onTvNotification);
     if (!_appState.isConfigured) {
       unawaited(_appState.boot());
     }
@@ -113,8 +116,23 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  void _onTvNotification(TvNotificationItem item) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          item.body != null && item.body!.isNotEmpty
+              ? '${item.title}: ${item.body}'
+              : item.title,
+        ),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _tvNotificationSub?.cancel().ignore();
     WidgetsBinding.instance.removeObserver(this);
     _playerOrchestrator?.dispose().ignore();
     for (final node in _sidebarFocusNodes) {
