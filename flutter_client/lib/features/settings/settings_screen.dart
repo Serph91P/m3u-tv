@@ -18,7 +18,6 @@ const _kStadiumEffect = [
   GradientBorderEffect(borderRadius: BorderRadius.all(Radius.circular(50))),
 ];
 
-
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,

@@ -77,8 +77,9 @@ class _DpadTabState extends State<_DpadTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final labelColor =
-        widget.isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant;
+    final labelColor = widget.isSelected
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -90,7 +91,7 @@ class _DpadTabState extends State<_DpadTab> {
           final highlighted = state.focused || _hovered || state.pressed;
           return Material(
             color: highlighted
-                ? colorScheme.onSurface.withValues(alpha: 0.08)
+                ? colorScheme.onSurface.withValues(alpha: 0.04)
                 : Colors.transparent,
             child: InkWell(
               onTap: _onTap,
@@ -112,7 +113,9 @@ class _DpadTabState extends State<_DpadTab> {
             ),
             Container(
               height: 3,
-              color: widget.isSelected ? colorScheme.primary : Colors.transparent,
+              color: widget.isSelected
+                  ? colorScheme.primary
+                  : Colors.transparent,
             ),
           ],
         ),
