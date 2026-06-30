@@ -331,11 +331,18 @@ class AppStateController extends ChangeNotifier {
       if (session.availableChannels.isNotEmpty) {
         await notificationStore.setServerChannels(session.availableChannels);
       }
-      for (final item in unread) {
-        await notificationStore.add(item);
-        _tvNotificationController.add(item);
-      }
+      // Sync local store with the server's authoritative unread list: stale
+      // local unreads are marked read, new server items are added. Only
+      // genuinely new items (not seen before) are surfaced as toasts — boot
+      // should not replay banners for notifications the user already received.
+      final newItems = await notificationStore.syncUnreadWithServer(unread);
       await _refreshUnreadNotificationCount();
+      final subscribed = await notificationStore.subscribedChannels();
+      for (final item in newItems) {
+        if (subscribed.isEmpty || subscribed.contains(item.channel)) {
+          _tvNotificationController.add(item);
+        }
+      }
       // Older server versions don't return Reverb config — skip WebSocket setup
       // rather than hammering a connection that can never succeed.
       if (session.channelName.isEmpty || session.reverb.appKey.isEmpty) return;

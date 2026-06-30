@@ -178,6 +178,42 @@ class TvNotificationStore {
   Future<int> unreadCount({Set<String>? channelFilter}) async =>
       (await all(channelFilter: channelFilter)).where((n) => !n.isRead).length;
 
+  /// Replaces the local store with the server's authoritative unread list.
+  ///
+  /// Any locally stored notification whose ID is absent from [serverUnread]
+  /// is removed — the server read, deleted, or pruned it. New items in
+  /// [serverUnread] not yet stored locally are prepended as unread. Returns
+  /// only the newly added items so callers can decide whether to toast them.
+  Future<List<TvNotificationItem>> syncUnreadWithServer(
+    List<TvNotificationItem> serverUnread,
+  ) async {
+    final serverUnreadIds = {for (final n in serverUnread) n.id};
+    final existing = await all();
+    final existingIds = {for (final n in existing) n.item.id};
+    final now = DateTime.now();
+
+    // Drop anything the server no longer has.
+    final kept = existing
+        .where((n) => serverUnreadIds.contains(n.item.id))
+        .toList(growable: false);
+
+    final newItems = serverUnread
+        .where((item) => !existingIds.contains(item.id))
+        .map(
+          (item) => StoredTvNotification(
+            item: item,
+            receivedAt: now,
+            isRead: false,
+          ),
+        )
+        .toList(growable: false);
+
+    await _write(
+      [...newItems, ...kept].take(_maxStored).toList(growable: false),
+    );
+    return newItems.map((n) => n.item).toList(growable: false);
+  }
+
   /// Adds a newly received notification as unread. No-op if its id is
   /// already stored (e.g. delivered via both the unread-fetch and Reverb push).
   Future<void> add(TvNotificationItem item) async {
