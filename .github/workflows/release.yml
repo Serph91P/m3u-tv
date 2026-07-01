@@ -238,45 +238,16 @@ jobs:
       #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
       #     cp "$PP" ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: Inject CI placeholder pod
-        # CocoaPods 1.16+ added an "inspections" step that runs before resolution
-        # and crashes with "undefined method 'map' for nil" when the Podfile has
-        # zero CocoaPods dependencies (all tvOS plugins use SPM, so zero pods).
-        # Pre-seeding lock files doesn't help because the inspector runs first.
-        # Injecting a local no-op pod gives CocoaPods exactly one dependency,
-        # bypassing the nil crash. The pod has no code and adds nothing to the binary.
-        run: |
-          mkdir -p tvos/CIPlaceholder/Sources
-          { echo 'Pod::Spec.new do |s|'
-            echo "  s.name     = 'CIPlaceholder'"
-            echo "  s.version  = '0.0.1'"
-            echo "  s.summary  = 'No-op pod for CocoaPods 1.16+ CI workaround.'"
-            echo "  s.homepage = 'https://github.com/m3ue/m3u-tv'"
-            echo "  s.license  = { :type => 'MIT', :text => 'MIT' }"
-            echo "  s.author   = { 'CI' => 'ci@example.com' }"
-            echo "  s.source   = { :git => '' }"
-            echo "  s.tvos.deployment_target = '13.0'"
-            echo "  s.source_files = 'Sources/**/*.{h,m}'"
-            echo 'end'
-          } > tvos/CIPlaceholder/CIPlaceholder.podspec
-          printf '// CI placeholder\n' > tvos/CIPlaceholder/Sources/CIPlaceholder.h
-          printf '// CI placeholder\n' > tvos/CIPlaceholder/Sources/CIPlaceholder.m
-          perl -i -0777 -pe \
-            "s/\nend\n\npost_install/\n  pod 'CIPlaceholder', :path => '.\/CIPlaceholder'\nend\n\npost_install/" \
-            tvos/Podfile
-
       - name: Disable code signing in tvOS project
         # flutter-tvos ignores FLUTTER_XCODE_* env vars for signing. Strip the
         # DEVELOPMENT_TEAM from the project so Xcode won't look for profiles.
+        # Use [^;]* (not [A-Z0-9]*) so the substitution is idempotent: if the
+        # field already contains "" the alphanumeric pattern matches zero chars
+        # and doubles the quotes, corrupting the pbxproj plist.
         run: |
           sed -i '' \
-            's/DEVELOPMENT_TEAM = [A-Z0-9]*/DEVELOPMENT_TEAM = ""/g' \
+            's/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = ""/g' \
             tvos/Runner.xcodeproj/project.pbxproj
-
-      - name: Diagnose pod install (remove after fix)
-        # Runs pod install manually to capture stdout (the real CocoaPods error).
-        # flutter-tvos only captures stderr, so the root cause is invisible there.
-        run: cd tvos && pod install 2>&1 || true
 
       - name: Build tvOS (unsigned)
         run: |
