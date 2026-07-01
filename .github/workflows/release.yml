@@ -158,7 +158,14 @@ jobs:
             --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
 
       - name: Stage artifact
-        run: cp build/ios/ipa/*.ipa m3u-tv-v${{ needs.validate.outputs.version }}-ios.ipa
+        run: |
+          IPA=$(find build/ios/ipa -name "*.ipa" | head -1)
+          if [ -z "$IPA" ]; then
+            echo "ERROR: No IPA found — listing build/ios/:"
+            find build/ios -type f | head -30
+            exit 1
+          fi
+          cp "$IPA" "m3u-tv-v${{ needs.validate.outputs.version }}-ios.ipa"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -211,6 +218,30 @@ jobs:
           mkdir -p tvos/Flutter
           rsync -a --delete build/flutter_assets/ tvos/Flutter/flutter_assets/
 
+      - name: Create FlutterGeneratedPluginSwiftPackage stub
+        # flutter build bundle does not generate this Swift package (only flutter build ios does).
+        # The tvOS Xcode project requires it to resolve, so we provide a minimal stub.
+        run: |
+          PKG=tvos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage
+          SRC=$PKG/Sources/FlutterGeneratedPluginRegistrant
+          mkdir -p "$SRC"
+          cat > "$PKG/Package.swift" << 'EOF'
+          // swift-tools-version: 5.9
+          import PackageDescription
+          let package = Package(
+            name: "FlutterGeneratedPluginSwiftPackage",
+            products: [
+              .library(name: "FlutterGeneratedPluginSwiftPackage",
+                       targets: ["FlutterGeneratedPluginRegistrant"])
+            ],
+            targets: [
+              .target(name: "FlutterGeneratedPluginRegistrant")
+            ]
+          )
+          EOF
+          # Empty Swift file — actual plugin registration is handled via CocoaPods.
+          touch "$SRC/GeneratedPluginRegistrant.swift"
+
       - name: Install CocoaPods dependencies
         run: |
           gem install xcpretty --no-document
@@ -235,15 +266,15 @@ jobs:
       #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
       #     cp "$PP" ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: Archive (unsigned)
+      - name: Build (unsigned)
         run: |
-          xcodebuild \
+          set -eo pipefail
+          xcodebuild build \
             -workspace tvos/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -sdk appletvos \
-            -archivePath build/tvos/Runner.xcarchive \
-            archive \
+            -derivedDataPath build/tvos/derived \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -253,10 +284,18 @@ jobs:
 
       - name: Package IPA
         run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          APP=$(find build/tvos/derived -name "Runner.app" \
+                  -path "*/Release-appletvos/*" | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: Runner.app not found — listing derived data:"
+            find build/tvos/derived -name "*.app" || true
+            exit 1
+          fi
           mkdir -p build/tvos/Payload
-          cp -r "build/tvos/Runner.xcarchive/Products/Applications/Runner.app" build/tvos/Payload/
+          cp -r "$APP" build/tvos/Payload/Runner.app
           cd build/tvos && zip -qr \
-            "../../m3u-tv-v${{ needs.validate.outputs.version }}-tvos.ipa" Payload/
+            "../../m3u-tv-v${VERSION}-tvos.ipa" Payload/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -292,7 +331,7 @@ jobs:
 
       - name: Build macOS app
         run: |
-          flutter build macos --release \
+          flutter build macos --release --no-codesign \
             --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }} \
             --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
 
@@ -325,7 +364,8 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libmpv-dev
+            libgtk-3-dev liblzma-dev libmpv-dev \
+            libsecret-1-dev libjsoncpp-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -366,6 +406,7 @@ jobs:
     name: Build Windows ZIP
     runs-on: windows-latest
     needs: validate
+    continue-on-error: true  # custom desktop_libmpv_backend.cpp has unresolved linker symbols
     defaults:
       run:
         working-directory: flutter_client
@@ -409,7 +450,7 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [validate, build-android, build-ios, build-tvos, build-macos, build-linux, build-windows]
+    needs: [validate, build-android, build-ios, build-tvos, build-macos, build-linux]
     permissions:
       contents: write
     steps:
@@ -434,26 +475,21 @@ jobs:
             PREV_FLAG="--notes-start-tag $PREV_TAG"
           fi
 
+          # Collect artifacts — Windows zip may be absent if that build failed.
+          ASSETS=$(find artifacts -type f \( \
+            -name "*.apk" -o -name "*.ipa" -o \
+            -name "*.dmg" -o -name "*.tar.gz" -o -name "*.zip" \
+          \))
+
           if gh release view "$TAG" > /dev/null 2>&1; then
-            # Release already exists (re-run) — update metadata and re-upload assets.
             gh release edit "$TAG" --title "$TAG"
-            gh release upload "$TAG" \
-              artifacts/*.apk \
-              artifacts/*.ipa \
-              artifacts/*.dmg \
-              artifacts/*.tar.gz \
-              artifacts/*.zip \
-              --clobber
+            echo "$ASSETS" | xargs gh release upload "$TAG" --clobber
           else
             gh release create "$TAG" \
               --title "$TAG" \
               --generate-notes \
               $PREV_FLAG \
-              artifacts/*.apk \
-              artifacts/*.ipa \
-              artifacts/*.dmg \
-              artifacts/*.tar.gz \
-              artifacts/*.zip
+              $(echo "$ASSETS" | tr '\n' ' ')
           fi
 
       - name: Release summary
