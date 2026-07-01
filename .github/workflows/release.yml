@@ -341,16 +341,22 @@ jobs:
             --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
 
       - name: Sign app bundle
-        # Hardened Runtime (--options runtime) is required for notarization.
+        # --options runtime enables Hardened Runtime (required for notarization).
+        # --timestamp embeds a secure timestamp (required for notarization).
         # --deep re-signs all nested frameworks with the same identity.
-        # Release.entitlements enables sandbox + network client access.
         run: |
           APP=$(find build/macos -name "*.app" -path "*/Release/*" | head -1)
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning
           IDENTITY=$(security find-identity -v -p codesigning \
-            | grep -E '"(Developer ID Application|Apple Distribution)[^"]*"' \
-            | head -1 | sed -E 's/.*"(.+)".*/\1/')
-          echo "Signing with: $IDENTITY"
-          codesign --deep --force --options runtime \
+            | grep "Developer ID Application" \
+            | head -1 | sed -E 's/^[[:space:]]+[0-9]+\)[[:space:]]+[A-F0-9]+[[:space:]]+"(.+)".*/\1/')
+          echo "Signing with: [$IDENTITY]"
+          if [ -z "$IDENTITY" ]; then
+            echo "ERROR: No Developer ID Application certificate found in keychain"
+            exit 1
+          fi
+          codesign --deep --force --options runtime --timestamp \
             --sign "$IDENTITY" \
             --entitlements macos/Runner/Release.entitlements \
             "$APP"
