@@ -158,14 +158,20 @@ jobs:
             --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
 
       - name: Stage artifact
+        # flutter build ipa --no-codesign creates an xcarchive, not a Payload IPA.
+        # The .app is inside the xcarchive; we package it manually into a Payload zip.
         run: |
-          IPA=$(find build/ios/ipa -name "*.ipa" | head -1)
-          if [ -z "$IPA" ]; then
-            echo "ERROR: No IPA found — listing build/ios/:"
-            find build/ios -type f | head -30
+          VERSION="${{ needs.validate.outputs.version }}"
+          APP="build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: Runner.app not found at expected xcarchive path — listing build/ios/:"
+            find build/ios -name "*.app" | head -10
+            find build/ios -name "*.xcarchive" | head -5
             exit 1
           fi
-          cp "$IPA" "m3u-tv-v${{ needs.validate.outputs.version }}-ios.ipa"
+          mkdir -p build/ios/Payload
+          cp -r "$APP" build/ios/Payload/Runner.app
+          (cd build/ios && zip -qr "../../m3u-tv-v${VERSION}-ios.ipa" Payload/)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -221,25 +227,26 @@ jobs:
       - name: Create FlutterGeneratedPluginSwiftPackage stub
         # flutter build bundle does not generate this Swift package (only flutter build ios does).
         # The tvOS Xcode project requires it to resolve, so we provide a minimal stub.
+        # Using echo grouping instead of heredoc to avoid YAML-indentation spaces
+        # corrupting the required "// swift-tools-version:" first line of Package.swift.
         run: |
           PKG=tvos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage
           SRC=$PKG/Sources/FlutterGeneratedPluginRegistrant
           mkdir -p "$SRC"
-          cat > "$PKG/Package.swift" << 'EOF'
-          // swift-tools-version: 5.9
-          import PackageDescription
-          let package = Package(
-            name: "FlutterGeneratedPluginSwiftPackage",
-            products: [
-              .library(name: "FlutterGeneratedPluginSwiftPackage",
-                       targets: ["FlutterGeneratedPluginRegistrant"])
-            ],
-            targets: [
-              .target(name: "FlutterGeneratedPluginRegistrant")
-            ]
-          )
-          EOF
-          # Empty Swift file — actual plugin registration is handled via CocoaPods.
+          {
+            echo '// swift-tools-version: 5.9'
+            echo 'import PackageDescription'
+            echo 'let package = Package('
+            echo '  name: "FlutterGeneratedPluginSwiftPackage",'
+            echo '  products: ['
+            echo '    .library(name: "FlutterGeneratedPluginSwiftPackage",'
+            echo '             targets: ["FlutterGeneratedPluginRegistrant"])'
+            echo '  ],'
+            echo '  targets: ['
+            echo '    .target(name: "FlutterGeneratedPluginRegistrant")'
+            echo '  ]'
+            echo ')'
+          } > "$PKG/Package.swift"
           touch "$SRC/GeneratedPluginRegistrant.swift"
 
       - name: Install CocoaPods dependencies
@@ -268,7 +275,6 @@ jobs:
 
       - name: Build (unsigned)
         run: |
-          set -eo pipefail
           xcodebuild build \
             -workspace tvos/Runner.xcworkspace \
             -scheme Runner \
@@ -279,8 +285,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             FLUTTER_BUILD_NAME=${{ needs.validate.outputs.version }} \
-            FLUTTER_BUILD_NUMBER=${{ needs.validate.outputs.build_number }} \
-            | xcpretty
+            FLUTTER_BUILD_NUMBER=${{ needs.validate.outputs.build_number }}
 
       - name: Package IPA
         run: |
@@ -330,16 +335,28 @@ jobs:
         run: cd macos && pod install --repo-update
 
       - name: Build macOS app
+        # flutter build macos has no --no-codesign flag; override via FLUTTER_XCODE_* env vars.
+        env:
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
+          FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
+          FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
+          FLUTTER_XCODE_DEVELOPMENT_TEAM: ""
         run: |
-          flutter build macos --release --no-codesign \
+          flutter build macos --release \
             --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }} \
             --dart-define=TRAKT_CLIENT_SECRET=${{ secrets.TRAKT_CLIENT_SECRET }}
 
       - name: Package as DMG
         run: |
+          APP=$(find build/macos -name "*.app" -path "*/Release/*" | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: .app not found — listing build/macos/:"
+            find build/macos -name "*.app" | head -10
+            exit 1
+          fi
           hdiutil create \
             -volname "M3U TV" \
-            -srcfolder "build/macos/Build/Products/Release/m3u_tv.app" \
+            -srcfolder "$APP" \
             -ov -format UDZO \
             "m3u-tv-v${{ needs.validate.outputs.version }}-macos.dmg"
 
