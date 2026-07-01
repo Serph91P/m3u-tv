@@ -346,14 +346,12 @@ jobs:
         # --deep re-signs all nested frameworks with the same identity.
         run: |
           APP=$(find build/macos -name "*.app" -path "*/Release/*" | head -1)
-          echo "Available signing identities:"
-          security find-identity -v -p codesigning
           IDENTITY=$(security find-identity -v -p codesigning \
-            | grep "Developer ID Application" \
-            | head -1 | sed -E 's/^[[:space:]]+[0-9]+\)[[:space:]]+[A-F0-9]+[[:space:]]+"(.+)".*/\1/')
+            | grep -o '"[^"]*"' | head -1 | tr -d '"')
           echo "Signing with: [$IDENTITY]"
           if [ -z "$IDENTITY" ]; then
-            echo "ERROR: No Developer ID Application certificate found in keychain"
+            echo "ERROR: No valid signing identity found in keychain"
+            security find-identity -v
             exit 1
           fi
           codesign --deep --force --options runtime --timestamp \
