@@ -239,15 +239,18 @@ jobs:
       #     cp "$PP" ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Disable code signing in tvOS project
-        # flutter-tvos ignores FLUTTER_XCODE_* env vars for signing. Strip the
-        # DEVELOPMENT_TEAM from the project so Xcode won't look for profiles.
-        # Two sed expressions are needed: one for the plain key and one for the
-        # SDK-conditional override "DEVELOPMENT_TEAM[sdk=appletvos*]" which
-        # takes precedence over the plain key when building for appletvos.
+        # flutter-tvos ignores FLUTTER_XCODE_* env vars for signing. Clear all
+        # signing-related build settings so xcodebuild doesn't search for profiles.
+        # SDK-conditional keys ("KEY[sdk=appletvos*]") take precedence over their
+        # base equivalents when building for physical tvOS hardware, so both must
+        # be cleared. Use [^;]* (not [A-Z0-9]*) to avoid zero-length matches that
+        # double-quote an already-empty value and corrupt the pbxproj plist.
         run: |
           sed -i '' \
             -e 's/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = ""/g' \
             -e 's/"DEVELOPMENT_TEAM\[sdk=appletvos\*\]" = [^;]*/"DEVELOPMENT_TEAM[sdk=appletvos*]" = ""/g' \
+            -e 's/"PROVISIONING_PROFILE_SPECIFIER\[sdk=appletvos\*\]" = [^;]*/"PROVISIONING_PROFILE_SPECIFIER[sdk=appletvos*]" = ""/g' \
+            -e 's/"CODE_SIGN_IDENTITY\[sdk=appletvos\*\]" = [^;]*/"CODE_SIGN_IDENTITY[sdk=appletvos*]" = ""/g' \
             tvos/Runner.xcodeproj/project.pbxproj
 
       - name: Build tvOS (unsigned)
