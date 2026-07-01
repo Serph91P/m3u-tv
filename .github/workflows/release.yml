@@ -224,6 +224,21 @@ jobs:
           mkdir -p tvos/Flutter
           rsync -a --delete build/flutter_assets/ tvos/Flutter/flutter_assets/
 
+      - name: Generate tvos/Flutter/Generated.xcconfig
+        # This file is gitignored but required by Release.xcconfig.
+        # flutter build bundle does not write it; we generate it from CI env vars.
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          BUILD_NUMBER="${{ needs.validate.outputs.build_number }}"
+          APP_PATH="$(pwd)"
+          {
+            echo "FLUTTER_APPLICATION_PATH=$APP_PATH"
+            echo "FLUTTER_TARGET=$APP_PATH/lib/main.dart"
+            echo "FLUTTER_BUILD_DIR=$APP_PATH/build"
+            echo "FLUTTER_BUILD_NAME=$VERSION"
+            echo "FLUTTER_BUILD_NUMBER=$BUILD_NUMBER"
+          } > tvos/Flutter/Generated.xcconfig
+
       - name: Create FlutterGeneratedPluginSwiftPackage stub
         # flutter build bundle does not generate this Swift package (only flutter build ios does).
         # The tvOS Xcode project requires it to resolve, so we provide a minimal stub.
@@ -250,9 +265,7 @@ jobs:
           touch "$SRC/GeneratedPluginRegistrant.swift"
 
       - name: Install CocoaPods dependencies
-        run: |
-          gem install xcpretty --no-document
-          cd tvos && pod install --repo-update
+        run: cd tvos && pod install --repo-update
 
       # Uncomment to enable signed builds:
       # - name: Install Apple certificate & provisioning profile
