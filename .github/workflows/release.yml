@@ -372,12 +372,24 @@ jobs:
 
       - name: Notarize DMG
         run: |
-          xcrun notarytool submit \
+          KEY=~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          RESULT=$(xcrun notarytool submit \
             "m3u-tv-v${{ needs.validate.outputs.version }}-macos.dmg" \
-            --key ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
+            --key "$KEY" \
             --key-id ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }} \
             --issuer ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }} \
-            --wait
+            --wait --output-format json)
+          echo "$RESULT"
+          STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+          ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "Notarization status: $STATUS — fetching Apple rejection log:"
+            xcrun notarytool log "$ID" \
+              --key "$KEY" \
+              --key-id ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }} \
+              --issuer ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+            exit 1
+          fi
 
       - name: Staple notarization ticket
         run: |
