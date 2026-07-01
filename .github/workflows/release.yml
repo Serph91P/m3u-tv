@@ -238,20 +238,32 @@ jobs:
       #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
       #     cp "$PP" ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: Pre-seed CocoaPods lock files
-        # CocoaPods 1.16+ crashes with "undefined method 'map' for nil" when the
-        # Podfile has zero CocoaPods dependencies (all tvOS plugins use SPM).
-        # Locally the build works because Pods/Manifest.lock already exists from a
-        # prior install, causing CocoaPods to skip dependency resolution entirely.
-        # In CI (clean checkout) the Pods directory is absent, so we pre-seed
-        # matching Podfile.lock + Pods/Manifest.lock to reproduce the "up to date"
-        # state — CocoaPods sees the checksums match and skips the crashing resolver.
+      - name: Inject CI placeholder pod
+        # CocoaPods 1.16+ added an "inspections" step that runs before resolution
+        # and crashes with "undefined method 'map' for nil" when the Podfile has
+        # zero CocoaPods dependencies (all tvOS plugins use SPM, so zero pods).
+        # Pre-seeding lock files doesn't help because the inspector runs first.
+        # Injecting a local no-op pod gives CocoaPods exactly one dependency,
+        # bypassing the nil crash. The pod has no code and adds nothing to the binary.
         run: |
-          CHECKSUM=$(openssl dgst -sha1 tvos/Podfile | awk '{print $NF}')
-          CP_VERSION=$(pod --version 2>/dev/null || echo "1.16.2")
-          mkdir -p tvos/Pods
-          printf 'PODFILE CHECKSUM: %s\n\nCOCOAPODS: %s\n' \
-            "$CHECKSUM" "$CP_VERSION" | tee tvos/Podfile.lock tvos/Pods/Manifest.lock > /dev/null
+          mkdir -p tvos/CIPlaceholder/Sources
+          { echo 'Pod::Spec.new do |s|'
+            echo "  s.name     = 'CIPlaceholder'"
+            echo "  s.version  = '0.0.1'"
+            echo "  s.summary  = 'No-op pod for CocoaPods 1.16+ CI workaround.'"
+            echo "  s.homepage = 'https://github.com/m3ue/m3u-tv'"
+            echo "  s.license  = { :type => 'MIT', :text => 'MIT' }"
+            echo "  s.author   = { 'CI' => 'ci@example.com' }"
+            echo "  s.source   = { :path => '.' }"
+            echo "  s.tvos.deployment_target = '13.0'"
+            echo "  s.source_files = 'Sources/**/*.{h,m}'"
+            echo 'end'
+          } > tvos/CIPlaceholder/CIPlaceholder.podspec
+          printf '// CI placeholder\n' > tvos/CIPlaceholder/Sources/CIPlaceholder.h
+          printf '// CI placeholder\n' > tvos/CIPlaceholder/Sources/CIPlaceholder.m
+          perl -i -0777 -pe \
+            "s/\nend\n\npost_install/\n  pod 'CIPlaceholder', :path => '.\/CIPlaceholder'\nend\n\npost_install/" \
+            tvos/Podfile
 
       - name: Disable code signing in tvOS project
         # flutter-tvos ignores FLUTTER_XCODE_* env vars for signing. Strip the
