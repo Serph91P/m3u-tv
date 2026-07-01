@@ -238,11 +238,23 @@ jobs:
       #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
       #     cp "$PP" ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: Pin CocoaPods to 1.15.x
-        # CocoaPods 1.16+ has a bug where `pod install` exits non-zero when the
-        # Podfile has no CocoaPods dependencies (all tvOS plugins use SPM).
-        # flutter-tvos calls pod install internally and treats non-zero as fatal.
-        run: sudo gem install cocoapods --version '1.15.2' --no-document
+      - name: Wrap pod to handle empty Podfile
+        # CocoaPods 1.16+ crashes with "map on nil" when a Podfile has zero CocoaPods
+        # dependencies (all tvOS plugins use SPM). flutter-tvos calls pod install
+        # internally and treats any non-zero exit as fatal. This wrapper intercepts that
+        # specific case and exits 0 so the build can continue.
+        run: |
+          mkdir -p "$HOME/.bin"
+          {
+            echo '#!/bin/sh'
+            echo 'OUT=$(/opt/homebrew/bin/pod "$@" 2>&1)'
+            echo 'E=$?'
+            echo 'printf "%s\n" "$OUT"'
+            echo 'if [ "$E" -ne 0 ] && printf "%s" "$OUT" | grep -q "does not contain any dependencies"; then exit 0; fi'
+            echo 'exit "$E"'
+          } > "$HOME/.bin/pod"
+          chmod +x "$HOME/.bin/pod"
+          echo "$HOME/.bin" >> "$GITHUB_PATH"
 
       - name: Disable code signing in tvOS project
         # flutter-tvos ignores FLUTTER_XCODE_* env vars for signing. Strip the
