@@ -256,5 +256,40 @@
   "requestsStatusImporting": "Importation en cours",
   "requestsStatusCompleted": "Termin\u00e9e",
   "requestsStatusRejected": "Rejet\u00e9e",
-  "requestsStatusUnknown": "Inconnu"
+  "requestsStatusUnknown": "Inconnu",
+  "requestsStatusMonitored": "Surveill\u00e9",
+  "requestsStatusGrabbing": "R\u00e9cup\u00e9ration",
+  "requestsStatusDownloading": "T\u00e9l\u00e9chargement",
+  "requestsStatusImportPending": "Import en attente",
+  "requestsStatusManualRequired": "Intervention manuelle requise",
+  "requestsStatusQueued": "En file d'attente",
+  "requestsStatusPaused": "En pause",
+  "requestsStatusFailed": "\u00c9chou\u00e9",
+  "requestsStatusError": "Erreur",
+  "requestsSeasonSelectionTitle": "S\u00e9lectionner les saisons \u00e0 demander",
+  "requestsSeasonSelectionHint": "Utilisez le D-pad pour s\u00e9lectionner, appuyez sur OK pour confirmer",
+  "requestsSeasonAll": "Toutes les saisons",
+  "requestsSeasonNumber": "Saison {number}",
+  "@requestsSeasonNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "requestsLoadMore": "Charger plus",
+  "requestsLoadingMore": "Chargement de plus...",
+  "requestsNoMoreResults": "Aucun autre r\u00e9sultat",
+  "requestsRetry": "R\u00e9essayer",
+  "requestsSearchPageInfo": "Page {current} sur {total}",
+  "@requestsSearchPageInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  }
 }

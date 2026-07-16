@@ -1135,6 +1135,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unknown'**
   String get requestsStatusUnknown;
+
+  /// No description provided for @requestsStatusMonitored.
+  ///
+  /// In en, this message translates to:
+  /// **'Monitored'**
+  String get requestsStatusMonitored;
+
+  /// No description provided for @requestsStatusGrabbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Grabbing'**
+  String get requestsStatusGrabbing;
+
+  /// No description provided for @requestsStatusDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get requestsStatusDownloading;
+
+  /// No description provided for @requestsStatusImportPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Import pending'**
+  String get requestsStatusImportPending;
+
+  /// No description provided for @requestsStatusManualRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual required'**
+  String get requestsStatusManualRequired;
+
+  /// No description provided for @requestsStatusQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get requestsStatusQueued;
+
+  /// No description provided for @requestsStatusPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get requestsStatusPaused;
+
+  /// No description provided for @requestsStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get requestsStatusFailed;
+
+  /// No description provided for @requestsStatusError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get requestsStatusError;
+
+  /// No description provided for @requestsSeasonSelectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select seasons to request'**
+  String get requestsSeasonSelectionTitle;
+
+  /// No description provided for @requestsSeasonSelectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use D-pad to select, press OK to confirm'**
+  String get requestsSeasonSelectionHint;
+
+  /// No description provided for @requestsSeasonAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All seasons'**
+  String get requestsSeasonAll;
+
+  /// No description provided for @requestsSeasonNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Season {number}'**
+  String requestsSeasonNumber(int number);
+
+  /// No description provided for @requestsLoadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get requestsLoadMore;
+
+  /// No description provided for @requestsLoadingMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading more...'**
+  String get requestsLoadingMore;
+
+  /// No description provided for @requestsNoMoreResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No more results'**
+  String get requestsNoMoreResults;
+
+  /// No description provided for @requestsRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get requestsRetry;
+
+  /// No description provided for @requestsSearchPageInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {current} of {total}'**
+  String requestsSearchPageInfo(int current, int total);
 }
 
 class _AppLocalizationsDelegate

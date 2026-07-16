@@ -565,4 +565,64 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get requestsStatusUnknown => 'Desconocido';
+
+  @override
+  String get requestsStatusMonitored => 'Monitoreado';
+
+  @override
+  String get requestsStatusGrabbing => 'Obteniendo';
+
+  @override
+  String get requestsStatusDownloading => 'Descargando';
+
+  @override
+  String get requestsStatusImportPending => 'Importación pendiente';
+
+  @override
+  String get requestsStatusManualRequired => 'Requiere intervención manual';
+
+  @override
+  String get requestsStatusQueued => 'En cola';
+
+  @override
+  String get requestsStatusPaused => 'Pausada';
+
+  @override
+  String get requestsStatusFailed => 'Fallida';
+
+  @override
+  String get requestsStatusError => 'Error';
+
+  @override
+  String get requestsSeasonSelectionTitle =>
+      'Seleccionar temporadas para solicitar';
+
+  @override
+  String get requestsSeasonSelectionHint =>
+      'Usa el D-pad para seleccionar, pulsa OK para confirmar';
+
+  @override
+  String get requestsSeasonAll => 'Todas las temporadas';
+
+  @override
+  String requestsSeasonNumber(int number) {
+    return 'Temporada $number';
+  }
+
+  @override
+  String get requestsLoadMore => 'Cargar más';
+
+  @override
+  String get requestsLoadingMore => 'Cargando más...';
+
+  @override
+  String get requestsNoMoreResults => 'No hay más resultados';
+
+  @override
+  String get requestsRetry => 'Reintentar';
+
+  @override
+  String requestsSearchPageInfo(int current, int total) {
+    return 'Página $current de $total';
+  }
 }

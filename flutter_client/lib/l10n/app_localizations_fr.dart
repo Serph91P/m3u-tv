@@ -565,4 +565,64 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get requestsStatusUnknown => 'Inconnu';
+
+  @override
+  String get requestsStatusMonitored => 'Surveillé';
+
+  @override
+  String get requestsStatusGrabbing => 'Récupération';
+
+  @override
+  String get requestsStatusDownloading => 'Téléchargement';
+
+  @override
+  String get requestsStatusImportPending => 'Import en attente';
+
+  @override
+  String get requestsStatusManualRequired => 'Intervention manuelle requise';
+
+  @override
+  String get requestsStatusQueued => 'En file d\'attente';
+
+  @override
+  String get requestsStatusPaused => 'En pause';
+
+  @override
+  String get requestsStatusFailed => 'Échoué';
+
+  @override
+  String get requestsStatusError => 'Erreur';
+
+  @override
+  String get requestsSeasonSelectionTitle =>
+      'Sélectionner les saisons à demander';
+
+  @override
+  String get requestsSeasonSelectionHint =>
+      'Utilisez le D-pad pour sélectionner, appuyez sur OK pour confirmer';
+
+  @override
+  String get requestsSeasonAll => 'Toutes les saisons';
+
+  @override
+  String requestsSeasonNumber(int number) {
+    return 'Saison $number';
+  }
+
+  @override
+  String get requestsLoadMore => 'Charger plus';
+
+  @override
+  String get requestsLoadingMore => 'Chargement de plus...';
+
+  @override
+  String get requestsNoMoreResults => 'Aucun autre résultat';
+
+  @override
+  String get requestsRetry => 'Réessayer';
+
+  @override
+  String requestsSearchPageInfo(int current, int total) {
+    return 'Page $current sur $total';
+  }
 }

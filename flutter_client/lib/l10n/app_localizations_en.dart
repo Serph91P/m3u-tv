@@ -563,4 +563,63 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get requestsStatusUnknown => 'Unknown';
+
+  @override
+  String get requestsStatusMonitored => 'Monitored';
+
+  @override
+  String get requestsStatusGrabbing => 'Grabbing';
+
+  @override
+  String get requestsStatusDownloading => 'Downloading';
+
+  @override
+  String get requestsStatusImportPending => 'Import pending';
+
+  @override
+  String get requestsStatusManualRequired => 'Manual required';
+
+  @override
+  String get requestsStatusQueued => 'Queued';
+
+  @override
+  String get requestsStatusPaused => 'Paused';
+
+  @override
+  String get requestsStatusFailed => 'Failed';
+
+  @override
+  String get requestsStatusError => 'Error';
+
+  @override
+  String get requestsSeasonSelectionTitle => 'Select seasons to request';
+
+  @override
+  String get requestsSeasonSelectionHint =>
+      'Use D-pad to select, press OK to confirm';
+
+  @override
+  String get requestsSeasonAll => 'All seasons';
+
+  @override
+  String requestsSeasonNumber(int number) {
+    return 'Season $number';
+  }
+
+  @override
+  String get requestsLoadMore => 'Load more';
+
+  @override
+  String get requestsLoadingMore => 'Loading more...';
+
+  @override
+  String get requestsNoMoreResults => 'No more results';
+
+  @override
+  String get requestsRetry => 'Retry';
+
+  @override
+  String requestsSearchPageInfo(int current, int total) {
+    return 'Page $current of $total';
+  }
 }

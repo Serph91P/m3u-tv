@@ -256,5 +256,40 @@
   "requestsStatusImporting": "Importando",
   "requestsStatusCompleted": "Completada",
   "requestsStatusRejected": "Rechazada",
-  "requestsStatusUnknown": "Desconocido"
+  "requestsStatusUnknown": "Desconocido",
+  "requestsStatusMonitored": "Monitoreado",
+  "requestsStatusGrabbing": "Obteniendo",
+  "requestsStatusDownloading": "Descargando",
+  "requestsStatusImportPending": "Importación pendiente",
+  "requestsStatusManualRequired": "Requiere intervención manual",
+  "requestsStatusQueued": "En cola",
+  "requestsStatusPaused": "Pausada",
+  "requestsStatusFailed": "Fallida",
+  "requestsStatusError": "Error",
+  "requestsSeasonSelectionTitle": "Seleccionar temporadas para solicitar",
+  "requestsSeasonSelectionHint": "Usa el D-pad para seleccionar, pulsa OK para confirmar",
+  "requestsSeasonAll": "Todas las temporadas",
+  "requestsSeasonNumber": "Temporada {number}",
+  "@requestsSeasonNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "requestsLoadMore": "Cargar más",
+  "requestsLoadingMore": "Cargando más...",
+  "requestsNoMoreResults": "No hay más resultados",
+  "requestsRetry": "Reintentar",
+  "requestsSearchPageInfo": "Página {current} de {total}",
+  "@requestsSearchPageInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  }
 }

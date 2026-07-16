@@ -90,7 +90,7 @@ void main() {
       final service = XtreamService(transport: transport.call);
       await service.authenticate(credentials);
 
-      final results = await service.searchRequests(
+      final page = await service.searchRequests(
         'game of thrones',
         type: RequestMediaType.series,
       );
@@ -99,12 +99,18 @@ void main() {
       expect(transport.lastRequest?.params, {
         'query': 'game of thrones',
         'type': 'series',
+        'page': '1',
+        'per_page': '20',
       });
-      expect(results.single.title, 'Game of Thrones');
-      expect(results.single.externalId, '1399');
-      expect(results.single.integrationId, '7');
-      expect(results.single.genres, ['Drama', 'Fantasy']);
-      expect(results.single.seasons, [0, 1, 2, 3]);
+      expect(page.results.single.title, 'Game of Thrones');
+      expect(page.results.single.externalId, '1399');
+      expect(page.results.single.integrationId, '7');
+      expect(page.results.single.genres, ['Drama', 'Fantasy']);
+      expect(page.results.single.seasons, [0, 1, 2, 3]);
+      expect(page.currentPage, 1);
+      expect(page.perPage, 20);
+      expect(page.total, 1);
+      expect(page.lastPage, 1);
     });
 
     test('submit sends type and parses data envelope', () async {
@@ -154,6 +160,53 @@ void main() {
       expect(submission.request.id, '42');
     });
 
+    test('submit with seasons sends seasons parameter', () async {
+      final transport = _RequestTransport(
+        auth: _authPayload(requests: _requestContract),
+        responses: {
+          'request_submit': {
+            'api_version': 1,
+            'data': {
+              'status': 'pending_approval',
+              'request': {
+                'id': 42,
+                'type': 'series',
+                'external_id': '1399',
+                'title': 'Game of Thrones',
+                'status': 'pending_approval',
+                'integration_id': 7,
+                'integration_name': 'Sonarr',
+                'requested_at': '2026-07-11T10:00:00Z',
+                'can_dismiss': false,
+              },
+              'selected_seasons': [1, 2],
+            },
+          },
+        },
+      );
+      final service = XtreamService(transport: transport.call);
+      await service.authenticate(credentials);
+
+      final submission = await service.submitRequest(
+        const RequestSearchResult(
+          type: RequestMediaType.series,
+          externalId: '1399',
+          integrationId: '7',
+          integrationName: 'Sonarr',
+          title: 'Game of Thrones',
+        ),
+        seasons: [1, 2],
+      );
+
+      expect(transport.lastRequest?.body, {
+        'type': 'series',
+        'integration_id': '7',
+        'external_id': '1399',
+        'seasons': '1,2',
+      });
+      expect(submission.selectedSeasons, [1, 2]);
+    });
+
     test('history uses advertised action and parses data envelope', () async {
       final transport = _RequestTransport(
         auth: _authPayload(requests: _requestContract),
@@ -191,13 +244,21 @@ void main() {
       final service = XtreamService(transport: transport.call);
       await service.authenticate(credentials);
 
-      final history = await service.getRequestHistory();
+      final page = await service.getRequestHistory();
 
       expect(transport.lastRequest?.action, 'request_history');
-      expect(history.single.status, RequestStatus.approved);
-      expect(history.single.seasonNumber, 2);
-      expect(history.single.episodeNumber, 4);
-      expect(history.single.requestedAt, DateTime.utc(2026, 7, 11, 10));
+      expect(transport.lastRequest?.params, {
+        'page': '1',
+        'per_page': '20',
+      });
+      expect(page.requests.single.status, RequestStatus.approved);
+      expect(page.requests.single.seasonNumber, 2);
+      expect(page.requests.single.episodeNumber, 4);
+      expect(page.requests.single.requestedAt, DateTime.utc(2026, 7, 11, 10));
+      expect(page.currentPage, 1);
+      expect(page.perPage, 20);
+      expect(page.total, 1);
+      expect(page.lastPage, 1);
     });
 
     test('status parses data envelope', () async {

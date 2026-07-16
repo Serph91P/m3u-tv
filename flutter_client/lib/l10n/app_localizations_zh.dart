@@ -549,4 +549,62 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get requestsStatusUnknown => '未知';
+
+  @override
+  String get requestsStatusMonitored => '监控中';
+
+  @override
+  String get requestsStatusGrabbing => '抓取中';
+
+  @override
+  String get requestsStatusDownloading => '下载中';
+
+  @override
+  String get requestsStatusImportPending => '待导入';
+
+  @override
+  String get requestsStatusManualRequired => '需要手动';
+
+  @override
+  String get requestsStatusQueued => '排队中';
+
+  @override
+  String get requestsStatusPaused => '暂停';
+
+  @override
+  String get requestsStatusFailed => '失败';
+
+  @override
+  String get requestsStatusError => '错误';
+
+  @override
+  String get requestsSeasonSelectionTitle => '选择要请求的季度';
+
+  @override
+  String get requestsSeasonSelectionHint => '使用 D-pad 选择、按 OK 确认';
+
+  @override
+  String get requestsSeasonAll => '全部季度';
+
+  @override
+  String requestsSeasonNumber(int number) {
+    return '第$number季';
+  }
+
+  @override
+  String get requestsLoadMore => '加载更多';
+
+  @override
+  String get requestsLoadingMore => '正在加载更多…';
+
+  @override
+  String get requestsNoMoreResults => '无更多结果';
+
+  @override
+  String get requestsRetry => '重试';
+
+  @override
+  String requestsSearchPageInfo(int current, int total) {
+    return '第 $current 页、共 $total 页';
+  }
 }

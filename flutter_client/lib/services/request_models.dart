@@ -18,6 +18,15 @@ enum RequestStatus {
   importing('importing'),
   completed('completed'),
   rejected('rejected'),
+  monitored('monitored'),
+  grabbing('grabbing'),
+  downloading('downloading'),
+  importPending('import_pending'),
+  manualRequired('manual_required'),
+  queued('queued'),
+  paused('paused'),
+  failed('failed'),
+  error('error'),
   unknown('unknown');
 
   const RequestStatus(this.wireName);
@@ -30,8 +39,34 @@ enum RequestStatus {
     'importing' => RequestStatus.importing,
     'completed' => RequestStatus.completed,
     'rejected' => RequestStatus.rejected,
+    'monitored' => RequestStatus.monitored,
+    'grabbing' => RequestStatus.grabbing,
+    'downloading' => RequestStatus.downloading,
+    'import_pending' => RequestStatus.importPending,
+    'manual_required' => RequestStatus.manualRequired,
+    'queued' => RequestStatus.queued,
+    'paused' => RequestStatus.paused,
+    'failed' => RequestStatus.failed,
+    'error' => RequestStatus.error,
     _ => RequestStatus.unknown,
   };
+
+  bool get isTerminal =>
+      this == RequestStatus.completed || this == RequestStatus.rejected;
+
+  bool get isActive => switch (this) {
+    RequestStatus.monitored ||
+    RequestStatus.grabbing ||
+    RequestStatus.downloading ||
+    RequestStatus.importPending ||
+    RequestStatus.queued ||
+    RequestStatus.paused ||
+    RequestStatus.importing =>
+      true,
+    _ => false,
+  };
+
+  bool get isFailed => this == RequestStatus.failed || this == RequestStatus.error;
 }
 
 class RequestActions {
@@ -143,6 +178,108 @@ class RequestSearchResult {
   final bool alreadyAvailable;
 
   String get key => '${type.wireName}:$integrationId:$externalId';
+
+  bool get isSeries => type == RequestMediaType.series;
+  bool get hasSeasons => isSeries && seasons.isNotEmpty;
+}
+
+class RequestSearchPage {
+  const RequestSearchPage({
+    required this.results,
+    required this.currentPage,
+    required this.perPage,
+    required this.total,
+    required this.lastPage,
+    this.partial = false,
+    this.unavailableProviders = 0,
+  });
+
+  factory RequestSearchPage.fromJson(Map<String, Object?> json) {
+    final data = _asMap(json['data']);
+    final meta = _asMap(json['meta']);
+    final pagination = _asMap(meta['pagination']);
+    return RequestSearchPage(
+      results: _asList(data['results'])
+          .map((item) => RequestSearchResult.fromJson(_asMap(item)))
+          .toList(growable: false),
+      currentPage: _asInt(pagination['current_page']),
+      perPage: _asInt(pagination['per_page']),
+      total: _asInt(pagination['total']),
+      lastPage: _asInt(pagination['last_page']),
+      partial: meta['partial'] == true,
+      unavailableProviders: _asInt(meta['unavailable_providers']),
+    );
+  }
+
+  final List<RequestSearchResult> results;
+  final int currentPage;
+  final int perPage;
+  final int total;
+  final int lastPage;
+  final bool partial;
+  final int unavailableProviders;
+
+  bool get hasMorePages => currentPage < lastPage;
+  int get nextPage => currentPage + 1;
+}
+
+class RequestHistoryPage {
+  const RequestHistoryPage({
+    required this.requests,
+    required this.currentPage,
+    required this.perPage,
+    required this.total,
+    required this.lastPage,
+  });
+
+  factory RequestHistoryPage.fromJson(Map<String, Object?> json) {
+    final data = _asMap(json['data']);
+    final meta = _asMap(json['meta']);
+    final pagination = _asMap(meta['pagination']);
+    return RequestHistoryPage(
+      requests: _asList(data['requests'])
+          .map((item) => RequestHistoryItem.fromJson(_asMap(item)))
+          .toList(growable: false),
+      currentPage: _asInt(pagination['current_page']),
+      perPage: _asInt(pagination['per_page']),
+      total: _asInt(pagination['total']),
+      lastPage: _asInt(pagination['last_page']),
+    );
+  }
+
+  final List<RequestHistoryItem> requests;
+  final int currentPage;
+  final int perPage;
+  final int total;
+  final int lastPage;
+
+  bool get hasMorePages => currentPage < lastPage;
+  int get nextPage => currentPage + 1;
+}
+
+class RequestSubmission {
+  const RequestSubmission({
+    required this.status,
+    required this.request,
+    this.selectedSeasons = const <int>[],
+  });
+
+  factory RequestSubmission.fromJson(Map<String, Object?> json) {
+    final data = _asMap(json['data']);
+    final request = _asMap(data['request']);
+    return RequestSubmission(
+      status: RequestStatus.fromWire(data['status']),
+      request: RequestHistoryItem.fromJson(request),
+      selectedSeasons: _asList(data['selected_seasons'])
+          .map(_nullableInt)
+          .whereType<int>()
+          .toList(growable: false),
+    );
+  }
+
+  final RequestStatus status;
+  final RequestHistoryItem request;
+  final List<int> selectedSeasons;
 }
 
 class RequestHistoryItem {
@@ -187,22 +324,6 @@ class RequestHistoryItem {
   final int? episodeNumber;
   final DateTime? requestedAt;
   final bool canDismiss;
-}
-
-class RequestSubmission {
-  const RequestSubmission({required this.status, required this.request});
-
-  factory RequestSubmission.fromJson(Map<String, Object?> json) {
-    final data = _asMap(json['data']);
-    final request = _asMap(data['request']);
-    return RequestSubmission(
-      status: RequestStatus.fromWire(data['status']),
-      request: RequestHistoryItem.fromJson(request),
-    );
-  }
-
-  final RequestStatus status;
-  final RequestHistoryItem request;
 }
 
 class RequestApiException implements Exception {

@@ -434,9 +434,11 @@ class XtreamService {
     return DvrRecording.fromXtream(_asMap(response));
   }
 
-  Future<List<RequestSearchResult>> searchRequests(
+  Future<RequestSearchPage> searchRequests(
     String term, {
     RequestMediaType? type,
+    int page = 1,
+    int perPage = 20,
   }) async {
     final normalized = term.trim();
     if (normalized.length < 2 || normalized.length > 100) {
@@ -448,16 +450,21 @@ class XtreamService {
     }
     final response = await _requestForRequests(
       _requireRequestContract().actions.search,
-      params: {'query': normalized, if (type != null) 'type': type.wireName},
+      params: {
+        'query': normalized,
+        'page': '$page',
+        'per_page': '$perPage',
+        if (type != null) 'type': type.wireName,
+      },
     );
     final json = _requestResponseMap(response);
-    final data = _asMap(json['data']);
-    return _asList(data['results'])
-        .map((item) => RequestSearchResult.fromJson(_asMap(item)))
-        .toList(growable: false);
+    return RequestSearchPage.fromJson(json);
   }
 
-  Future<RequestSubmission> submitRequest(RequestSearchResult result) async {
+  Future<RequestSubmission> submitRequest(
+    RequestSearchResult result, {
+    List<int> seasons = const <int>[],
+  }) async {
     final response = await _requestForRequests(
       _requireRequestContract().actions.submit,
       method: 'POST',
@@ -465,21 +472,26 @@ class XtreamService {
         'type': result.type.wireName,
         'integration_id': result.integrationId,
         'external_id': result.externalId,
+        if (seasons.isNotEmpty) 'seasons': seasons.join(','),
       },
     );
     final json = _requestResponseMap(response);
     return RequestSubmission.fromJson(json);
   }
 
-  Future<List<RequestHistoryItem>> getRequestHistory() async {
+  Future<RequestHistoryPage> getRequestHistory({
+    int page = 1,
+    int perPage = 20,
+  }) async {
     final response = await _requestForRequests(
       _requireRequestContract().actions.history,
+      params: {
+        'page': '$page',
+        'per_page': '$perPage',
+      },
     );
     final json = _requestResponseMap(response);
-    final data = _asMap(json['data']);
-    return _asList(data['requests'])
-        .map((item) => RequestHistoryItem.fromJson(_asMap(item)))
-        .toList(growable: false);
+    return RequestHistoryPage.fromJson(json);
   }
 
   Future<RequestHistoryItem> getRequestStatus(String requestId) async {

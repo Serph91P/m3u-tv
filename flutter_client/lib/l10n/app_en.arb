@@ -255,5 +255,40 @@
   "requestsStatusImporting": "Importing",
   "requestsStatusCompleted": "Completed",
   "requestsStatusRejected": "Rejected",
-  "requestsStatusUnknown": "Unknown"
+  "requestsStatusUnknown": "Unknown",
+  "requestsStatusMonitored": "Monitored",
+  "requestsStatusGrabbing": "Grabbing",
+  "requestsStatusDownloading": "Downloading",
+  "requestsStatusImportPending": "Import pending",
+  "requestsStatusManualRequired": "Manual required",
+  "requestsStatusQueued": "Queued",
+  "requestsStatusPaused": "Paused",
+  "requestsStatusFailed": "Failed",
+  "requestsStatusError": "Error",
+  "requestsSeasonSelectionTitle": "Select seasons to request",
+  "requestsSeasonSelectionHint": "Use D-pad to select, press OK to confirm",
+  "requestsSeasonAll": "All seasons",
+  "requestsSeasonNumber": "Season {number}",
+  "@requestsSeasonNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "requestsLoadMore": "Load more",
+  "requestsLoadingMore": "Loading more...",
+  "requestsNoMoreResults": "No more results",
+  "requestsRetry": "Retry",
+  "requestsSearchPageInfo": "Page {current} of {total}",
+  "@requestsSearchPageInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  }
 }

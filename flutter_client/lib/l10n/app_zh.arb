@@ -256,5 +256,40 @@
   "requestsStatusImporting": "\u5bfc\u5165\u4e2d",
   "requestsStatusCompleted": "\u5df2\u5b8c\u6210",
   "requestsStatusRejected": "\u5df2\u62d2\u7edd",
-  "requestsStatusUnknown": "\u672a\u77e5"
+  "requestsStatusUnknown": "\u672a\u77e5",
+  "requestsStatusMonitored": "\u76d1\u63a7\u4e2d",
+  "requestsStatusGrabbing": "\u6293\u53d6\u4e2d",
+  "requestsStatusDownloading": "\u4e0b\u8f7d\u4e2d",
+  "requestsStatusImportPending": "\u5f85\u5bfc\u5165",
+  "requestsStatusManualRequired": "\u9700\u8981\u624b\u52a8",
+  "requestsStatusQueued": "\u6392\u961f\u4e2d",
+  "requestsStatusPaused": "\u6682\u505c",
+  "requestsStatusFailed": "\u5931\u8d25",
+  "requestsStatusError": "\u9519\u8bef",
+  "requestsSeasonSelectionTitle": "\u9009\u62e9\u8981\u8bf7\u6c42\u7684\u5b63\u5ea6",
+  "requestsSeasonSelectionHint": "\u4f7f\u7528 D-pad \u9009\u62e9\u3001\u6309 OK \u786e\u8ba4",
+  "requestsSeasonAll": "\u5168\u90e8\u5b63\u5ea6",
+  "requestsSeasonNumber": "\u7b2c{number}\u5b63",
+  "@requestsSeasonNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "requestsLoadMore": "\u52a0\u8f7d\u66f4\u591a",
+  "requestsLoadingMore": "\u6b63\u5728\u52a0\u8f7d\u66f4\u591a\u2026",
+  "requestsNoMoreResults": "\u65e0\u66f4\u591a\u7ed3\u679c",
+  "requestsRetry": "\u91cd\u8bd5",
+  "requestsSearchPageInfo": "\u7b2c {current} \u9875\u3001\u5171 {total} \u9875",
+  "@requestsSearchPageInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  }
 }

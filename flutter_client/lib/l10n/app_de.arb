@@ -256,5 +256,40 @@
   "requestsStatusImporting": "Wird importiert",
   "requestsStatusCompleted": "Abgeschlossen",
   "requestsStatusRejected": "Abgelehnt",
-  "requestsStatusUnknown": "Unbekannt"
+  "requestsStatusUnknown": "Unbekannt",
+  "requestsStatusMonitored": "Überwacht",
+  "requestsStatusGrabbing": "Wird geholt",
+  "requestsStatusDownloading": "Wird heruntergeladen",
+  "requestsStatusImportPending": "Import ausstehend",
+  "requestsStatusManualRequired": "Manuell erforderlich",
+  "requestsStatusQueued": "In Warteschlange",
+  "requestsStatusPaused": "Pausiert",
+  "requestsStatusFailed": "Fehlgeschlagen",
+  "requestsStatusError": "Fehler",
+  "requestsSeasonSelectionTitle": "Staffeln zum Anfordern auswählen",
+  "requestsSeasonSelectionHint": "Mit dem D-Pad auswählen, OK zum Bestätigen drücken",
+  "requestsSeasonAll": "Alle Staffeln",
+  "requestsSeasonNumber": "Staffel {number}",
+  "@requestsSeasonNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "requestsLoadMore": "Mehr laden",
+  "requestsLoadingMore": "Lade mehr...",
+  "requestsNoMoreResults": "Keine weiteren Ergebnisse",
+  "requestsRetry": "Wiederholen",
+  "requestsSearchPageInfo": "Seite {current} von {total}",
+  "@requestsSearchPageInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  }
 }

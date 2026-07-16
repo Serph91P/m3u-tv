@@ -564,4 +564,63 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get requestsStatusUnknown => 'Unbekannt';
+
+  @override
+  String get requestsStatusMonitored => 'Überwacht';
+
+  @override
+  String get requestsStatusGrabbing => 'Wird geholt';
+
+  @override
+  String get requestsStatusDownloading => 'Wird heruntergeladen';
+
+  @override
+  String get requestsStatusImportPending => 'Import ausstehend';
+
+  @override
+  String get requestsStatusManualRequired => 'Manuell erforderlich';
+
+  @override
+  String get requestsStatusQueued => 'In Warteschlange';
+
+  @override
+  String get requestsStatusPaused => 'Pausiert';
+
+  @override
+  String get requestsStatusFailed => 'Fehlgeschlagen';
+
+  @override
+  String get requestsStatusError => 'Fehler';
+
+  @override
+  String get requestsSeasonSelectionTitle => 'Staffeln zum Anfordern auswählen';
+
+  @override
+  String get requestsSeasonSelectionHint =>
+      'Mit dem D-Pad auswählen, OK zum Bestätigen drücken';
+
+  @override
+  String get requestsSeasonAll => 'Alle Staffeln';
+
+  @override
+  String requestsSeasonNumber(int number) {
+    return 'Staffel $number';
+  }
+
+  @override
+  String get requestsLoadMore => 'Mehr laden';
+
+  @override
+  String get requestsLoadingMore => 'Lade mehr...';
+
+  @override
+  String get requestsNoMoreResults => 'Keine weiteren Ergebnisse';
+
+  @override
+  String get requestsRetry => 'Wiederholen';
+
+  @override
+  String requestsSearchPageInfo(int current, int total) {
+    return 'Seite $current von $total';
+  }
 }
