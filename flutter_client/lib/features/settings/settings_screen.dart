@@ -44,6 +44,8 @@ class SettingsScreen extends StatefulWidget {
     this.locale,
     this.onLocaleChanged,
     this.proxyPlaybackSettings,
+    this.hasRequestsFeature = false,
+    this.onRequestsSelect,
   });
 
   final AuthNotifier authNotifier;
@@ -68,6 +70,8 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback? onConnected;
   final Locale? locale;
   final void Function(Locale?)? onLocaleChanged;
+  final bool hasRequestsFeature;
+  final VoidCallback? onRequestsSelect;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -151,6 +155,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         locale: widget.locale,
         onLocaleChanged: widget.onLocaleChanged,
         proxyPlaybackSettings: widget.proxyPlaybackSettings,
+        hasRequestsFeature: widget.hasRequestsFeature,
+        onRequestsSelect: widget.onRequestsSelect,
       ),
     );
   }
@@ -339,6 +345,8 @@ class _ConnectedView extends StatefulWidget {
     this.locale,
     this.onLocaleChanged,
     this.proxyPlaybackSettings,
+    this.hasRequestsFeature = false,
+    this.onRequestsSelect,
   });
 
   final AuthNotifier authNotifier;
@@ -358,6 +366,8 @@ class _ConnectedView extends StatefulWidget {
   final void Function(Duration interval)? onEpgIntervalChanged;
   final Locale? locale;
   final void Function(Locale?)? onLocaleChanged;
+  final bool hasRequestsFeature;
+  final VoidCallback? onRequestsSelect;
 
   @override
   State<_ConnectedView> createState() => _ConnectedViewState();
@@ -727,6 +737,35 @@ class _ConnectedViewState extends State<_ConnectedView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.hasRequestsFeature) ...[
+          _SettingsSection(
+            title: l.settingsContentRequests,
+            subtitle: l.settingsContentRequestsSubtitle,
+            child: DpadInkWell(
+              autofocus: true,
+              onTap: widget.onRequestsSelect,
+              borderRadius: BorderRadius.circular(8),
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.playlist_add, size: 36),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        l.settingsBrowseRequests,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
         _SettingsSection(
           title: l.traktWatchHistory,
           subtitle: l.traktWatchHistorySubtitle,

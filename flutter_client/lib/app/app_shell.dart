@@ -667,8 +667,13 @@ class AppShellState extends ConsumerState<AppShell>
               body: Center(child: CircularProgressIndicator()),
             );
           }
+          final requestController = ref.read(requestControllerProvider);
           return RequestScreen(
-            isConfigured: _appState.isConfigured,
+            onSearch: requestController.search,
+            onSubmit: requestController.submit,
+            onLoadHistory: requestController.loadHistory,
+            onRefreshItem: requestController.refreshItem,
+            onDismiss: requestController.dismiss,
             onSidebarActivate: _activateSidebar,
           );
         },
@@ -702,6 +707,8 @@ class AppShellState extends ConsumerState<AppShell>
           locale: _appState.locale,
           onLocaleChanged: (locale) => unawaited(_appState.setLocale(locale)),
           proxyPlaybackSettings: _appState.proxyPlaybackSettings,
+          hasRequestsFeature: _appState.hasRequestsFeature,
+          onRequestsSelect: () => _navigateToRoute(RouteNames.requests),
         ),
       ),
       _ => const PlaceholderScreen(title: 'Home'),

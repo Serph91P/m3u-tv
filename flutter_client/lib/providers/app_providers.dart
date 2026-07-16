@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3u_tv/features/requests/request_controller.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
@@ -126,6 +127,13 @@ final sourceErrorProvider = Provider<String?>((ref) {
 
 final hasDvrFeatureProvider = Provider<bool>((ref) {
   return ref.watch(appStateControllerProvider).appState.hasDvrFeature;
+});
+
+final requestControllerProvider = ChangeNotifierProvider<RequestController>((
+  ref,
+) {
+  final service = ref.read(appStateControllerProvider).appState.xtreamService;
+  return RequestController(service);
 });
 
 // Favorites services are stable ChangeNotifier instances — they notify on

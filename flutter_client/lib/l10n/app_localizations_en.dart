@@ -141,6 +141,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsIntegrations => 'Integrations';
 
   @override
+  String get settingsContentRequests => 'Content Requests';
+
+  @override
+  String get settingsContentRequestsSubtitle =>
+      'Search supported services and track requests from your TV.';
+
+  @override
+  String get settingsBrowseRequests => 'Browse requests';
+
+  @override
   String get settingsLanguage => 'Language';
 
   @override
@@ -486,4 +496,71 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiostreamsSearchAll => 'All';
+
+  @override
+  String get requestsTitle => 'Request Content';
+
+  @override
+  String get requestsSubtitle =>
+      'Search for movies and series, then send a request to your service.';
+
+  @override
+  String get requestsSearchHint => 'Search movies and series...';
+
+  @override
+  String get requestsSearchAction => 'Search';
+
+  @override
+  String get requestsTypeAll => 'All';
+
+  @override
+  String get requestsTypeMovies => 'Movies';
+
+  @override
+  String get requestsTypeSeries => 'Series';
+
+  @override
+  String get requestsValidationTooShort => 'Enter at least 2 characters.';
+
+  @override
+  String get requestsValidationTooLong => 'Enter no more than 100 characters.';
+
+  @override
+  String get requestsSearchPrompt => 'Enter a title to search.';
+
+  @override
+  String get requestsNoResults => 'No matching titles found.';
+
+  @override
+  String get requestsAlreadyAvailable => 'Already available';
+
+  @override
+  String get requestsRequestMovie => 'Request movie';
+
+  @override
+  String get requestsRequestSeries => 'Request series';
+
+  @override
+  String get requestsHistoryTitle => 'My requests';
+
+  @override
+  String get requestsHistoryEmpty => 'You have no requests yet.';
+
+  @override
+  String get requestsStatusPendingApproval => 'Pending approval';
+
+  @override
+  String get requestsStatusApproved => 'Approved';
+
+  @override
+  String get requestsStatusImporting => 'Importing';
+
+  @override
+  String get requestsStatusCompleted => 'Completed';
+
+  @override
+  String get requestsStatusRejected => 'Rejected';
+
+  @override
+  String get requestsStatusUnknown => 'Unknown';
 }

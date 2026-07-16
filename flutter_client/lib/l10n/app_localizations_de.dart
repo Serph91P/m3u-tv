@@ -142,6 +142,16 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsIntegrations => 'Integrationen';
 
   @override
+  String get settingsContentRequests => 'Inhaltsanfragen';
+
+  @override
+  String get settingsContentRequestsSubtitle =>
+      'Unterstützte Dienste durchsuchen und Anfragen auf dem Fernseher verfolgen.';
+
+  @override
+  String get settingsBrowseRequests => 'Anfragen durchsuchen';
+
+  @override
   String get settingsLanguage => 'Sprache';
 
   @override
@@ -487,4 +497,71 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get aiostreamsSearchAll => 'Alle';
+
+  @override
+  String get requestsTitle => 'Inhalt anfragen';
+
+  @override
+  String get requestsSubtitle =>
+      'Filme und Serien suchen und eine Anfrage an deinen Dienst senden.';
+
+  @override
+  String get requestsSearchHint => 'Filme und Serien suchen...';
+
+  @override
+  String get requestsSearchAction => 'Suchen';
+
+  @override
+  String get requestsTypeAll => 'Alle';
+
+  @override
+  String get requestsTypeMovies => 'Filme';
+
+  @override
+  String get requestsTypeSeries => 'Serien';
+
+  @override
+  String get requestsValidationTooShort => 'Mindestens 2 Zeichen eingeben.';
+
+  @override
+  String get requestsValidationTooLong => 'Höchstens 100 Zeichen eingeben.';
+
+  @override
+  String get requestsSearchPrompt => 'Titel für die Suche eingeben.';
+
+  @override
+  String get requestsNoResults => 'Keine passenden Titel gefunden.';
+
+  @override
+  String get requestsAlreadyAvailable => 'Bereits verfügbar';
+
+  @override
+  String get requestsRequestMovie => 'Film anfragen';
+
+  @override
+  String get requestsRequestSeries => 'Serie anfragen';
+
+  @override
+  String get requestsHistoryTitle => 'Meine Anfragen';
+
+  @override
+  String get requestsHistoryEmpty => 'Du hast noch keine Anfragen.';
+
+  @override
+  String get requestsStatusPendingApproval => 'Genehmigung ausstehend';
+
+  @override
+  String get requestsStatusApproved => 'Genehmigt';
+
+  @override
+  String get requestsStatusImporting => 'Wird importiert';
+
+  @override
+  String get requestsStatusCompleted => 'Abgeschlossen';
+
+  @override
+  String get requestsStatusRejected => 'Abgelehnt';
+
+  @override
+  String get requestsStatusUnknown => 'Unbekannt';
 }

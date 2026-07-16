@@ -356,6 +356,24 @@ abstract class AppLocalizations {
   /// **'Integrations'**
   String get settingsIntegrations;
 
+  /// No description provided for @settingsContentRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Content Requests'**
+  String get settingsContentRequests;
+
+  /// No description provided for @settingsContentRequestsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search supported services and track requests from your TV.'**
+  String get settingsContentRequestsSubtitle;
+
+  /// No description provided for @settingsBrowseRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse requests'**
+  String get settingsBrowseRequests;
+
   /// No description provided for @settingsLanguage.
   ///
   /// In en, this message translates to:
@@ -985,6 +1003,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'All'**
   String get aiostreamsSearchAll;
+
+  /// No description provided for @requestsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Request Content'**
+  String get requestsTitle;
+
+  /// No description provided for @requestsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search for movies and series, then send a request to your service.'**
+  String get requestsSubtitle;
+
+  /// No description provided for @requestsSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search movies and series...'**
+  String get requestsSearchHint;
+
+  /// No description provided for @requestsSearchAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get requestsSearchAction;
+
+  /// No description provided for @requestsTypeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get requestsTypeAll;
+
+  /// No description provided for @requestsTypeMovies.
+  ///
+  /// In en, this message translates to:
+  /// **'Movies'**
+  String get requestsTypeMovies;
+
+  /// No description provided for @requestsTypeSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Series'**
+  String get requestsTypeSeries;
+
+  /// No description provided for @requestsValidationTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter at least 2 characters.'**
+  String get requestsValidationTooShort;
+
+  /// No description provided for @requestsValidationTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter no more than 100 characters.'**
+  String get requestsValidationTooLong;
+
+  /// No description provided for @requestsSearchPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a title to search.'**
+  String get requestsSearchPrompt;
+
+  /// No description provided for @requestsNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching titles found.'**
+  String get requestsNoResults;
+
+  /// No description provided for @requestsAlreadyAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Already available'**
+  String get requestsAlreadyAvailable;
+
+  /// No description provided for @requestsRequestMovie.
+  ///
+  /// In en, this message translates to:
+  /// **'Request movie'**
+  String get requestsRequestMovie;
+
+  /// No description provided for @requestsRequestSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Request series'**
+  String get requestsRequestSeries;
+
+  /// No description provided for @requestsHistoryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'My requests'**
+  String get requestsHistoryTitle;
+
+  /// No description provided for @requestsHistoryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'You have no requests yet.'**
+  String get requestsHistoryEmpty;
+
+  /// No description provided for @requestsStatusPendingApproval.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending approval'**
+  String get requestsStatusPendingApproval;
+
+  /// No description provided for @requestsStatusApproved.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved'**
+  String get requestsStatusApproved;
+
+  /// No description provided for @requestsStatusImporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing'**
+  String get requestsStatusImporting;
+
+  /// No description provided for @requestsStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get requestsStatusCompleted;
+
+  /// No description provided for @requestsStatusRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Rejected'**
+  String get requestsStatusRejected;
+
+  /// No description provided for @requestsStatusUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get requestsStatusUnknown;
 }
 
 class _AppLocalizationsDelegate

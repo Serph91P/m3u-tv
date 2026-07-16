@@ -68,6 +68,7 @@ Future<Object?> _send(HttpClient client, XtreamRequest request) async {
       method: request.method,
       uri: uri,
       serverMessage: _serverMessage(body),
+      serverCode: _serverCode(body),
     );
   }
   return body;
@@ -93,6 +94,12 @@ String? _serverMessage(Object? body) {
       json['error'] ?? json['message'] ?? json['detail'] ?? json['error_code'];
   if (value == null) return null;
   return '$value';
+}
+
+String? _serverCode(Object? body) {
+  if (body is! Map) return null;
+  final value = body['code'];
+  return value == null ? null : '$value';
 }
 
 Uri _buildUri(XtreamRequest request) {

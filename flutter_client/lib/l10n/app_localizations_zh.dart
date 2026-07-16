@@ -141,6 +141,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsIntegrations => '集成';
 
   @override
+  String get settingsContentRequests => '内容请求';
+
+  @override
+  String get settingsContentRequestsSubtitle => '在电视上搜索支持的服务并跟踪请求。';
+
+  @override
+  String get settingsBrowseRequests => '浏览请求';
+
+  @override
   String get settingsLanguage => '语言';
 
   @override
@@ -474,4 +483,70 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiostreamsSearchAll => '全部';
+
+  @override
+  String get requestsTitle => '请求内容';
+
+  @override
+  String get requestsSubtitle => '搜索电影和剧集，然后向服务发送请求。';
+
+  @override
+  String get requestsSearchHint => '搜索电影和剧集...';
+
+  @override
+  String get requestsSearchAction => '搜索';
+
+  @override
+  String get requestsTypeAll => '全部';
+
+  @override
+  String get requestsTypeMovies => '电影';
+
+  @override
+  String get requestsTypeSeries => '剧集';
+
+  @override
+  String get requestsValidationTooShort => '请至少输入 2 个字符。';
+
+  @override
+  String get requestsValidationTooLong => '请输入不超过 100 个字符。';
+
+  @override
+  String get requestsSearchPrompt => '输入标题进行搜索。';
+
+  @override
+  String get requestsNoResults => '未找到匹配的标题。';
+
+  @override
+  String get requestsAlreadyAvailable => '已可用';
+
+  @override
+  String get requestsRequestMovie => '请求电影';
+
+  @override
+  String get requestsRequestSeries => '请求剧集';
+
+  @override
+  String get requestsHistoryTitle => '我的请求';
+
+  @override
+  String get requestsHistoryEmpty => '你还没有请求。';
+
+  @override
+  String get requestsStatusPendingApproval => '等待批准';
+
+  @override
+  String get requestsStatusApproved => '已批准';
+
+  @override
+  String get requestsStatusImporting => '导入中';
+
+  @override
+  String get requestsStatusCompleted => '已完成';
+
+  @override
+  String get requestsStatusRejected => '已拒绝';
+
+  @override
+  String get requestsStatusUnknown => '未知';
 }

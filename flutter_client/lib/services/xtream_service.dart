@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/request_models.dart';
 import 'package:m3u_tv/services/xtream_http_transport_stub.dart'
     if (dart.library.io) 'xtream_http_transport_io.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -31,6 +32,7 @@ class XtreamHttpException implements Exception {
     required this.uri,
     this.reasonPhrase,
     this.serverMessage,
+    this.serverCode,
   });
 
   final int statusCode;
@@ -38,6 +40,7 @@ class XtreamHttpException implements Exception {
   final Uri uri;
   final String? reasonPhrase;
   final String? serverMessage;
+  final String? serverCode;
 
   @override
   String toString() {
@@ -226,6 +229,7 @@ class XtreamAuthResponse {
     this.features = const <String>[],
     this.aiostreamsIntegrations = const <AIOStreamsIntegration>[],
     this.proxy,
+    this.requestContract,
   });
 
   final bool isAuthenticated;
@@ -234,11 +238,13 @@ class XtreamAuthResponse {
   final List<String> features;
   final List<AIOStreamsIntegration> aiostreamsIntegrations;
   final ProxyCapability? proxy;
+  final RequestContract? requestContract;
 
   bool hasFeature(String feature) => features.contains(feature);
   bool get hasAioStreams =>
       hasFeature('aiostreams') && aiostreamsIntegrations.isNotEmpty;
   bool get hasProxy => hasFeature('proxy') && proxy != null;
+  bool get hasRequests => hasFeature('requests') && requestContract != null;
 }
 
 class XtreamService {
@@ -255,6 +261,7 @@ class XtreamService {
   UserCredentials? _credentials;
   tz.Location _serverLocation = tz.UTC;
   bool _isM3UEditor = false;
+  RequestContract? _requestContract;
 
   bool get isConfigured => _credentials != null;
 
@@ -319,6 +326,8 @@ class XtreamService {
     final proxy = proxyJson is Map<String, dynamic>
         ? ProxyCapability.fromJson(proxyJson)
         : null;
+    final requestContract = RequestContract.tryParse(m3uEditor['requests']);
+    _requestContract = requestContract;
     return XtreamAuthResponse(
       isAuthenticated: true,
       status: status,
@@ -326,6 +335,7 @@ class XtreamService {
       features: features,
       aiostreamsIntegrations: aiostreamsIntegrations,
       proxy: proxy,
+      requestContract: requestContract,
     );
   }
 
@@ -333,6 +343,7 @@ class XtreamService {
     _credentials = null;
     _isM3UEditor = false;
     _serverLocation = tz.UTC;
+    _requestContract = null;
   }
 
   Future<List<Category>> getLiveCategories() async =>
@@ -421,6 +432,74 @@ class XtreamService {
       },
     );
     return DvrRecording.fromXtream(_asMap(response));
+  }
+
+  Future<List<RequestSearchResult>> searchRequests(
+    String term, {
+    RequestMediaType? type,
+  }) async {
+    final normalized = term.trim();
+    if (normalized.length < 2 || normalized.length > 100) {
+      throw ArgumentError.value(
+        term,
+        'term',
+        'Must contain 2 to 100 characters',
+      );
+    }
+    final response = await _requestForRequests(
+      _requireRequestContract().actions.search,
+      params: {'query': normalized, if (type != null) 'type': type.wireName},
+    );
+    final json = _requestResponseMap(response);
+    final data = _asMap(json['data']);
+    return _asList(data['results'])
+        .map((item) => RequestSearchResult.fromJson(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  Future<RequestSubmission> submitRequest(RequestSearchResult result) async {
+    final response = await _requestForRequests(
+      _requireRequestContract().actions.submit,
+      method: 'POST',
+      body: {
+        'type': result.type.wireName,
+        'integration_id': result.integrationId,
+        'external_id': result.externalId,
+      },
+    );
+    final json = _requestResponseMap(response);
+    return RequestSubmission.fromJson(json);
+  }
+
+  Future<List<RequestHistoryItem>> getRequestHistory() async {
+    final response = await _requestForRequests(
+      _requireRequestContract().actions.history,
+    );
+    final json = _requestResponseMap(response);
+    final data = _asMap(json['data']);
+    return _asList(data['requests'])
+        .map((item) => RequestHistoryItem.fromJson(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  Future<RequestHistoryItem> getRequestStatus(String requestId) async {
+    final response = await _requestForRequests(
+      _requireRequestContract().actions.status,
+      params: {'request_id': requestId},
+    );
+    final json = _requestResponseMap(response);
+    final data = _asMap(json['data']);
+    final request = _asMap(data['request']);
+    return RequestHistoryItem.fromJson(request);
+  }
+
+  Future<void> dismissRequest(String requestId) async {
+    final response = await _requestForRequests(
+      _requireRequestContract().actions.dismiss,
+      method: 'POST',
+      body: {'request_id': requestId},
+    );
+    _requestResponseMap(response);
   }
 
   Future<SeriesInfo> getSeriesInfo(int seriesId) async {
@@ -648,6 +727,28 @@ class XtreamService {
     );
   }
 
+  Future<Object?> _requestForRequests(
+    String action, {
+    Map<String, String> params = const {},
+    Map<String, String> body = const {},
+    String method = 'GET',
+  }) async {
+    try {
+      return await _request(
+        action,
+        params: params,
+        body: body,
+        method: method,
+      );
+    } on XtreamHttpException catch (error) {
+      throw RequestApiException(
+        code: error.serverCode ?? 'http_${error.statusCode}',
+        message: error.serverMessage ?? userFacingXtreamError(error),
+        statusCode: error.statusCode,
+      );
+    }
+  }
+
   Future<Object?> _requestWithCredentials(
     UserCredentials credentials,
     String? action, {
@@ -680,6 +781,25 @@ class XtreamService {
     }
     return credentials;
   }
+
+  RequestContract _requireRequestContract() {
+    final contract = _requestContract;
+    if (contract == null) {
+      throw StateError('Content requests are not supported by this server');
+    }
+    return contract;
+  }
+}
+
+Map<String, Object?> _requestResponseMap(Object? response) {
+  final json = _asMap(response);
+  if (json.containsKey('error')) {
+    throw RequestApiException(
+      code: '${json['code'] ?? 'request_failed'}',
+      message: '${json['error']}',
+    );
+  }
+  return json;
 }
 
 Map<String, Object?> _asMap(Object? value) {

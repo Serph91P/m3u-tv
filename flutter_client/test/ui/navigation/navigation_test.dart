@@ -379,7 +379,7 @@ void main() {
       await _pumpAppFrame(tester);
 
       expect(find.text('Request Content'), findsOneWidget);
-      expect(find.text('Full request workflow coming soon.'), findsOneWidget);
+      expect(find.text('Enter a title to search.'), findsOneWidget);
     });
 
     testWidgets('sidebar labels remain visible after selecting a route', (
