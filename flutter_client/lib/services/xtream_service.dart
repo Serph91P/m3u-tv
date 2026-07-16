@@ -794,9 +794,17 @@ class XtreamService {
 Map<String, Object?> _requestResponseMap(Object? response) {
   final json = _asMap(response);
   if (json.containsKey('error')) {
+    final error = json['error'];
+    if (error is Map) {
+      final errorMap = _asMap(error);
+      throw RequestApiException(
+        code: '${errorMap['code'] ?? 'request_failed'}',
+        message: '${errorMap['message'] ?? ''}',
+      );
+    }
     throw RequestApiException(
       code: '${json['code'] ?? 'request_failed'}',
-      message: '${json['error']}',
+      message: '$error',
     );
   }
   return json;

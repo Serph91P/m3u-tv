@@ -118,6 +118,55 @@ void main() {
       },
     );
 
+    test('default transport parses nested request API errors', () async {
+      final server = await io.HttpServer.bind(
+        io.InternetAddress.loopbackIPv4,
+        0,
+      );
+      unawaited(
+        server.listen((request) {
+          request.response.statusCode = io.HttpStatus.conflict;
+          request.response.headers.contentType = io.ContentType.json;
+          request.response.write(
+            jsonEncode(<String, Object?>{
+              'api_version': 1,
+              'error': <String, Object?>{
+                'code': 'already_requested',
+                'message': 'This title has already been requested.',
+              },
+            }),
+          );
+          unawaited(request.response.close());
+        }).asFuture<void>(),
+      );
+      addTearDown(() => server.close(force: true));
+
+      final service = XtreamService();
+
+      await expectLater(
+        service.authenticate(
+          UserCredentials(
+            server: 'http://${server.address.host}:${server.port}',
+            username: 'demo-user',
+            password: 'playlist-secret',
+          ),
+        ),
+        throwsA(
+          isA<XtreamHttpException>()
+              .having(
+                (error) => error.serverCode,
+                'serverCode',
+                'already_requested',
+              )
+              .having(
+                (error) => error.serverMessage,
+                'serverMessage',
+                'This title has already been requested.',
+              ),
+        ),
+      );
+    });
+
     test(
       'default transport reports plaintext server failures cleanly',
       () async {

@@ -261,8 +261,11 @@ void main() {
           auth: _authPayload(requests: _requestContract),
           responses: {
             'request_submit': {
-              'code': 'already_requested',
-              'error': 'This title has already been requested.',
+              'api_version': 1,
+              'error': {
+                'code': 'already_requested',
+                'message': 'This title has already been requested.',
+              },
             },
           },
         ).call,

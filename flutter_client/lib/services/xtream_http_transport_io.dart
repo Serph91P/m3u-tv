@@ -90,14 +90,27 @@ String? _plainServerMessage(String text) {
 String? _serverMessage(Object? body) {
   if (body is! Map) return null;
   final json = body.cast<Object?, Object?>();
-  final value =
-      json['error'] ?? json['message'] ?? json['detail'] ?? json['error_code'];
-  if (value == null) return null;
+  final error = json['error'];
+  if (error is Map) {
+    final nested = error.cast<Object?, Object?>();
+    final msg = nested['message'];
+    if (msg != null) return '$msg';
+  }
+  if (error is String) return error;
+  final value = json['message'] ?? json['detail'] ?? json['error_code'];
+  if (value == null || value is Map) return null;
   return '$value';
 }
 
 String? _serverCode(Object? body) {
   if (body is! Map) return null;
+  final json = body.cast<Object?, Object?>();
+  final error = json['error'];
+  if (error is Map) {
+    final nested = error.cast<Object?, Object?>();
+    final code = nested['code'];
+    if (code != null) return '$code';
+  }
   final value = body['code'];
   return value == null ? null : '$value';
 }
