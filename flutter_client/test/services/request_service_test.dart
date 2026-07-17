@@ -210,7 +210,7 @@ void main() {
       expect(submission.selectedSeasons, [1, 2]);
     });
 
-    test('series submit sends an empty array for all seasons', () async {
+    test('series submit omits seasons when requesting all seasons', () async {
       final transport = _RequestTransport(
         auth: _authPayload(requests: _requestContract),
         responses: {
@@ -251,7 +251,6 @@ void main() {
         'type': 'series',
         'integration_id': '7',
         'external_id': '1399',
-        'seasons': <int>[],
       });
     });
 

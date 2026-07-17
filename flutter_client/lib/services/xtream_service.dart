@@ -472,7 +472,7 @@ class XtreamService {
         'type': result.type.wireName,
         'integration_id': result.integrationId,
         'external_id': result.externalId,
-        if (result.isSeries) 'seasons': seasons,
+        if (result.isSeries && seasons.isNotEmpty) 'seasons': seasons,
       },
     );
     final json = _requestResponseMap(response);
