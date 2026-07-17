@@ -10,6 +10,12 @@ import 'package:m3u_tv/services/request_models.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
+typedef RequestScreenSubmitCallback =
+    Future<void> Function(
+      RequestSearchResult result, {
+      List<int> seasons,
+    });
+
 class RequestScreen extends ConsumerStatefulWidget {
   const RequestScreen({
     super.key,
@@ -22,7 +28,7 @@ class RequestScreen extends ConsumerStatefulWidget {
   });
 
   final Future<void> Function(String term, [RequestMediaType? type]) onSearch;
-  final Future<void> Function(RequestSearchResult result) onSubmit;
+  final RequestScreenSubmitCallback onSubmit;
   final Future<void> Function() onLoadHistory;
   final Future<void> Function(String requestId) onRefreshItem;
   final Future<void> Function(String requestId) onDismiss;
@@ -261,7 +267,21 @@ class _SearchResults extends StatelessWidget {
   const _SearchResults({required this.state, required this.onSubmit});
 
   final RequestController state;
-  final Future<void> Function(RequestSearchResult result) onSubmit;
+  final RequestScreenSubmitCallback onSubmit;
+
+  Future<void> _submit(BuildContext context, RequestSearchResult result) async {
+    if (!result.hasSeasons) {
+      await onSubmit(result);
+      return;
+    }
+    final seasons = await showDialog<List<int>>(
+      context: context,
+      builder: (_) => _SeasonSelectionDialog(seasons: result.seasons),
+    );
+    if (seasons != null) {
+      await onSubmit(result, seasons: seasons);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -288,7 +308,7 @@ class _SearchResults extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHigh,
           onTap: result.alreadyAvailable || submitted != null || submitting
               ? null
-              : () => unawaited(onSubmit(result)),
+              : () => unawaited(_submit(context, result)),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -351,6 +371,105 @@ class _SearchResults extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _SeasonSelectionDialog extends StatefulWidget {
+  const _SeasonSelectionDialog({required this.seasons});
+
+  final List<int> seasons;
+
+  @override
+  State<_SeasonSelectionDialog> createState() => _SeasonSelectionDialogState();
+}
+
+class _SeasonSelectionDialogState extends State<_SeasonSelectionDialog> {
+  final Set<int> _selected = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    void submit() {
+      Navigator.of(context).pop<List<int>>([
+        for (final season in widget.seasons)
+          if (_selected.contains(season)) season,
+      ]);
+    }
+
+    return AlertDialog(
+      title: Text(l.requestsSeasonSelectionTitle),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.requestsSeasonSelectionHint),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                DpadInkWell(
+                  autofocus: true,
+                  borderRadius: BorderRadius.circular(8),
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop<List<int>>(const <int>[]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Text(l.requestsSeasonAll),
+                  ),
+                ),
+                for (var index = 0; index < widget.seasons.length; index++)
+                  DpadInkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    color: _selected.contains(widget.seasons[index])
+                        ? Theme.of(context).colorScheme.primaryContainer
+                        : Theme.of(context).colorScheme.surfaceContainerHigh,
+                    onTap: () {
+                      setState(() {
+                        final season = widget.seasons[index];
+                        if (!_selected.add(season)) _selected.remove(season);
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _selected.contains(widget.seasons[index])
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(l.requestsSeasonNumber(widget.seasons[index])),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        DpadFocusable(
+          onSelect: _selected.isEmpty ? null : submit,
+          child: FilledButton(
+            onPressed: _selected.isEmpty ? null : submit,
+            child: Text(l.requestsRequestSeries),
+          ),
+        ),
+      ],
     );
   }
 }

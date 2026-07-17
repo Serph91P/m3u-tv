@@ -115,7 +115,7 @@ class XtreamRequest {
   final UserCredentials credentials;
   final String? action;
   final Map<String, String> params;
-  final Map<String, String> body;
+  final Map<String, Object?> body;
   final Map<String, String> headers;
   final String method;
 
@@ -200,7 +200,7 @@ class ProxyStreamProfile {
 /// Proxy playback capability advertised by the backend.
 ///
 /// [forced] means the playlist already routes every stream through the proxy,
-/// so the proxy cannot be turned off client-side — profile selection still
+/// so the proxy cannot be turned off client-side; profile selection still
 /// applies. [profiles] is the set of transcoding profiles this user may apply.
 class ProxyCapability {
   const ProxyCapability({
@@ -472,7 +472,7 @@ class XtreamService {
         'type': result.type.wireName,
         'integration_id': result.integrationId,
         'external_id': result.externalId,
-        if (seasons.isNotEmpty) 'seasons': seasons.join(','),
+        if (result.isSeries) 'seasons': seasons,
       },
     );
     final json = _requestResponseMap(response);
@@ -727,7 +727,7 @@ class XtreamService {
   Future<Object?> _request(
     String action, {
     Map<String, String> params = const {},
-    Map<String, String> body = const {},
+    Map<String, Object?> body = const {},
     String method = 'GET',
   }) {
     return _requestWithCredentials(
@@ -742,7 +742,7 @@ class XtreamService {
   Future<Object?> _requestForRequests(
     String action, {
     Map<String, String> params = const {},
-    Map<String, String> body = const {},
+    Map<String, Object?> body = const {},
     String method = 'GET',
   }) async {
     try {
@@ -765,7 +765,7 @@ class XtreamService {
     UserCredentials credentials,
     String? action, {
     Map<String, String> params = const {},
-    Map<String, String> body = const {},
+    Map<String, Object?> body = const {},
     Map<String, String> headers = const {},
     String method = 'GET',
   }) {

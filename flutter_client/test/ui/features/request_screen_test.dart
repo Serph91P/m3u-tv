@@ -117,6 +117,142 @@ void main() {
     expect(find.text('My requests'), findsOneWidget);
   });
 
+  testWidgets('selects series seasons and shows successful submission', (
+    tester,
+  ) async {
+    List<int>? submittedSeasons;
+    var historyLoads = 0;
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_seriesResult],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
+      onSubmit: (result, {seasons = const <int>[]}) async {
+        submittedSeasons = seasons;
+        return _seriesSubmission;
+      },
+      onLoadHistory: ({page = 1, perPage = 20}) async {
+        historyLoads++;
+        return const RequestHistoryPage(
+          requests: [],
+          currentPage: 1,
+          perPage: 20,
+          total: 0,
+          lastPage: 1,
+        );
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+
+    await tester.enterText(find.byType(TextField), 'game of thrones');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Game of Thrones'),
+        matching: find.byType(DpadInkWell),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select seasons to request'), findsOneWidget);
+    expect(
+      find.text('Use D-pad to select, press OK to confirm'),
+      findsOneWidget,
+    );
+    expect(submittedSeasons, isNull);
+
+    await tester.tap(find.text('Season 0'));
+    await tester.tap(find.text('Season 2'));
+    await tester.pump();
+    final dialog = find.byType(AlertDialog);
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.text('Request series')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(submittedSeasons, [0, 2]);
+    expect(historyLoads, 2);
+    expect(find.text('Pending approval'), findsOneWidget);
+  });
+
+  testWidgets('requests all series seasons with an empty selection', (
+    tester,
+  ) async {
+    List<int>? submittedSeasons;
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_seriesResult],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
+      onSubmit: (result, {seasons = const <int>[]}) async {
+        submittedSeasons = seasons;
+        return _seriesSubmission;
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+
+    await tester.enterText(find.byType(TextField), 'game of thrones');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Game of Thrones'),
+        matching: find.byType(DpadInkWell),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All seasons'));
+    await tester.pumpAndSettle();
+
+    expect(submittedSeasons, isEmpty);
+    expect(find.text('Pending approval'), findsOneWidget);
+  });
+
+  testWidgets('requests series without season options directly', (
+    tester,
+  ) async {
+    List<int>? submittedSeasons;
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_seriesWithoutSeasons],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
+      onSubmit: (result, {seasons = const <int>[]}) async {
+        submittedSeasons = seasons;
+        return _seriesSubmission;
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+
+    await tester.enterText(find.byType(TextField), 'the last of us');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('The Last of Us'),
+        matching: find.byType(DpadInkWell),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(submittedSeasons, isEmpty);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Pending approval'), findsOneWidget);
+  });
+
   testWidgets('shows already available result as unavailable action', (
     tester,
   ) async {
@@ -210,6 +346,25 @@ const _result = RequestSearchResult(
   year: 1999,
 );
 
+const _seriesResult = RequestSearchResult(
+  type: RequestMediaType.series,
+  externalId: '1399',
+  integrationId: '7',
+  integrationName: 'Sonarr',
+  title: 'Game of Thrones',
+  year: 2011,
+  seasons: [0, 1, 2],
+);
+
+const _seriesWithoutSeasons = RequestSearchResult(
+  type: RequestMediaType.series,
+  externalId: '100088',
+  integrationId: '7',
+  integrationName: 'Sonarr',
+  title: 'The Last of Us',
+  year: 2023,
+);
+
 final _historyItem = RequestHistoryItem(
   id: '42',
   type: RequestMediaType.movie,
@@ -235,6 +390,20 @@ const _dismissableItem = RequestHistoryItem(
 final _submission = RequestSubmission(
   status: RequestStatus.pendingApproval,
   request: _historyItem,
+);
+
+const _seriesSubmission = RequestSubmission(
+  status: RequestStatus.pendingApproval,
+  request: RequestHistoryItem(
+    id: '43',
+    type: RequestMediaType.series,
+    externalId: '1399',
+    title: 'Game of Thrones',
+    status: RequestStatus.pendingApproval,
+    integrationId: '7',
+    integrationName: 'Sonarr',
+  ),
+  selectedSeasons: [0, 2],
 );
 
 Widget _app(RequestController controller, {VoidCallback? onSidebarActivate}) =>

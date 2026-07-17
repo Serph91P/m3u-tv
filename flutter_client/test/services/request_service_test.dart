@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/domain_models.dart' hide ContentType;
 import 'package:m3u_tv/services/request_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 
@@ -160,7 +163,7 @@ void main() {
       expect(submission.request.id, '42');
     });
 
-    test('submit with seasons sends seasons parameter', () async {
+    test('submit with seasons sends a typed JSON array', () async {
       final transport = _RequestTransport(
         auth: _authPayload(requests: _requestContract),
         responses: {
@@ -202,9 +205,120 @@ void main() {
         'type': 'series',
         'integration_id': '7',
         'external_id': '1399',
-        'seasons': '1,2',
+        'seasons': [1, 2],
       });
       expect(submission.selectedSeasons, [1, 2]);
+    });
+
+    test('series submit sends an empty array for all seasons', () async {
+      final transport = _RequestTransport(
+        auth: _authPayload(requests: _requestContract),
+        responses: {
+          'request_submit': {
+            'api_version': 1,
+            'data': {
+              'status': 'pending_approval',
+              'request': {
+                'id': 42,
+                'type': 'series',
+                'external_id': '1399',
+                'title': 'Game of Thrones',
+                'status': 'pending_approval',
+                'integration_id': 7,
+                'integration_name': 'Sonarr',
+                'requested_at': '2026-07-11T10:00:00Z',
+                'can_dismiss': false,
+              },
+              'selected_seasons': <int>[],
+            },
+          },
+        },
+      );
+      final service = XtreamService(transport: transport.call);
+      await service.authenticate(credentials);
+
+      await service.submitRequest(
+        const RequestSearchResult(
+          type: RequestMediaType.series,
+          externalId: '1399',
+          integrationId: '7',
+          integrationName: 'Sonarr',
+          title: 'Game of Thrones',
+        ),
+      );
+
+      expect(transport.lastRequest?.body, {
+        'type': 'series',
+        'integration_id': '7',
+        'external_id': '1399',
+        'seasons': <int>[],
+      });
+    });
+
+    test('default HTTP transport sends seasons as a JSON array', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      Map<String, Object?>? submittedBody;
+      server.listen((request) async {
+        final Object response;
+        if (request.uri.queryParameters['action'] == 'request_submit') {
+          submittedBody =
+              (jsonDecode(
+                        await utf8.decoder.bind(request).join(),
+                      )
+                      as Map)
+                  .cast<String, Object?>();
+          response = {
+            'api_version': 1,
+            'data': {
+              'status': 'pending_approval',
+              'request': {
+                'id': 42,
+                'type': 'series',
+                'external_id': '1399',
+                'title': 'Game of Thrones',
+                'status': 'pending_approval',
+                'integration_id': 7,
+                'integration_name': 'Sonarr',
+                'requested_at': '2026-07-11T10:00:00Z',
+                'can_dismiss': false,
+              },
+              'selected_seasons': [1, 2],
+            },
+          };
+        } else {
+          response = _authPayload(requests: _requestContract);
+        }
+        request.response
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(response));
+        await request.response.close();
+      });
+
+      try {
+        final service = XtreamService();
+        await service.authenticate(
+          UserCredentials(
+            server: 'http://${server.address.address}:${server.port}',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        await service.submitRequest(
+          const RequestSearchResult(
+            type: RequestMediaType.series,
+            externalId: '1399',
+            integrationId: '7',
+            integrationName: 'Sonarr',
+            title: 'Game of Thrones',
+          ),
+          seasons: [1, 2],
+        );
+
+        expect(submittedBody?['seasons'], <int>[1, 2]);
+      } finally {
+        await server.close(force: true);
+      }
     });
 
     test('history uses advertised action and parses data envelope', () async {
