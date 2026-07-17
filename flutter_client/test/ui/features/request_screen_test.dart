@@ -335,6 +335,286 @@ void main() {
     expect(find.text('Alien'), findsOneWidget);
     expect(find.byIcon(Icons.close), findsOneWidget);
   });
+
+  testWidgets('search load more button appears and loads page 2', (
+    tester,
+  ) async {
+    var searchPage2Called = false;
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async {
+        if (page == 1) {
+          return const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 40,
+            lastPage: 2,
+          );
+        }
+        searchPage2Called = true;
+        return const RequestSearchPage(
+          results: [
+            RequestSearchResult(
+              type: RequestMediaType.movie,
+              externalId: '999',
+              integrationId: '7',
+              integrationName: 'Radarr',
+              title: 'Page 2 Movie',
+            ),
+          ],
+          currentPage: 2,
+          perPage: 20,
+          total: 40,
+          lastPage: 2,
+        );
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+    await tester.enterText(find.byType(TextField), 'test');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fight Club'), findsOneWidget);
+    expect(find.text('Load more'), findsOneWidget);
+
+    await tester.tap(find.text('Load more'));
+    await tester.pumpAndSettle();
+
+    expect(searchPage2Called, isTrue);
+    expect(find.text('Page 2 Movie'), findsOneWidget);
+    expect(find.text('Load more'), findsNothing);
+  });
+
+  testWidgets('search loading more shows loading indicator', (tester) async {
+    final completer = Completer<RequestSearchPage>();
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async {
+        if (page == 1) {
+          return const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 40,
+            lastPage: 2,
+          );
+        }
+        return completer.future;
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+    await tester.enterText(find.byType(TextField), 'test');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Load more'), findsOneWidget);
+
+    await tester.tap(find.text('Load more'));
+    await tester.pump();
+    expect(find.text('Loading more...'), findsOneWidget);
+
+    completer.complete(
+      const RequestSearchPage(
+        results: [],
+        currentPage: 2,
+        perPage: 20,
+        total: 40,
+        lastPage: 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('search load more retry after failure', (tester) async {
+    var failPage2 = false;
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async {
+        if (page == 1) {
+          return const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 40,
+            lastPage: 2,
+          );
+        }
+        if (failPage2) throw Exception('Network error');
+        return const RequestSearchPage(
+          results: [],
+          currentPage: 2,
+          perPage: 20,
+          total: 40,
+          lastPage: 2,
+        );
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+    await tester.enterText(find.byType(TextField), 'test');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    failPage2 = true;
+    await tester.tap(find.text('Load more'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fight Club'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+
+    failPage2 = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Retry'), findsNothing);
+    expect(find.text('Load more'), findsNothing);
+  });
+
+  testWidgets('history load more button appears and loads page 2', (
+    tester,
+  ) async {
+    var historyPage2Called = false;
+    final controller = RequestController.forTest(
+      onLoadHistory: ({page = 1, perPage = 20}) async {
+        if (page == 1) {
+          return RequestHistoryPage(
+            requests: [_historyItem],
+            currentPage: 1,
+            perPage: 20,
+            total: 40,
+            lastPage: 2,
+          );
+        }
+        historyPage2Called = true;
+        return const RequestHistoryPage(
+          requests: [
+            RequestHistoryItem(
+              id: '88',
+              type: RequestMediaType.movie,
+              externalId: '888',
+              title: 'History Page 2 Item',
+              status: RequestStatus.approved,
+              integrationId: '7',
+              integrationName: 'Radarr',
+            ),
+          ],
+          currentPage: 2,
+          perPage: 20,
+          total: 40,
+          lastPage: 2,
+        );
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fight Club'), findsOneWidget);
+
+    final loadMoreButtons = find.text('Load more');
+    await tester.scrollUntilVisible(
+      loadMoreButtons,
+      100,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(loadMoreButtons, findsOneWidget);
+
+    await tester.tap(loadMoreButtons);
+    await tester.pumpAndSettle();
+
+    expect(historyPage2Called, isTrue);
+    await tester.scrollUntilVisible(
+      find.text('History Page 2 Item'),
+      100,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('History Page 2 Item'), findsOneWidget);
+  });
+
+  testWidgets('history loading more shows loading indicator', (tester) async {
+    final completer = Completer<RequestHistoryPage>();
+    final controller = RequestController.forTest(
+      onLoadHistory: ({page = 1, perPage = 20}) async {
+        if (page == 1) {
+          return RequestHistoryPage(
+            requests: [_historyItem],
+            currentPage: 1,
+            perPage: 20,
+            total: 40,
+            lastPage: 2,
+          );
+        }
+        return completer.future;
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Load more'),
+      100,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Load more'), findsOneWidget);
+
+    await tester.tap(find.text('Load more'));
+    await tester.pump();
+    expect(find.text('Loading more...'), findsOneWidget);
+
+    completer.complete(
+      const RequestHistoryPage(
+        requests: [],
+        currentPage: 2,
+        perPage: 20,
+        total: 40,
+        lastPage: 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('history load more failure keeps items and offers retry', (
+    tester,
+  ) async {
+    var failPage2 = true;
+    final controller = RequestController.forTest(
+      onLoadHistory: ({page = 1, perPage = 20}) async {
+        if (page == 1) {
+          return RequestHistoryPage(
+            requests: [_historyItem],
+            currentPage: 1,
+            perPage: 20,
+            total: 40,
+            lastPage: 2,
+          );
+        }
+        if (failPage2) throw Exception('Network error');
+        return const RequestHistoryPage(
+          requests: [],
+          currentPage: 2,
+          perPage: 20,
+          total: 40,
+          lastPage: 2,
+        );
+      },
+    );
+    await tester.pumpWidget(_app(controller));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Load more'),
+      100,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('Load more'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fight Club'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+
+    failPage2 = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Retry'), findsNothing);
+    expect(find.text('Fight Club'), findsOneWidget);
+  });
 }
 
 const _result = RequestSearchResult(
@@ -422,6 +702,8 @@ Widget _app(RequestController controller, {VoidCallback? onSidebarActivate}) =>
           onLoadHistory: controller.loadHistory,
           onRefreshItem: controller.refreshItem,
           onDismiss: controller.dismiss,
+          onLoadMoreSearch: controller.loadMoreSearchResults,
+          onLoadMoreHistory: controller.loadMoreHistory,
           onSidebarActivate: onSidebarActivate,
         ),
       ),

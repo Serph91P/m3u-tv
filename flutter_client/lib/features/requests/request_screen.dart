@@ -24,6 +24,8 @@ class RequestScreen extends ConsumerStatefulWidget {
     required this.onLoadHistory,
     required this.onRefreshItem,
     required this.onDismiss,
+    required this.onLoadMoreSearch,
+    required this.onLoadMoreHistory,
     this.onSidebarActivate,
   });
 
@@ -32,6 +34,8 @@ class RequestScreen extends ConsumerStatefulWidget {
   final Future<void> Function() onLoadHistory;
   final Future<void> Function(String requestId) onRefreshItem;
   final Future<void> Function(String requestId) onDismiss;
+  final Future<void> Function() onLoadMoreSearch;
+  final Future<void> Function() onLoadMoreHistory;
   final VoidCallback? onSidebarActivate;
 
   @override
@@ -129,11 +133,13 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
                     final results = _SearchResults(
                       state: state,
                       onSubmit: widget.onSubmit,
+                      onLoadMore: widget.onLoadMoreSearch,
                     );
                     final history = _RequestHistory(
                       state: state,
                       onRefreshItem: widget.onRefreshItem,
                       onDismiss: widget.onDismiss,
+                      onLoadMore: widget.onLoadMoreHistory,
                     );
                     if (constraints.maxWidth < 720) {
                       return Column(
@@ -264,10 +270,15 @@ class _TypeButton extends StatelessWidget {
 }
 
 class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.state, required this.onSubmit});
+  const _SearchResults({
+    required this.state,
+    required this.onSubmit,
+    required this.onLoadMore,
+  });
 
   final RequestController state;
   final RequestScreenSubmitCallback onSubmit;
+  final Future<void> Function() onLoadMore;
 
   Future<void> _submit(BuildContext context, RequestSearchResult result) async {
     if (!result.hasSeasons) {
@@ -296,9 +307,16 @@ class _SearchResults extends StatelessWidget {
       return Center(child: Text(l.requestsNoResults));
     }
     return ListView.separated(
-      itemCount: state.results.length,
+      itemCount: state.results.length + (state.hasMoreSearchPages ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
+        if (index == state.results.length) {
+          return _LoadMoreControl(
+            isLoading: state.isLoadingMore,
+            error: state.searchError,
+            onLoadMore: onLoadMore,
+          );
+        }
         final result = state.results[index];
         final submitting = state.submitting.contains(result.key);
         final submitted = state.submitted[result.key];
@@ -479,11 +497,13 @@ class _RequestHistory extends StatelessWidget {
     required this.state,
     required this.onRefreshItem,
     required this.onDismiss,
+    required this.onLoadMore,
   });
 
   final RequestController state;
   final Future<void> Function(String requestId) onRefreshItem;
   final Future<void> Function(String requestId) onDismiss;
+  final Future<void> Function() onLoadMore;
 
   @override
   Widget build(BuildContext context) {
@@ -517,7 +537,7 @@ class _RequestHistory extends StatelessWidget {
         const SizedBox(height: 8),
         if (state.isHistoryLoading && state.history.isEmpty)
           const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (state.historyError != null)
+        else if (state.historyError != null && state.history.isEmpty)
           Expanded(
             child: Center(
               child: Text(
@@ -531,9 +551,17 @@ class _RequestHistory extends StatelessWidget {
         else
           Expanded(
             child: ListView.separated(
-              itemCount: state.history.length,
+              itemCount:
+                  state.history.length + (state.hasMoreHistoryPages ? 1 : 0),
               separatorBuilder: (_, _) => const Divider(),
               itemBuilder: (context, index) {
+                if (index == state.history.length) {
+                  return _LoadMoreControl(
+                    isLoading: state.isLoadingMoreHistory,
+                    error: state.historyError,
+                    onLoadMore: onLoadMore,
+                  );
+                }
                 final item = state.history[index];
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -574,6 +602,60 @@ class _RequestHistory extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _LoadMoreControl extends StatelessWidget {
+  const _LoadMoreControl({
+    required this.isLoading,
+    required this.error,
+    required this.onLoadMore,
+  });
+
+  final bool isLoading;
+  final String? error;
+  final Future<void> Function() onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    if (isLoading) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Text(
+            l.requestsLoadingMore,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      );
+    }
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: DpadFocusable(
+            onSelect: onLoadMore,
+            child: FilledButton.tonal(
+              onPressed: onLoadMore,
+              child: Text(l.requestsRetry),
+            ),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: DpadFocusable(
+          onSelect: onLoadMore,
+          child: FilledButton(
+            onPressed: onLoadMore,
+            child: Text(l.requestsLoadMore),
+          ),
+        ),
+      ),
     );
   }
 }

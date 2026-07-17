@@ -674,6 +674,8 @@ class AppShellState extends ConsumerState<AppShell>
             onLoadHistory: requestController.loadHistory,
             onRefreshItem: requestController.refreshItem,
             onDismiss: requestController.dismiss,
+            onLoadMoreSearch: requestController.loadMoreSearchResults,
+            onLoadMoreHistory: requestController.loadMoreHistory,
             onSidebarActivate: _activateSidebar,
           );
         },

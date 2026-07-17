@@ -111,6 +111,8 @@ class RequestController extends ChangeNotifier {
   String? _historyError;
   String? _currentSearchTerm;
   RequestMediaType? _currentSearchType;
+  int _searchGeneration = 0;
+  int _historyGeneration = 0;
 
   List<RequestSearchResult> get results => _results;
   RequestSearchPage? get searchPage => _searchPage;
@@ -150,18 +152,25 @@ class RequestController extends ChangeNotifier {
     _hasSearched = true;
     _currentSearchTerm = normalized;
     _currentSearchType = type;
+    _searchGeneration++;
+    _isLoadingMore = false;
+    final generation = _searchGeneration;
     notifyListeners();
     try {
       final page = await onSearch(normalized, type, page: 1, perPage: 20);
+      if (generation != _searchGeneration) return;
       _searchPage = page;
       _results = page.results;
     } on Object catch (error) {
+      if (generation != _searchGeneration) return;
       _searchPage = null;
       _results = const [];
       _searchError = userFacingXtreamError(error);
     } finally {
-      _isSearching = false;
-      notifyListeners();
+      if (generation == _searchGeneration) {
+        _isSearching = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -171,6 +180,7 @@ class RequestController extends ChangeNotifier {
     }
     _isLoadingMore = true;
     _searchError = null;
+    final generation = _searchGeneration;
     notifyListeners();
     try {
       final nextPage = _searchPage!.nextPage;
@@ -180,13 +190,17 @@ class RequestController extends ChangeNotifier {
         page: nextPage,
         perPage: _searchPage!.perPage,
       );
+      if (generation != _searchGeneration) return;
       _searchPage = page;
       _results = [..._results, ...page.results];
     } on Object catch (error) {
+      if (generation != _searchGeneration) return;
       _searchError = userFacingXtreamError(error);
     } finally {
-      _isLoadingMore = false;
-      notifyListeners();
+      if (generation == _searchGeneration) {
+        _isLoadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -213,18 +227,25 @@ class RequestController extends ChangeNotifier {
   Future<void> loadHistory() async {
     _isHistoryLoading = true;
     _historyError = null;
+    _historyGeneration++;
+    _isLoadingMoreHistory = false;
+    final generation = _historyGeneration;
     notifyListeners();
     try {
       final page = await onLoadHistory(page: 1, perPage: 20);
+      if (generation != _historyGeneration) return;
       _historyPage = page;
       _history = page.requests;
     } on Object catch (error) {
+      if (generation != _historyGeneration) return;
       _historyPage = null;
       _history = const [];
       _historyError = userFacingXtreamError(error);
     } finally {
-      _isHistoryLoading = false;
-      notifyListeners();
+      if (generation == _historyGeneration) {
+        _isHistoryLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -232,6 +253,7 @@ class RequestController extends ChangeNotifier {
     if (_isLoadingMoreHistory || !hasMoreHistoryPages) return;
     _isLoadingMoreHistory = true;
     _historyError = null;
+    final generation = _historyGeneration;
     notifyListeners();
     try {
       final nextPage = _historyPage!.nextPage;
@@ -239,13 +261,17 @@ class RequestController extends ChangeNotifier {
         page: nextPage,
         perPage: _historyPage!.perPage,
       );
+      if (generation != _historyGeneration) return;
       _historyPage = page;
       _history = [..._history, ...page.requests];
     } on Object catch (error) {
+      if (generation != _historyGeneration) return;
       _historyError = userFacingXtreamError(error);
     } finally {
-      _isLoadingMoreHistory = false;
-      notifyListeners();
+      if (generation == _historyGeneration) {
+        _isLoadingMoreHistory = false;
+        notifyListeners();
+      }
     }
   }
 
