@@ -169,7 +169,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
   }
 }
 
-class _SearchBar extends StatelessWidget {
+class _SearchBar extends ConsumerWidget {
   const _SearchBar({
     required this.controller,
     required this.selectedType,
@@ -185,8 +185,13 @@ class _SearchBar extends StatelessWidget {
   final VoidCallback onSearch;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l = AppLocalizations.of(context);
+    final contract = ref.watch(requestContractProvider);
+    final showMovie =
+        contract?.hasContentType(RequestContentType.movie) ?? true;
+    final showSeries =
+        contract?.hasContentType(RequestContentType.series) ?? true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -230,16 +235,18 @@ class _SearchBar extends StatelessWidget {
               selected: selectedType == null,
               onPressed: () => onTypeChanged(null),
             ),
-            _TypeButton(
-              label: l.requestsTypeMovies,
-              selected: selectedType == RequestMediaType.movie,
-              onPressed: () => onTypeChanged(RequestMediaType.movie),
-            ),
-            _TypeButton(
-              label: l.requestsTypeSeries,
-              selected: selectedType == RequestMediaType.series,
-              onPressed: () => onTypeChanged(RequestMediaType.series),
-            ),
+            if (showMovie)
+              _TypeButton(
+                label: l.requestsTypeMovies,
+                selected: selectedType == RequestMediaType.movie,
+                onPressed: () => onTypeChanged(RequestMediaType.movie),
+              ),
+            if (showSeries)
+              _TypeButton(
+                label: l.requestsTypeSeries,
+                selected: selectedType == RequestMediaType.series,
+                onPressed: () => onTypeChanged(RequestMediaType.series),
+              ),
           ],
         ),
       ],
@@ -303,92 +310,123 @@ class _SearchResults extends StatelessWidget {
     if (!state.hasSearched) {
       return Center(child: Text(l.requestsSearchPrompt));
     }
+    final searchPage = state.searchPage;
+    final partialWarning = searchPage != null && searchPage.partial
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              searchPage.unavailableProviders > 0
+                  ? l.requestsPartialResultsCountWarning(
+                      searchPage.unavailableProviders,
+                    )
+                  : l.requestsPartialResultsWarning,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.tertiary,
+                fontSize: 13,
+              ),
+            ),
+          )
+        : null;
     if (state.results.isEmpty) {
-      return Center(child: Text(l.requestsNoResults));
+      return Column(
+        children: [
+          ?partialWarning,
+          Expanded(child: Center(child: Text(l.requestsNoResults))),
+        ],
+      );
     }
-    return ListView.separated(
-      itemCount: state.results.length + (state.hasMoreSearchPages ? 1 : 0),
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        if (index == state.results.length) {
-          return _LoadMoreControl(
-            isLoading: state.isLoadingMore,
-            error: state.searchError,
-            onLoadMore: onLoadMore,
-          );
-        }
-        final result = state.results[index];
-        final submitting = state.submitting.contains(result.key);
-        final submitted = state.submitted[result.key];
-        return DpadInkWell(
-          autofocus: index == 0,
-          borderRadius: BorderRadius.circular(8),
-          color: Theme.of(context).colorScheme.surfaceContainerHigh,
-          onTap: result.alreadyAvailable || submitted != null || submitting
-              ? null
-              : () => unawaited(_submit(context, result)),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Icon(
-                  result.type == RequestMediaType.movie
-                      ? Icons.movie_outlined
-                      : Icons.tv_outlined,
-                  size: 36,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      children: [
+        ?partialWarning,
+        Expanded(
+          child: ListView.separated(
+            itemCount:
+                state.results.length + (state.hasMoreSearchPages ? 1 : 0),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              if (index == state.results.length) {
+                return _LoadMoreControl(
+                  isLoading: state.isLoadingMore,
+                  error: state.searchError,
+                  onLoadMore: onLoadMore,
+                );
+              }
+              final result = state.results[index];
+              final submitting = state.submitting.contains(result.key);
+              final submitted = state.submitted[result.key];
+              return DpadInkWell(
+                autofocus: index == 0,
+                borderRadius: BorderRadius.circular(8),
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                onTap:
+                    result.alreadyAvailable || submitted != null || submitting
+                    ? null
+                    : () => unawaited(_submit(context, result)),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
                     children: [
-                      Text(
-                        result.title,
-                        style: Theme.of(context).textTheme.titleMedium,
+                      Icon(
+                        result.type == RequestMediaType.movie
+                            ? Icons.movie_outlined
+                            : Icons.tv_outlined,
+                        size: 36,
                       ),
-                      if (result.year != null ||
-                          result.integrationName.isNotEmpty)
-                        Text(
-                          [
-                            if (result.year != null) '${result.year}',
-                            if (result.integrationName.isNotEmpty)
-                              result.integrationName,
-                          ].join('  '),
-                          style: Theme.of(context).textTheme.bodySmall,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              result.title,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            if (result.year != null ||
+                                result.integrationName.isNotEmpty)
+                              Text(
+                                [
+                                  if (result.year != null) '${result.year}',
+                                  if (result.integrationName.isNotEmpty)
+                                    result.integrationName,
+                                ].join('  '),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            if (result.overview != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                result.overview!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
                         ),
-                      if (result.overview != null) ...[
-                        const SizedBox(height: 4),
+                      ),
+                      const SizedBox(width: 12),
+                      if (submitting)
+                        const SizedBox.square(
+                          dimension: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
                         Text(
-                          result.overview!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                          result.alreadyAvailable
+                              ? l.requestsAlreadyAvailable
+                              : submitted == null
+                              ? (result.type == RequestMediaType.movie
+                                    ? l.requestsRequestMovie
+                                    : l.requestsRequestSeries)
+                              : _statusLabel(l, submitted),
+                          style: Theme.of(context).textTheme.labelLarge,
                         ),
-                      ],
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                if (submitting)
-                  const SizedBox.square(
-                    dimension: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Text(
-                    result.alreadyAvailable
-                        ? l.requestsAlreadyAvailable
-                        : submitted == null
-                        ? (result.type == RequestMediaType.movie
-                              ? l.requestsRequestMovie
-                              : l.requestsRequestSeries)
-                        : _statusLabel(l, submitted),
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-              ],
-            ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 }

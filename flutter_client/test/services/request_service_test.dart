@@ -28,6 +28,158 @@ void main() {
       expect(auth.hasRequests, isTrue);
     });
 
+    test('parses optional content_types, approval_behavior, error_codes', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'content_types': ['movie', 'series'],
+        'approval_behavior': 'pending_approval',
+        'error_codes': ['invalid_request', 'providers_unavailable'],
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.contentTypes, [
+        RequestContentType.movie,
+        RequestContentType.series,
+      ]);
+      expect(contract.approvalBehavior, ApprovalBehavior.pendingApproval);
+      expect(contract.errorCodes, ['invalid_request', 'providers_unavailable']);
+    });
+
+    test('contract without optional metadata defaults gracefully', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.contentTypes, isNull);
+      expect(contract.approvalBehavior, isNull);
+      expect(contract.errorCodes, isEmpty);
+    });
+
+    test('malformed optional metadata does not invalidate valid contract', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'content_types': 'invalid',
+        'approval_behavior': 42,
+        'error_codes': 'not_a_list',
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.contentTypes, isNull);
+      expect(contract.approvalBehavior, isNull);
+      expect(contract.errorCodes, isEmpty);
+    });
+
+    test('explicit empty content_types advertises no supported media', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'content_types': <Object?>[],
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.contentTypes, isEmpty);
+      expect(contract.hasContentType(RequestContentType.movie), isFalse);
+      expect(contract.hasContentType(RequestContentType.series), isFalse);
+    });
+
+    test('error_codes ignores malformed list entries', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'error_codes': <Object?>['invalid_request', 42, true, '', null],
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.errorCodes, ['invalid_request']);
+    });
+
+    test('partial content_types list parses only valid values', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'content_types': ['movie', 'unknown_value'],
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.contentTypes, [RequestContentType.movie]);
+    });
+
+    test('all-invalid content_types falls back to legacy capabilities', () {
+      final contract = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'content_types': <Object?>['unknown_value', 42],
+      });
+
+      expect(contract, isNotNull);
+      expect(contract!.contentTypes, isNull);
+      expect(contract.hasContentType(RequestContentType.movie), isTrue);
+      expect(contract.hasContentType(RequestContentType.series), isTrue);
+    });
+
+    test('hasContentType helper works', () {
+      final movieOnly = RequestContract.tryParse(const {
+        'api_version': 1,
+        'actions': <String, Object?>{
+          'search': 'request_search',
+          'submit': 'request_submit',
+          'history': 'request_history',
+          'status': 'request_status',
+          'dismiss': 'request_dismiss',
+        },
+        'content_types': ['movie'],
+      });
+
+      expect(movieOnly!.hasContentType(RequestContentType.movie), isTrue);
+      expect(movieOnly.hasContentType(RequestContentType.series), isFalse);
+    });
+
     test('malformed or unsupported request metadata is ignored', () async {
       for (final metadata in <Object?>[
         'invalid',
@@ -38,6 +190,36 @@ void main() {
         const <String, Object?>{
           'api_version': 1,
           'actions': <String, Object?>{'search': 'request_search'},
+        },
+        const <String, Object?>{
+          'api_version': 1.5,
+          'actions': <String, Object?>{
+            'search': 'request_search',
+            'submit': 'request_submit',
+            'history': 'request_history',
+            'status': 'request_status',
+            'dismiss': 'request_dismiss',
+          },
+        },
+        const <String, Object?>{
+          'api_version': '1',
+          'actions': <String, Object?>{
+            'search': 'request_search',
+            'submit': 'request_submit',
+            'history': 'request_history',
+            'status': 'request_status',
+            'dismiss': 'request_dismiss',
+          },
+        },
+        const <String, Object?>{
+          'api_version': 1,
+          'actions': <String, Object?>{
+            'search': 'request_search',
+            'submit': 'request_submit',
+            'history': 'request_history',
+            'status': 'request_status',
+            'dismiss': 42,
+          },
         },
       ]) {
         final service = XtreamService(

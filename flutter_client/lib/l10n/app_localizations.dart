@@ -1243,6 +1243,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Page {current} of {total}'**
   String requestsSearchPageInfo(int current, int total);
+
+  /// No description provided for @requestsPartialResultsWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Some providers were unavailable. Results may be incomplete.'**
+  String get requestsPartialResultsWarning;
+
+  /// No description provided for @requestsPartialResultsCountWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} provider(s) unavailable. Results may be incomplete.'**
+  String requestsPartialResultsCountWarning(int count);
 }
 
 class _AppLocalizationsDelegate

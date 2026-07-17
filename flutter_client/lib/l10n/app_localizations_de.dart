@@ -623,4 +623,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String requestsSearchPageInfo(int current, int total) {
     return 'Seite $current von $total';
   }
+
+  @override
+  String get requestsPartialResultsWarning =>
+      'Einige Anbieter waren nicht verfügbar. Ergebnisse sind möglicherweise unvollständig.';
+
+  @override
+  String requestsPartialResultsCountWarning(int count) {
+    return '$count Anbieter nicht verfügbar. Ergebnisse sind möglicherweise unvollständig.';
+  }
 }

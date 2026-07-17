@@ -69,6 +69,36 @@ enum RequestStatus {
       this == RequestStatus.failed || this == RequestStatus.error;
 }
 
+enum RequestContentType {
+  movie('movie'),
+  series('series');
+
+  const RequestContentType(this.wireName);
+
+  final String wireName;
+
+  static RequestContentType? fromWire(Object? value) => switch ('$value') {
+    'movie' => RequestContentType.movie,
+    'series' => RequestContentType.series,
+    _ => null,
+  };
+}
+
+enum ApprovalBehavior {
+  autoApproval('auto_approval'),
+  pendingApproval('pending_approval');
+
+  const ApprovalBehavior(this.wireName);
+
+  final String wireName;
+
+  static ApprovalBehavior? fromWire(Object? value) => switch ('$value') {
+    'auto_approval' => ApprovalBehavior.autoApproval,
+    'pending_approval' => ApprovalBehavior.pendingApproval,
+    _ => null,
+  };
+}
+
 class RequestActions {
   const RequestActions({
     required this.search,
@@ -86,23 +116,39 @@ class RequestActions {
 }
 
 class RequestContract {
-  const RequestContract({required this.version, required this.actions});
+  const RequestContract({
+    required this.version,
+    required this.actions,
+    this.contentTypes,
+    this.approvalBehavior,
+    this.errorCodes = const <String>[],
+  });
 
   final int version;
   final RequestActions actions;
+  final List<RequestContentType>? contentTypes;
+  final ApprovalBehavior? approvalBehavior;
+  final List<String> errorCodes;
+
+  bool get supportsMovie => hasContentType(RequestContentType.movie);
+  bool get supportsSeries => hasContentType(RequestContentType.series);
+
+  bool hasContentType(RequestContentType type) =>
+      contentTypes?.contains(type) ?? true;
 
   static RequestContract? tryParse(Object? value) {
     if (value is! Map) return null;
     final json = value.cast<Object?, Object?>();
-    final version = _asInt(json['api_version']);
+    final apiVersion = json['api_version'];
+    if (apiVersion is! int) return null;
     final rawActions = json['actions'];
-    if (version != 1 || rawActions is! Map) return null;
+    if (apiVersion != 1 || rawActions is! Map) return null;
     final actions = rawActions.cast<Object?, Object?>();
-    final search = _nonEmptyString(actions['search']);
-    final submit = _nonEmptyString(actions['submit']);
-    final history = _nonEmptyString(actions['history']);
-    final status = _nonEmptyString(actions['status']);
-    final dismiss = _nonEmptyString(actions['dismiss']);
+    final search = _strictNonEmptyString(actions['search']);
+    final submit = _strictNonEmptyString(actions['submit']);
+    final history = _strictNonEmptyString(actions['history']);
+    final status = _strictNonEmptyString(actions['status']);
+    final dismiss = _strictNonEmptyString(actions['dismiss']);
     if (search == null ||
         submit == null ||
         history == null ||
@@ -111,7 +157,7 @@ class RequestContract {
       return null;
     }
     return RequestContract(
-      version: version,
+      version: apiVersion,
       actions: RequestActions(
         search: search,
         submit: submit,
@@ -119,7 +165,30 @@ class RequestContract {
         status: status,
         dismiss: dismiss,
       ),
+      contentTypes: _parseContentTypes(json['content_types']),
+      approvalBehavior: ApprovalBehavior.fromWire(json['approval_behavior']),
+      errorCodes: _parseStringList(json['error_codes']),
     );
+  }
+
+  static List<RequestContentType>? _parseContentTypes(Object? value) {
+    if (value is! List) return null;
+    if (value.isEmpty) return const <RequestContentType>[];
+    final result = <RequestContentType>[];
+    for (final item in value) {
+      final ct = RequestContentType.fromWire(item);
+      if (ct != null) result.add(ct);
+    }
+    if (result.isEmpty) return null;
+    return result;
+  }
+
+  static List<String> _parseStringList(Object? value) {
+    if (value is! List) return const <String>[];
+    return [
+      for (final item in value)
+        if (item is String && item.isNotEmpty) item,
+    ];
   }
 }
 
@@ -364,5 +433,11 @@ double? _nullableDouble(Object? value) {
 String? _nonEmptyString(Object? value) {
   if (value == null) return null;
   final text = '$value'.trim();
+  return text.isEmpty ? null : text;
+}
+
+String? _strictNonEmptyString(Object? value) {
+  if (value is! String) return null;
+  final text = value.trim();
   return text.isEmpty ? null : text;
 }

@@ -607,4 +607,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String requestsSearchPageInfo(int current, int total) {
     return '第 $current 页、共 $total 页';
   }
+
+  @override
+  String get requestsPartialResultsWarning => '部分提供商不可用。结果可能不完整。';
+
+  @override
+  String requestsPartialResultsCountWarning(int count) {
+    return '$count 个提供商不可用。结果可能不完整。';
+  }
 }

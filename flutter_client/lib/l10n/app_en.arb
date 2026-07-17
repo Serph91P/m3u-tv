@@ -290,5 +290,14 @@
         "type": "int"
       }
     }
+  },
+  "requestsPartialResultsWarning": "Some providers were unavailable. Results may be incomplete.",
+  "requestsPartialResultsCountWarning": "{count} provider(s) unavailable. Results may be incomplete.",
+  "@requestsPartialResultsCountWarning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

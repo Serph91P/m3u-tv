@@ -284,6 +284,129 @@ void main() {
     expect(find.text('Already available'), findsOneWidget);
   });
 
+  testWidgets('shows partial results warning when providers unavailable', (
+    tester,
+  ) async {
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+            partial: true,
+            unavailableProviders: 2,
+          ),
+    );
+    await tester.pumpWidget(_app(controller));
+
+    await tester.enterText(find.byType(TextField), 'test');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fight Club'), findsOneWidget);
+    expect(
+      find.textContaining('unavailable'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows partial warning when available results are empty', (
+    tester,
+  ) async {
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [],
+            currentPage: 1,
+            perPage: 20,
+            total: 0,
+            lastPage: 1,
+            partial: true,
+            unavailableProviders: 2,
+          ),
+    );
+    await tester.pumpWidget(_app(controller));
+
+    await tester.enterText(find.byType(TextField), 'test');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No matching titles found.'), findsOneWidget);
+    expect(find.textContaining('2 provider(s) unavailable'), findsOneWidget);
+  });
+
+  testWidgets('no partial warning when results are complete', (tester) async {
+    final controller = RequestController.forTest(
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
+    );
+    await tester.pumpWidget(_app(controller));
+
+    await tester.enterText(find.byType(TextField), 'test');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fight Club'), findsOneWidget);
+    expect(find.textContaining('unavailable'), findsNothing);
+  });
+
+  testWidgets('movie-only contract hides series filter button', (tester) async {
+    final controller = RequestController.forTest();
+    await tester.pumpWidget(_app(controller, contract: _movieOnlyContract));
+
+    expect(find.text('Movies'), findsOneWidget);
+    expect(find.text('Series'), findsNothing);
+    expect(find.text('All'), findsOneWidget);
+  });
+
+  testWidgets('series-only contract hides movies filter button', (
+    tester,
+  ) async {
+    final controller = RequestController.forTest();
+    await tester.pumpWidget(_app(controller, contract: _seriesOnlyContract));
+
+    expect(find.text('Series'), findsOneWidget);
+    expect(find.text('Movies'), findsNothing);
+    expect(find.text('All'), findsOneWidget);
+  });
+
+  testWidgets('both-types contract shows both filter buttons', (tester) async {
+    final controller = RequestController.forTest();
+    await tester.pumpWidget(_app(controller, contract: _bothTypesContract));
+
+    expect(find.text('Movies'), findsOneWidget);
+    expect(find.text('Series'), findsOneWidget);
+    expect(find.text('All'), findsOneWidget);
+  });
+
+  testWidgets('null contract shows all filter buttons', (tester) async {
+    final controller = RequestController.forTest();
+    await tester.pumpWidget(_app(controller));
+
+    expect(find.text('Movies'), findsOneWidget);
+    expect(find.text('Series'), findsOneWidget);
+    expect(find.text('All'), findsOneWidget);
+  });
+
+  testWidgets('explicit empty content types hides both media filters', (
+    tester,
+  ) async {
+    final controller = RequestController.forTest();
+    await tester.pumpWidget(_app(controller, contract: _noTypesContract));
+
+    expect(find.text('Movies'), findsNothing);
+    expect(find.text('Series'), findsNothing);
+    expect(find.text('All'), findsOneWidget);
+  });
+
   testWidgets('left edge invokes sidebar activation', (tester) async {
     var activated = false;
     final controller = RequestController.forTest(
@@ -686,25 +809,77 @@ const _seriesSubmission = RequestSubmission(
   selectedSeasons: [0, 2],
 );
 
-Widget _app(RequestController controller, {VoidCallback? onSidebarActivate}) =>
-    ProviderScope(
-      overrides: [
-        isConfiguredProvider.overrideWith((_) => true),
-        requestControllerProvider.overrideWith((_) => controller),
-      ],
-      child: MaterialApp(
-        theme: ThemeData.dark(useMaterial3: true),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: RequestScreen(
-          onSearch: controller.search,
-          onSubmit: controller.submit,
-          onLoadHistory: controller.loadHistory,
-          onRefreshItem: controller.refreshItem,
-          onDismiss: controller.dismiss,
-          onLoadMoreSearch: controller.loadMoreSearchResults,
-          onLoadMoreHistory: controller.loadMoreHistory,
-          onSidebarActivate: onSidebarActivate,
-        ),
-      ),
-    );
+const _movieOnlyContract = RequestContract(
+  version: 1,
+  actions: RequestActions(
+    search: 'request_search',
+    submit: 'request_submit',
+    history: 'request_history',
+    status: 'request_status',
+    dismiss: 'request_dismiss',
+  ),
+  contentTypes: [RequestContentType.movie],
+);
+
+const _seriesOnlyContract = RequestContract(
+  version: 1,
+  actions: RequestActions(
+    search: 'request_search',
+    submit: 'request_submit',
+    history: 'request_history',
+    status: 'request_status',
+    dismiss: 'request_dismiss',
+  ),
+  contentTypes: [RequestContentType.series],
+);
+
+const _bothTypesContract = RequestContract(
+  version: 1,
+  actions: RequestActions(
+    search: 'request_search',
+    submit: 'request_submit',
+    history: 'request_history',
+    status: 'request_status',
+    dismiss: 'request_dismiss',
+  ),
+  contentTypes: [RequestContentType.movie, RequestContentType.series],
+);
+
+const _noTypesContract = RequestContract(
+  version: 1,
+  actions: RequestActions(
+    search: 'request_search',
+    submit: 'request_submit',
+    history: 'request_history',
+    status: 'request_status',
+    dismiss: 'request_dismiss',
+  ),
+  contentTypes: <RequestContentType>[],
+);
+
+Widget _app(
+  RequestController controller, {
+  VoidCallback? onSidebarActivate,
+  RequestContract? contract,
+}) => ProviderScope(
+  overrides: [
+    isConfiguredProvider.overrideWith((_) => true),
+    requestControllerProvider.overrideWith((_) => controller),
+    requestContractProvider.overrideWith((_) => contract),
+  ],
+  child: MaterialApp(
+    theme: ThemeData.dark(useMaterial3: true),
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: RequestScreen(
+      onSearch: controller.search,
+      onSubmit: controller.submit,
+      onLoadHistory: controller.loadHistory,
+      onRefreshItem: controller.refreshItem,
+      onDismiss: controller.dismiss,
+      onLoadMoreSearch: controller.loadMoreSearchResults,
+      onLoadMoreHistory: controller.loadMoreHistory,
+      onSidebarActivate: onSidebarActivate,
+    ),
+  ),
+);

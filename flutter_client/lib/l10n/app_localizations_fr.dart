@@ -625,4 +625,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String requestsSearchPageInfo(int current, int total) {
     return 'Page $current sur $total';
   }
+
+  @override
+  String get requestsPartialResultsWarning =>
+      'Certains fournisseurs n\'étaient pas disponibles. Les résultats peuvent être incomplets.';
+
+  @override
+  String requestsPartialResultsCountWarning(int count) {
+    return '$count fournisseur(s) indisponible(s). Les résultats peuvent être incomplets.';
+  }
 }

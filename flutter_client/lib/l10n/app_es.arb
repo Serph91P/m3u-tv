@@ -291,5 +291,14 @@
         "type": "int"
       }
     }
+  },
+  "requestsPartialResultsWarning": "Algunos proveedores no estuvieron disponibles. Los resultados pueden estar incompletos.",
+  "requestsPartialResultsCountWarning": "{count} proveedor(es) no disponible(s). Los resultados pueden estar incompletos.",
+  "@requestsPartialResultsCountWarning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

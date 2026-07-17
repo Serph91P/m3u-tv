@@ -291,5 +291,14 @@
         "type": "int"
       }
     }
+  },
+  "requestsPartialResultsWarning": "\u90e8\u5206\u63d0\u4f9b\u5546\u4e0d\u53ef\u7528\u3002\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574\u3002",
+  "requestsPartialResultsCountWarning": "{count} \u4e2a\u63d0\u4f9b\u5546\u4e0d\u53ef\u7528\u3002\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574\u3002",
+  "@requestsPartialResultsCountWarning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

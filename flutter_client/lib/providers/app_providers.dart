@@ -5,6 +5,7 @@ import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/services/request_models.dart' show RequestContract;
 import 'package:m3u_tv/services/tv_notification_service.dart'
     show TvNotificationItem;
 import 'package:m3u_tv/services/tv_notification_store.dart';
@@ -127,6 +128,15 @@ final sourceErrorProvider = Provider<String?>((ref) {
 
 final hasDvrFeatureProvider = Provider<bool>((ref) {
   return ref.watch(appStateControllerProvider).appState.hasDvrFeature;
+});
+
+final requestContractProvider = Provider<RequestContract?>((ref) {
+  return ref
+      .watch(appStateControllerProvider)
+      .appState
+      .authNotifier
+      .authResponse
+      ?.requestContract;
 });
 
 final requestControllerProvider = ChangeNotifierProvider<RequestController>((
