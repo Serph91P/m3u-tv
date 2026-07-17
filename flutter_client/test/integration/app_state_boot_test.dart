@@ -549,6 +549,121 @@ void main() {
       },
     );
   });
+
+  group('hasRequestsFeature gates on validated contract', () {
+    test(
+      'raw requests feature flag without valid requestContract does not expose request capability',
+      () async {
+        final storage = InMemorySecureStorage();
+        final controller = _controller(
+          storage: storage,
+          transport: _FakeXtreamTransport.success().withResponse(
+            'auth',
+            <String, Object?>{
+              'user_info': <String, Object?>{
+                'auth': 1,
+                'status': 'Active',
+              },
+              'm3u_editor': <String, Object?>{
+                'version': '0.10.0',
+                'features': <String>['requests'],
+              },
+            },
+          ).call,
+        );
+        addTearDown(controller.dispose);
+
+        final connected = await controller.connectXtream(
+          const UserCredentials(
+            server: 'https://fixture.example',
+            username: 'fixture-user',
+            password: 'fixture-password',
+          ),
+        );
+        expect(connected, isTrue);
+        expect(controller.hasRequestsFeature, isFalse);
+      },
+    );
+
+    test(
+      'malformed request contract with requests feature flag does not expose request capability',
+      () async {
+        final storage = InMemorySecureStorage();
+        final controller = _controller(
+          storage: storage,
+          transport: _FakeXtreamTransport.success().withResponse(
+            'auth',
+            <String, Object?>{
+              'user_info': <String, Object?>{
+                'auth': 1,
+                'status': 'Active',
+              },
+              'm3u_editor': <String, Object?>{
+                'version': '0.10.0',
+                'features': <String>['requests'],
+                'requests': 'not-a-valid-contract',
+              },
+            },
+          ).call,
+        );
+        addTearDown(controller.dispose);
+
+        final connected = await controller.connectXtream(
+          const UserCredentials(
+            server: 'https://fixture.example',
+            username: 'fixture-user',
+            password: 'fixture-password',
+          ),
+        );
+        expect(connected, isTrue);
+        expect(controller.hasRequestsFeature, isFalse);
+      },
+    );
+
+    test(
+      'valid request contract with requests feature flag exposes request capability',
+      () async {
+        final storage = InMemorySecureStorage();
+        final controller = _controller(
+          storage: storage,
+          transport: _FakeXtreamTransport.success().withResponse(
+            'auth',
+            <String, Object?>{
+              'user_info': <String, Object?>{
+                'auth': 1,
+                'status': 'Active',
+              },
+              'm3u_editor': <String, Object?>{
+                'version': '0.10.0',
+                'features': <String>['requests'],
+                'requests': <String, Object?>{
+                  'api_version': 1,
+                  'actions': <String, Object?>{
+                    'search': '/api/search',
+                    'submit': '/api/submit',
+                    'history': '/api/history',
+                    'status': '/api/status',
+                    'dismiss': '/api/dismiss',
+                  },
+                },
+              },
+            },
+          ).call,
+        );
+        addTearDown(controller.dispose);
+
+        final connected = await controller.connectXtream(
+          const UserCredentials(
+            server: 'https://fixture.example',
+            username: 'fixture-user',
+            password: 'fixture-password',
+          ),
+        );
+        expect(connected, isTrue);
+        expect(controller.hasRequestsFeature, isTrue);
+      },
+    );
+  });
 }
 
 AppStateController _controller({

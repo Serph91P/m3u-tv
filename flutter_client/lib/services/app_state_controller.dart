@@ -222,7 +222,7 @@ class AppStateController extends ChangeNotifier {
   bool get hasDvrFeature =>
       authNotifier.authResponse?.hasFeature('dvr') ?? false;
   bool get hasRequestsFeature =>
-      authNotifier.authResponse?.hasFeature('requests') ?? false;
+      authNotifier.authResponse?.hasRequests ?? false;
   bool get hasAioStreams => authNotifier.authResponse?.hasAioStreams ?? false;
   List<AIOStreamsIntegration> get aiostreamsIntegrations =>
       authNotifier.authResponse?.aiostreamsIntegrations ?? const [];

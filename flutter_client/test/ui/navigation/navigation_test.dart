@@ -20,6 +20,7 @@ import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/services/request_models.dart';
 import 'package:m3u_tv/services/resume_service.dart';
 import 'package:m3u_tv/services/secure_storage.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
@@ -358,6 +359,16 @@ void main() {
       final appState = _testAppState(
         xtreamService: _NavigationXtreamService(
           features: const <String>['progress', 'requests'],
+          requestContract: const RequestContract(
+            version: 1,
+            actions: RequestActions(
+              search: '/api/search',
+              submit: '/api/submit',
+              history: '/api/history',
+              status: '/api/status',
+              dismiss: '/api/dismiss',
+            ),
+          ),
         ),
       );
       addTearDown(appState.dispose);
@@ -1625,6 +1636,7 @@ class _NavigationXtreamService extends XtreamService {
     this.recentlyWatched = const <Progress>[],
     this.features = const <String>['progress'],
     this.dvrRecordings = const <DvrRecording>[],
+    this.requestContract,
   });
 
   final List<Channel> liveChannels;
@@ -1633,6 +1645,7 @@ class _NavigationXtreamService extends XtreamService {
   final List<Progress> recentlyWatched;
   final List<String> features;
   final List<DvrRecording> dvrRecordings;
+  final RequestContract? requestContract;
 
   @override
   Future<XtreamAuthResponse> authenticate(UserCredentials credentials) async {
@@ -1641,6 +1654,7 @@ class _NavigationXtreamService extends XtreamService {
       status: 'Active',
       m3uEditorVersion: 'test',
       features: features,
+      requestContract: requestContract,
     );
   }
 
