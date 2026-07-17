@@ -4,27 +4,31 @@ import 'package:m3u_tv/services/xtream_service.dart';
 
 enum RequestValidationError { tooShort, tooLong }
 
-typedef RequestSearchCallback = Future<RequestSearchPage> Function(
-  String term,
-  RequestMediaType? type, {
-  int page,
-  int perPage,
-});
-typedef RequestSubmitCallback = Future<RequestSubmission> Function(
-  RequestSearchResult result, {
-  List<int> seasons,
-});
-typedef RequestHistoryCallback = Future<RequestHistoryPage> Function({
-  int page,
-  int perPage,
-});
-typedef RequestStatusCallback = Future<RequestHistoryItem> Function(String requestId);
+typedef RequestSearchCallback =
+    Future<RequestSearchPage> Function(
+      String term,
+      RequestMediaType? type, {
+      int page,
+      int perPage,
+    });
+typedef RequestSubmitCallback =
+    Future<RequestSubmission> Function(
+      RequestSearchResult result, {
+      List<int> seasons,
+    });
+typedef RequestHistoryCallback =
+    Future<RequestHistoryPage> Function({
+      int page,
+      int perPage,
+    });
+typedef RequestStatusCallback =
+    Future<RequestHistoryItem> Function(String requestId);
 typedef RequestDismissCallback = Future<void> Function(String requestId);
 
 class RequestController extends ChangeNotifier {
   RequestController(XtreamService service)
-    : onSearch = ((term, type, {page = 1, perPage = 20}) =>
-        service.searchRequests(term, type: type, page: page, perPage: perPage)),
+    : onSearch = ((term, type, {page = 1, perPage = 20}) => service
+          .searchRequests(term, type: type, page: page, perPage: perPage)),
       onSubmit = ((result, {seasons = const <int>[]}) =>
           service.submitRequest(result, seasons: seasons)),
       onLoadHistory = (({page = 1, perPage = 20}) =>
@@ -38,14 +42,18 @@ class RequestController extends ChangeNotifier {
     RequestHistoryCallback? onLoadHistory,
     RequestStatusCallback? onGetStatus,
     RequestDismissCallback? onDismiss,
-  }) : onSearch = onSearch ?? ((_, _, {page = 1, perPage = 20}) async => RequestSearchPage(
-           results: const [],
-           currentPage: 1,
-           perPage: 20,
-           total: 0,
-           lastPage: 1,
-         )),
-       onSubmit = onSubmit ?? ((result, {seasons = const <int>[]}) async => RequestSubmission(
+  }) : onSearch =
+           onSearch ??
+           ((_, _, {page = 1, perPage = 20}) async => const RequestSearchPage(
+             results: [],
+             currentPage: 1,
+             perPage: 20,
+             total: 0,
+             lastPage: 1,
+           )),
+       onSubmit =
+           onSubmit ??
+           ((result, {seasons = const <int>[]}) async => RequestSubmission(
              status: RequestStatus.pendingApproval,
              request: RequestHistoryItem(
                id: result.key,
@@ -58,14 +66,18 @@ class RequestController extends ChangeNotifier {
              ),
              selectedSeasons: seasons,
            )),
-       onLoadHistory = onLoadHistory ?? (({page = 1, perPage = 20}) async => RequestHistoryPage(
-             requests: const [],
+       onLoadHistory =
+           onLoadHistory ??
+           (({page = 1, perPage = 20}) async => const RequestHistoryPage(
+             requests: [],
              currentPage: 1,
              perPage: 20,
              total: 0,
              lastPage: 1,
            )),
-       onGetStatus = onGetStatus ?? ((id) async => RequestHistoryItem(
+       onGetStatus =
+           onGetStatus ??
+           ((id) async => RequestHistoryItem(
              id: id,
              type: RequestMediaType.movie,
              externalId: '',
@@ -154,7 +166,9 @@ class RequestController extends ChangeNotifier {
   }
 
   Future<void> loadMoreSearchResults() async {
-    if (_isLoadingMore || !hasMoreSearchPages || _currentSearchTerm == null) return;
+    if (_isLoadingMore || !hasMoreSearchPages || _currentSearchTerm == null) {
+      return;
+    }
     _isLoadingMore = true;
     _searchError = null;
     notifyListeners();
@@ -176,7 +190,10 @@ class RequestController extends ChangeNotifier {
     }
   }
 
-  Future<void> submit(RequestSearchResult result, {List<int> seasons = const <int>[]}) async {
+  Future<void> submit(
+    RequestSearchResult result, {
+    List<int> seasons = const <int>[],
+  }) async {
     if (result.alreadyAvailable || _submitting.contains(result.key)) return;
     _submitting = {..._submitting, result.key};
     _searchError = null;
@@ -218,7 +235,10 @@ class RequestController extends ChangeNotifier {
     notifyListeners();
     try {
       final nextPage = _historyPage!.nextPage;
-      final page = await onLoadHistory(page: nextPage, perPage: _historyPage!.perPage);
+      final page = await onLoadHistory(
+        page: nextPage,
+        perPage: _historyPage!.perPage,
+      );
       _historyPage = page;
       _history = [..._history, ...page.requests];
     } on Object catch (error) {

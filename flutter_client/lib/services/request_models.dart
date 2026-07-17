@@ -61,12 +61,12 @@ enum RequestStatus {
     RequestStatus.importPending ||
     RequestStatus.queued ||
     RequestStatus.paused ||
-    RequestStatus.importing =>
-      true,
+    RequestStatus.importing => true,
     _ => false,
   };
 
-  bool get isFailed => this == RequestStatus.failed || this == RequestStatus.error;
+  bool get isFailed =>
+      this == RequestStatus.failed || this == RequestStatus.error;
 }
 
 class RequestActions {
@@ -270,10 +270,9 @@ class RequestSubmission {
     return RequestSubmission(
       status: RequestStatus.fromWire(data['status']),
       request: RequestHistoryItem.fromJson(request),
-      selectedSeasons: _asList(data['selected_seasons'])
-          .map(_nullableInt)
-          .whereType<int>()
-          .toList(growable: false),
+      selectedSeasons: _asList(
+        data['selected_seasons'],
+      ).map(_nullableInt).whereType<int>().toList(growable: false),
     );
   }
 

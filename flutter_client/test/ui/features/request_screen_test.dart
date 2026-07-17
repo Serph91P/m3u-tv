@@ -38,13 +38,15 @@ void main() {
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsWidgets);
 
-    completer.complete(const RequestSearchPage(
-      results: [],
-      currentPage: 1,
-      perPage: 20,
-      total: 0,
-      lastPage: 1,
-    ));
+    completer.complete(
+      const RequestSearchPage(
+        results: [],
+        currentPage: 1,
+        perPage: 20,
+        total: 0,
+        lastPage: 1,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('No matching titles found.'), findsOneWidget);
 
@@ -61,33 +63,33 @@ void main() {
     var submitted = false;
     var historyLoads = 0;
     final controller = RequestController.forTest(
-      onSearch: (_, _, {page = 1, perPage = 20}) async => RequestSearchPage(
-        results: [_result],
-        currentPage: 1,
-        perPage: 20,
-        total: 1,
-        lastPage: 1,
-      ),
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
       onSubmit: (result, {seasons = const <int>[]}) async {
         submitted = true;
         return _submission;
       },
-      onLoadHistory: ({page = 1, perPage = 20}) async =>
-          historyLoads++ == 0
-              ? const RequestHistoryPage(
-                  requests: [],
-                  currentPage: 1,
-                  perPage: 20,
-                  total: 0,
-                  lastPage: 1,
-                )
-              : RequestHistoryPage(
-                  requests: [_historyItem],
-                  currentPage: 1,
-                  perPage: 20,
-                  total: 1,
-                  lastPage: 1,
-                ),
+      onLoadHistory: ({page = 1, perPage = 20}) async => historyLoads++ == 0
+          ? const RequestHistoryPage(
+              requests: [],
+              currentPage: 1,
+              perPage: 20,
+              total: 0,
+              lastPage: 1,
+            )
+          : RequestHistoryPage(
+              requests: [_historyItem],
+              currentPage: 1,
+              perPage: 20,
+              total: 1,
+              lastPage: 1,
+            ),
     );
     await tester.pumpWidget(_app(controller));
 
@@ -119,22 +121,23 @@ void main() {
     tester,
   ) async {
     final controller = RequestController.forTest(
-      onSearch: (_, _, {page = 1, perPage = 20}) async => RequestSearchPage(
-        results: const [
-          RequestSearchResult(
-            type: RequestMediaType.movie,
-            externalId: '1',
-            integrationId: '7',
-            integrationName: 'Radarr',
-            title: 'Existing Movie',
-            alreadyAvailable: true,
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [
+              RequestSearchResult(
+                type: RequestMediaType.movie,
+                externalId: '1',
+                integrationId: '7',
+                integrationName: 'Radarr',
+                title: 'Existing Movie',
+                alreadyAvailable: true,
+              ),
+            ],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
           ),
-        ],
-        currentPage: 1,
-        perPage: 20,
-        total: 1,
-        lastPage: 1,
-      ),
     );
     await tester.pumpWidget(_app(controller));
 
@@ -148,13 +151,14 @@ void main() {
   testWidgets('left edge invokes sidebar activation', (tester) async {
     var activated = false;
     final controller = RequestController.forTest(
-      onSearch: (_, _, {page = 1, perPage = 20}) async => RequestSearchPage(
-        results: [_result],
-        currentPage: 1,
-        perPage: 20,
-        total: 1,
-        lastPage: 1,
-      ),
+      onSearch: (_, _, {page = 1, perPage = 20}) async =>
+          const RequestSearchPage(
+            results: [_result],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
     );
     await tester.pumpWidget(
       _app(controller, onSidebarActivate: () => activated = true),
@@ -180,13 +184,14 @@ void main() {
 
   testWidgets('dismissible history item shows dismiss button', (tester) async {
     final controller = RequestController.forTest(
-      onLoadHistory: ({page = 1, perPage = 20}) async => RequestHistoryPage(
-        requests: [_dismissableItem],
-        currentPage: 1,
-        perPage: 20,
-        total: 1,
-        lastPage: 1,
-      ),
+      onLoadHistory: ({page = 1, perPage = 20}) async =>
+          const RequestHistoryPage(
+            requests: [_dismissableItem],
+            currentPage: 1,
+            perPage: 20,
+            total: 1,
+            lastPage: 1,
+          ),
     );
     await tester.pumpWidget(_app(controller));
     await tester.pumpAndSettle();
