@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui' show ImageFilter;
 
+import 'package:clock/clock.dart';
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,6 +36,7 @@ import 'package:m3u_tv/services/tv_notification_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_background.dart';
 import 'package:m3u_tv/shared/app_callout.dart';
+import 'package:m3u_tv/shared/continue_watching_items.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/dvr_schedule_feedback.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
@@ -42,7 +44,7 @@ import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/notification_toast.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Height of the hidden-titlebar drag strip on macOS desktop — keeps the
+/// Height of the hidden-titlebar drag strip on macOS desktop - keeps the
 /// window draggable and clears the floating traffic-light buttons, which
 /// content would otherwise render underneath (see main.dart's
 /// TitleBarStyle.hidden setup). Painted solid with the app's background
@@ -136,6 +138,17 @@ class AppShellState extends ConsumerState<AppShell>
 
   DateTime? _lastBackPress;
   Timer? _backExitTimer;
+
+  // TV-only: when the app returns to the foreground after having been
+  // backgrounded for at least this long, navigate back to the user's
+  // configured start page instead of resuming wherever they left off. On the
+  // couch, reopening the app is expected to land on your "home base"; on
+  // desktop/mobile users task-switch constantly and expect their place kept,
+  // so this is gated to DeviceType.tv. The grace period keeps brief
+  // interruptions (voice assistant overlay, a permission dialog) from
+  // resetting the user.
+  static const Duration _tvForegroundResetGrace = Duration(seconds: 5);
+  DateTime? _backgroundedAt;
   int _lastNavMs = 0;
   int _lastNavIndex = -1;
   StreamSubscription<TvNotificationItem>? _tvNotificationSub;
@@ -145,7 +158,13 @@ class AppShellState extends ConsumerState<AppShell>
 
   PlayerArgs? _playerArgs;
   PlaybackOrchestrator? _playerOrchestrator;
+  StreamSubscription<bool>? _playerNativePlaneSub;
+  bool _playerNativePlaneActive = false;
   bool _playerHasFailed = false;
+  // True while any root-navigator modal dialog opened from within the
+  // player is on screen (track selector, stop/delete-recording confirm),
+  // so back handling dismisses the dialog instead of closing the player.
+  bool _playerModalDialogVisible = false;
   FocusNode? _focusBeforePlayer;
 
   // Bumped only when a brand-new player session starts (not on in-session
@@ -153,7 +172,7 @@ class AppShellState extends ConsumerState<AppShell>
   // stays stable across a channel switch and its State survives via
   // didUpdateWidget instead of being torn down and rebuilt. This matters
   // because the Android Media3 and Apple AVKit native plugins each hold a
-  // single global player behind their MethodChannel — remounting PlayerScreen
+  // single global player behind their MethodChannel - remounting PlayerScreen
   // per channel would dispose the *previous* orchestrator after the *new*
   // one has already started loading, and that deferred dispose tears down
   // whatever the native side currently has loaded (the new channel).
@@ -225,6 +244,13 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   Future<bool> _handleSystemBack() async {
+    if (_playerModalDialogVisible) {
+      final popped = await Navigator.of(
+        context,
+        rootNavigator: true,
+      ).maybePop();
+      if (popped) return true;
+    }
     if (_handleBackPress()) return true;
 
     // Double-back to exit: require two back presses within 2 seconds.
@@ -317,6 +343,7 @@ class AppShellState extends ConsumerState<AppShell>
     _desktopNotificationDispatcher.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _playerOrchestrator?.dispose().ignore();
+    _playerNativePlaneSub?.cancel().ignore();
     for (final node in _sidebarFocusNodes) {
       node.dispose();
     }
@@ -330,6 +357,7 @@ class AppShellState extends ConsumerState<AppShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      _backgroundedAt = clock.now();
       unawaited(_appState.suspendNotifications());
       return;
     }
@@ -340,6 +368,43 @@ class AppShellState extends ConsumerState<AppShell>
           ? _systemUiPolicy.applyBrowsing()
           : _systemUiPolicy.applyPlayer(),
     );
+    // After the system-UI call above: when this resets to the start page it
+    // may close an open player, and _closePlayer restores the browsing
+    // system UI itself.
+    _maybeResetToStartPageAfterBackground();
+  }
+
+  /// TV-only: on returning from a real background (longer than
+  /// [_tvForegroundResetGrace]), close any open player and switch to the
+  /// user's configured start page so reopening the app lands on their
+  /// preferred landing screen rather than wherever they left off. No-op on
+  /// desktop/mobile, where keeping the user's place is the expected behavior.
+  void _maybeResetToStartPageAfterBackground() {
+    final backgroundedAt = _backgroundedAt;
+    _backgroundedAt = null;
+    if (widget.deviceType != DeviceType.tv) return;
+    if (backgroundedAt == null) return;
+    if (clock.now().difference(backgroundedAt) < _tvForegroundResetGrace) {
+      return;
+    }
+
+    final startRoute = _appState.viewSettingsService.defaultStartPageSync.route;
+    final branchIndex = RouteNames.mainRoutes.indexOf(startRoute);
+    if (branchIndex < 0) return;
+
+    if (_playerArgs != null) unawaited(_closePlayer());
+
+    // Defer the navigation out of the lifecycle callback: goBranch drives a
+    // router rebuild, which is not safe to trigger synchronously from
+    // didChangeAppLifecycleState. initialLocation:true resets the target
+    // branch to its root screen, dropping any nested detail route the user
+    // had open on it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.navigationShell.goBranch(branchIndex, initialLocation: true);
+      if (_sidebarActive) setState(() => _sidebarActive = false);
+      _contentFocusNode.requestFocus();
+    });
   }
 
   void _navigateTo(int index) {
@@ -389,13 +454,52 @@ class AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  // Screens that render a MediaCategoryNav strip (VOD/Series/Live TV/
+  // Requests) register their strip's own FocusScopeNode here, keyed by
+  // route, so _deactivateSidebar can always land there first instead of
+  // wherever focus happened to be before the sidebar was activated. Flutter's
+  // native FocusScopeNode restoration (`_contentFocusNode.requestFocus()`
+  // below) always drills down to whichever of a screen's sibling scopes
+  // (strip vs. grid) last held actual focus - which, once a screen has both,
+  // means it would silently skip the strip and land straight back in the
+  // grid whenever the grid was the last thing focused. Keying by route
+  // (rather than tracking "the last registered node") avoids clobbering the
+  // active tab's registration: go_router's StatefulNavigationShell keeps
+  // every visited branch mounted, so a screen registers exactly once, the
+  // first time its tab is built, and that registration is never disposed
+  // just because another tab becomes active.
+  final Map<String, FocusScopeNode> _contentEntryFocusByRoute = {};
+
+  void _registerContentEntryFocus(String routeName, FocusScopeNode node) {
+    _contentEntryFocusByRoute[routeName] = node;
+  }
+
+  // Lets a screen intercept the Back key itself before AppShell's default
+  // handling (sidebar activation) runs - currently only Live TV, to move
+  // focus to the EPG's Channels column instead. Same route-keyed,
+  // register-once pattern as _contentEntryFocusByRoute above, for the same
+  // StatefulNavigationShell branch-retention reason.
+  final Map<String, bool Function()> _contentBackHandlerByRoute = {};
+
+  void _registerContentBackHandler(String routeName, bool Function() handler) {
+    _contentBackHandlerByRoute[routeName] = handler;
+  }
+
   void _deactivateSidebar() {
     setState(() {
       _sidebarActive = false;
     });
     unawaited(
       Future.microtask(() {
-        if (mounted) _contentFocusNode.requestFocus();
+        if (!mounted) return;
+        final route =
+            RouteNames.mainRoutes[widget.navigationShell.currentIndex];
+        final entry = _contentEntryFocusByRoute[route];
+        if (entry != null) {
+          entry.requestFocus();
+        } else {
+          _contentFocusNode.requestFocus();
+        }
       }),
     );
   }
@@ -409,6 +513,7 @@ class AppShellState extends ConsumerState<AppShell>
 
   Future<void> _openPlayer(BuildContext context, PlayerArgs args) async {
     var resolvedArgs = args;
+    final l = AppLocalizations.of(context);
     if ((resolvedArgs.type == 'vod' || resolvedArgs.type == 'series') &&
         resolvedArgs.startPosition == null &&
         resolvedArgs.streamId != null) {
@@ -423,14 +528,34 @@ class AppShellState extends ConsumerState<AppShell>
             !p.completed,
       );
       if (progress != null && context.mounted) {
-        final startPos = await showResumeModal(
+        final result = await showResumeModal(
           context,
           title: resolvedArgs.title,
           positionSeconds: progress.positionSeconds,
+          showManageActions: true,
         );
-        if (startPos == null) return;
-        if (startPos > 0) {
-          resolvedArgs = resolvedArgs.copyWith(startPosition: startPos);
+        if (result == null) return;
+        switch (result.action) {
+          case ResumeAction.resume:
+            resolvedArgs = resolvedArgs.copyWith(
+              startPosition: result.startPositionSeconds,
+            );
+          case ResumeAction.startOver:
+            break;
+          case ResumeAction.clearProgress:
+            await _setWatchState(
+              progress,
+              watched: false,
+              message: l.playerProgressCleared,
+            );
+            return;
+          case ResumeAction.markWatched:
+            await _setWatchState(
+              progress,
+              watched: true,
+              message: l.seriesMarkedWatched,
+            );
+            return;
         }
       }
     }
@@ -457,6 +582,26 @@ class AppShellState extends ConsumerState<AppShell>
   void _openPlayerDirect(PlayerArgs rawArgs) {
     ref.read(playerOverlayActiveProvider.notifier).state = true;
     final args = _applyProxyPlayback(rawArgs);
+    unawaited(_systemUiPolicy.applyPlayer());
+
+    if (_playerOrchestrator != null) {
+      // A player is already open (skip-previous/skip-next, or the up-next
+      // overlay swapping episodes) - reuse its orchestrator/session rather
+      // than building a new one. PlayerScreen's key is unchanged, so the
+      // framework updates the existing State via didUpdateWidget instead of
+      // disposing it, keeping exactly one native player instance alive for
+      // the whole session. Deliberately do NOT re-capture _focusBeforePlayer
+      // here: primary focus is inside the player now, so it'd null out the
+      // real pre-player node (the originating card) and lose the restore
+      // target for when the session finally closes.
+      setState(() {
+        _playerArgs = args;
+        _playerHasFailed = false;
+        _playerNativePlaneActive = _playerOrchestrator!.isNativePlaneActive;
+      });
+      return;
+    }
+
     // Save the focused node so we can restore it precisely after the player
     // closes. _contentFocusNode.requestFocus() alone is unreliable: when
     // PlayerScreen disposes _screenFocusNode, Flutter's _willDisposeFocusNode
@@ -466,20 +611,6 @@ class AppShellState extends ConsumerState<AppShell>
     // gets a chance to run.
     final focus = FocusManager.instance.primaryFocus;
     _focusBeforePlayer = _isInContentScope(focus) ? focus : null;
-    unawaited(_systemUiPolicy.applyPlayer());
-
-    if (_playerOrchestrator != null) {
-      // A player is already open (e.g. skip-previous/skip-next) — reuse its
-      // orchestrator/session rather than building a new one. PlayerScreen's
-      // key is unchanged, so the framework updates the existing State via
-      // didUpdateWidget instead of disposing it, keeping exactly one native
-      // player instance alive for the whole session.
-      setState(() {
-        _playerArgs = args;
-        _playerHasFailed = false;
-      });
-      return;
-    }
 
     _playerSessionId += 1;
     final newOrch =
@@ -488,7 +619,15 @@ class AppShellState extends ConsumerState<AppShell>
     setState(() {
       _playerArgs = args;
       _playerOrchestrator = newOrch;
+      _playerNativePlaneActive = newOrch.isNativePlaneActive;
       _playerHasFailed = false;
+    });
+    _playerNativePlaneSub = newOrch.onNativePlaneCompositionChanged.listen((
+      active,
+    ) {
+      if (!mounted || !identical(_playerOrchestrator, newOrch)) return;
+      if (_playerNativePlaneActive == active) return;
+      setState(() => _playerNativePlaneActive = active);
     });
   }
 
@@ -501,20 +640,41 @@ class AppShellState extends ConsumerState<AppShell>
     return false;
   }
 
-  void _closePlayer() {
+  Future<void> _closePlayer() async {
     ref.read(playerOverlayActiveProvider.notifier).state = false;
     final orch = _playerOrchestrator;
+    final nativePlaneSub = _playerNativePlaneSub;
     final savedFocus = _focusBeforePlayer;
     _focusBeforePlayer = null;
     unawaited(_systemUiPolicy.applyBrowsing());
+    // Stop (and fully dispose) the active adapter BEFORE removing
+    // PlayerScreen's native view (Texture/PlatformView) from the widget
+    // tree, not after. This used to run in a postFrameCallback scheduled
+    // *after* the tree-removing setState below, which raced against
+    // Flutter tearing down the native platform view -- tvOS's mpv backend
+    // hands mpv an unretained pointer to its video layer via `wid`, so a
+    // platform view torn down before mpv had actually stopped touching it
+    // was a use-after-free that crashed reliably on stop. Bounded with a
+    // timeout: a hung backend dispose() must not leave the whole app stuck
+    // unable to close the player.
+    try {
+      await orch?.dispose().timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      // Fall through and close anyway -- better to leak a not-fully-disposed
+      // adapter than leave the user stuck on a dead player screen.
+    }
+    nativePlaneSub?.cancel().ignore();
+    if (!mounted) return;
     setState(() {
       _playerArgs = null;
       _playerOrchestrator = null;
+      _playerNativePlaneSub = null;
+      _playerNativePlaneActive = false;
       _playerHasFailed = false;
+      _playerModalDialogVisible = false;
     });
     _playerChannelContext = const <Channel>[];
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      orch?.dispose().ignore();
       if (!mounted) return;
       if (savedFocus != null && savedFocus.canRequestFocus) {
         savedFocus.requestFocus();
@@ -526,7 +686,7 @@ class AppShellState extends ConsumerState<AppShell>
 
   bool _handleBackPress() {
     if (_playerArgs != null) {
-      _closePlayer();
+      unawaited(_closePlayer());
       return true;
     }
 
@@ -536,12 +696,31 @@ class AppShellState extends ConsumerState<AppShell>
       return true;
     }
 
+    final route = RouteNames.mainRoutes[widget.navigationShell.currentIndex];
+    final screenBackHandler = _contentBackHandlerByRoute[route];
+    if (screenBackHandler != null && screenBackHandler()) {
+      return true;
+    }
+
     if (shouldUseSidebar(widget.deviceType) && !_sidebarActive) {
       _activateSidebar();
       return true;
     }
 
     return false;
+  }
+
+  void _setPlayerModalDialogVisible(bool visible) {
+    if (!mounted || _playerModalDialogVisible == visible) return;
+    setState(() => _playerModalDialogVisible = visible);
+  }
+
+  bool _handleShortcutBack() {
+    if (_playerModalDialogVisible) {
+      unawaited(Navigator.of(context, rootNavigator: true).maybePop());
+      return true;
+    }
+    return _handleBackPress();
   }
 
   void _openChannel(Channel channel) {
@@ -576,7 +755,10 @@ class AppShellState extends ConsumerState<AppShell>
   void _switchChannel(int direction) {
     final args = _playerArgs;
     if (args == null || args.type != 'live') return;
-    final channels = _playerChannelContext.isNotEmpty
+    // A context of exactly one channel (e.g. the On Now rail's set of
+    // channels airing the searched show) can't skip anywhere - fall back to
+    // the full channel list rather than silently no-op on `% 1 == 0`.
+    final channels = _playerChannelContext.length > 1
         ? _playerChannelContext
         : ref.read(liveChannelsProvider);
     if (channels.isEmpty) return;
@@ -612,13 +794,18 @@ class AppShellState extends ConsumerState<AppShell>
   Future<void> _confirmStopRecording(
     BuildContext context,
     DvrRecording recording,
-  ) {
-    return confirmStopOrDeleteRecording(
-      context,
-      recording: recording,
-      onCancel: _appState.cancelDvrRecording,
-      onCancelAndDelete: _cancelAndDeleteRecording,
-    );
+  ) async {
+    _setPlayerModalDialogVisible(true);
+    try {
+      await confirmStopOrDeleteRecording(
+        context,
+        recording: recording,
+        onCancel: _appState.cancelDvrRecording,
+        onCancelAndDelete: _cancelAndDeleteRecording,
+      );
+    } finally {
+      _setPlayerModalDialogVisible(false);
+    }
   }
 
   void _openCatchupProgram(Channel channel, EpgProgram program) {
@@ -683,6 +870,16 @@ class AppShellState extends ConsumerState<AppShell>
     );
   }
 
+  /// Schedules a batch of DVR airings for one Shows-search selection.
+  /// Per-item failures land inside the returned list (the screen turns that
+  /// into a single summary SnackBar), no per-item SnackBars here, mirroring
+  /// the single-item `_scheduleDvrAiring`'s "screen owns feedback" rule.
+  Future<List<DvrAiringScheduleResult>> _scheduleDvrAirings(
+    List<EpgShowEpisode> episodes,
+  ) {
+    return _appState.scheduleDvrAirings(episodes);
+  }
+
   /// Calls the foundation-agent-owned `XtreamService.createDvrSeriesRule`
   /// and refreshes the cached series rules list so the DVR screen's new
   /// "Series Rules" section reflects the addition immediately.
@@ -693,7 +890,7 @@ class AppShellState extends ConsumerState<AppShell>
   /// `XtreamService.createDvrSeriesRule` throws as
   /// `DvrSeriesRuleExistsException`. The `on Object { return false; }`
   /// blanket from earlier releases would have collapsed the duplicate case
-  /// into a generic failure — B2 surfaces it instead.
+  /// into a generic failure - B2 surfaces it instead.
   Future<CreateDvrSeriesRuleOutcome> _createDvrSeriesRule({
     int? channelId,
     required String title,
@@ -718,7 +915,7 @@ class AppShellState extends ConsumerState<AppShell>
       await _appState.refreshDvrSeriesRules();
       // The rule's `created` hook may have already matched and scheduled a
       // recording server-side (see AppStateController.refreshDvrRecordings
-      // doc comment) — refresh so it shows up in the Recordings tab without
+      // doc comment) - refresh so it shows up in the Recordings tab without
       // waiting for the next full app reload.
       unawaited(_appState.refreshDvrRecordings());
       return id == 0
@@ -774,7 +971,7 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   /// Stops a scheduled or in-progress recording and deletes the row from the
-  /// editor — the "Delete recording" choice on the Recordings screen's stop
+  /// editor - the "Delete recording" choice on the Recordings screen's stop
   /// dialog (see DvrRecordingsScreen._confirmCancel). m3u-editor's
   /// `cancel_dvr_recording` only marks the recording `cancelled` (a stop +
   /// history-keep operation), so this chains a follow-up `delete_dvr_recording`
@@ -783,7 +980,7 @@ class AppShellState extends ConsumerState<AppShell>
   ///
   /// If the cancel succeeds but the delete fails (e.g. transient server
   /// hiccup), the recording is still stopped and stays in the local list with
-  /// its Cancelled status — the user can retry Delete from there. The delete
+  /// its Cancelled status - the user can retry Delete from there. The delete
   /// failure is rethrown (not swallowed) so DvrRecordingsScreen's
   /// _runWithFeedback shows the "could not delete" SnackBar instead of a
   /// false "deleted" success message for a recording that's still there.
@@ -798,9 +995,9 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   /// Pushes a detail route. When [fullScreen] is true, the sidebar-hide
-  /// transition is tied directly to this call's own push/pop — flipped
+  /// transition is tied directly to this call's own push/pop - flipped
   /// synchronously right before `context.push` and unwound in `finally`
-  /// once that same push's route is gone — rather than to the pushed
+  /// once that same push's route is gone - rather than to the pushed
   /// widget's own init/dispose lifecycle. A widget can only announce itself
   /// after it already exists, which is inherently a frame (or more) behind
   /// the moment navigation was requested; doing it here instead means the
@@ -867,6 +1064,109 @@ class AppShellState extends ConsumerState<AppShell>
     );
   }
 
+  /// Marks a single series episode watched / unwatched for the active viewer.
+  /// "Unwatched" zeroes the progress row (position 0, not completed) rather
+  /// than deleting it - the Xtream API has no delete verb, and a zeroed row
+  /// reads as unwatched everywhere (Continue Watching filters it out, the
+  /// series detail no longer counts it as finished).
+  /// Returns true when the change was fully persisted. The local resume store
+  /// and in-memory list are always updated (offline-friendly); the boolean
+  /// only reflects whether the server write also landed, so a "mark season"
+  /// caller can tell the user if some episodes did not sync.
+  Future<bool> _markEpisodeWatched({
+    required int streamId,
+    required int seriesId,
+    required int seasonNumber,
+    required int episodeNumber,
+    int? durationSeconds,
+    String? seriesName,
+    String? episodeTitle,
+    required bool watched,
+  }) async {
+    final viewer = _appState.activeViewer;
+    if (viewer == null) return false;
+    final progress = Progress(
+      viewerId: viewer.ulid,
+      contentType: ContentType.episode,
+      streamId: streamId,
+      positionSeconds: watched ? (durationSeconds ?? 0) : 0,
+      durationSeconds: durationSeconds,
+      completed: watched,
+      seriesId: seriesId,
+      seasonNumber: seasonNumber,
+      episodeNumber: episodeNumber,
+      seriesName: seriesName,
+      episodeTitle: episodeTitle,
+    );
+    var serverOk = true;
+    if (_appState.sourceType == AppSourceType.xtream) {
+      try {
+        await _appState.xtreamService.updateProgress(progress);
+      } on Object {
+        serverOk = false;
+      }
+    }
+    await _appState.resumeService.save(progress);
+    if (mounted) _appState.updateProgressEntry(progress);
+    return serverOk;
+  }
+
+  /// Flips an existing Continue Watching entry (VOD or series episode) to
+  /// watched or unwatched from the resume dialog. "Unwatched" zeroes the row
+  /// (position 0, not completed); "watched" completes it at its full runtime.
+  /// Either way the title drops out of Continue Watching, and for a series the
+  /// next episode surfaces as "up next" on the following refresh. Server write
+  /// is best-effort - the local resume store and in-memory list always update,
+  /// and a missed server write self-heals on the next successful sync.
+  Future<void> _setWatchState(
+    Progress progress, {
+    required bool watched,
+    required String message,
+  }) async {
+    final updated = Progress(
+      viewerId: progress.viewerId,
+      contentType: progress.contentType,
+      streamId: progress.streamId,
+      positionSeconds: watched
+          ? (progress.durationSeconds ?? progress.positionSeconds)
+          : 0,
+      durationSeconds: progress.durationSeconds,
+      completed: watched,
+      seriesId: progress.seriesId,
+      seasonNumber: progress.seasonNumber,
+      episodeNumber: progress.episodeNumber,
+      title: progress.title,
+      episodeTitle: progress.episodeTitle,
+      seriesName: progress.seriesName,
+      thumbnailUrl: progress.thumbnailUrl,
+      backdropUrl: progress.backdropUrl,
+      rating: progress.rating,
+      runtime: progress.runtime,
+      tmdbId: progress.tmdbId,
+      plot: progress.plot,
+      genre: progress.genre,
+      year: progress.year,
+      aioItemId: progress.aioItemId,
+      aioIntegrationId: progress.aioIntegrationId,
+    );
+    if (_appState.sourceType == AppSourceType.xtream) {
+      try {
+        await _appState.xtreamService.updateProgress(updated);
+      } on Object {
+        // Ignored - local state below still updates.
+      }
+    }
+    await _appState.resumeService.save(updated);
+    if (!mounted) return;
+    _appState.updateProgressEntry(updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   void _openAioSearch() {
     unawaited(
       _pushDetail(RouteNames.aiostreamsSearchPath, fullScreen: true),
@@ -884,7 +1184,7 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   /// Lets a descendant enter/exit the same immersive full-screen state as
-  /// `_pushDetail(fullScreen: true)` — sidebar hidden, bottom nav hidden —
+  /// `_pushDetail(fullScreen: true)` - sidebar hidden, bottom nav hidden —
   /// without going through a go_router push itself. Needed for screens
   /// like the DVR series-rule Options page, which is opened via a plain
   /// `Navigator.push` (not a route) from a tab that isn't already
@@ -969,6 +1269,9 @@ class AppShellState extends ConsumerState<AppShell>
         onVodSelect: _openVod,
         onSeriesSelect: _openSeries,
         onProgressSelect: _openProgress,
+        onContinueWatchingMore: () => unawaited(
+          _pushDetail(RouteNames.continueWatchingPath, fullScreen: true),
+        ),
         onRecordingsSelect: () => _navigateToRoute(RouteNames.dvr),
         onAioStreamsItemSelect: (item, integrationId) => unawaited(
           _pushDetail(
@@ -981,6 +1284,7 @@ class AppShellState extends ConsumerState<AppShell>
             fullScreen: true,
           ),
         ),
+        useSidebarLayout: shouldUseSidebar(widget.deviceType),
         onSidebarActivate: _activateSidebar,
       ),
       RouteNames.search => SearchScreen(
@@ -989,10 +1293,13 @@ class AppShellState extends ConsumerState<AppShell>
         onVodSelect: _openVod,
         onSeriesSelect: _openSeries,
         onSidebarActivate: _activateSidebar,
+        onSearchShows: _searchEpgShows,
+        onShowSelect: _openShow,
       ),
       RouteNames.liveTv => LiveTvScreen(
         favoritesService: _appState.favoritesService,
         viewSettingsService: _appState.viewSettingsService,
+        useSidebarLayout: shouldUseSidebar(widget.deviceType),
         onChannelSelect: _openChannel,
         onChannelContextChanged: _setChannelContext,
         onCatchupProgramSelect: _openCatchupProgram,
@@ -1000,6 +1307,7 @@ class AppShellState extends ConsumerState<AppShell>
         onScheduleProgram: (channel, program) =>
             unawaited(_scheduleDvr(context, channel, program)),
         onEnsureEpg: _appState.ensureEpgForChannels,
+        onCatchupEpgRequested: _appState.ensureCatchupEpgForChannel,
         onCancelRecording: (uuid) => _appState.cancelDvrRecording(uuid),
         onCancelAndDeleteRecording: _cancelAndDeleteRecording,
         onRecordSeries: (channel, program) => _createDvrSeriesRule(
@@ -1008,16 +1316,28 @@ class AppShellState extends ConsumerState<AppShell>
         ),
         onEnterFullScreenDetail: _enterFullScreenDetail,
         onExitFullScreenDetail: _exitFullScreenDetail,
+        onEntryFocusScopeReady: (node) =>
+            _registerContentEntryFocus(RouteNames.liveTv, node),
+        onBackHandlerReady: (handler) =>
+            _registerContentBackHandler(RouteNames.liveTv, handler),
+        onSearchShows: _searchEpgShows,
+        onShowSelect: _openShow,
       ),
       RouteNames.vod => VodScreen(
         onVodSelect: _openVod,
         favoritesService: _appState.vodFavoritesService,
         onSidebarActivate: _activateSidebar,
+        useSidebarLayout: shouldUseSidebar(widget.deviceType),
+        onEntryFocusScopeReady: (node) =>
+            _registerContentEntryFocus(RouteNames.vod, node),
       ),
       RouteNames.series => SeriesScreen(
         onSeriesSelect: _openSeries,
         favoritesService: _appState.seriesFavoritesService,
         onSidebarActivate: _activateSidebar,
+        useSidebarLayout: shouldUseSidebar(widget.deviceType),
+        onEntryFocusScopeReady: (node) =>
+            _registerContentEntryFocus(RouteNames.series, node),
       ),
       RouteNames.aiostreams => ListenableBuilder(
         listenable: _appState,
@@ -1087,6 +1407,9 @@ class AppShellState extends ConsumerState<AppShell>
             onDismiss: _appState.dismissMediaRequest,
             onRefreshRequests: _appState.refreshMediaRequests,
             onSidebarActivate: _activateSidebar,
+            useSidebarLayout: shouldUseSidebar(widget.deviceType),
+            onEntryFocusScopeReady: (node) =>
+                _registerContentEntryFocus(RouteNames.requests, node),
           );
         },
       ),
@@ -1099,6 +1422,7 @@ class AppShellState extends ConsumerState<AppShell>
         listenable: _appState,
         builder: (_, _) => SettingsScreen(
           authNotifier: _appState.authNotifier,
+          deviceType: widget.deviceType,
           activeViewer: _appState.activeViewer,
           viewers: _appState.viewers,
           sourceLabel: _appState.sourceLabel,
@@ -1149,6 +1473,8 @@ class AppShellState extends ConsumerState<AppShell>
       onRecordSeries: _createDvrSeriesRule,
       onDeleteSeriesRule: _deleteDvrSeriesRule,
       onScheduleEpisode: _scheduleDvrAiring,
+      onScheduleEpisodes: _scheduleDvrAirings,
+      onMarkEpisodeWatched: _markEpisodeWatched,
       buildTabScreen: _buildTabScreen,
       child: FocusScope(
         node: _contentFocusNode,
@@ -1165,7 +1491,7 @@ class AppShellState extends ConsumerState<AppShell>
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          _BackIntent: _BackAction(_handleBackPress),
+          _BackIntent: _BackAction(_handleShortcutBack),
           _MenuIntent: _MenuAction(_activateSidebar),
         },
         child: Focus(
@@ -1210,12 +1536,23 @@ class AppShellState extends ConsumerState<AppShell>
 
     final viewerId = _appState.activeViewer?.ulid ?? '';
     final recordingChannelIds = ref.watch(recordingChannelIdsProvider);
+    final suppressBrowsingComposition =
+        _playerNativePlaneActive && !_playerHasFailed;
 
     return NotificationToastOverlay(
       key: _toastKey,
       child: Stack(
         children: [
-          backAwareShell,
+          IgnorePointer(
+            ignoring: suppressBrowsingComposition,
+            child: ExcludeSemantics(
+              excluding: suppressBrowsingComposition,
+              child: Opacity(
+                opacity: suppressBrowsingComposition ? 0 : 1,
+                child: backAwareShell,
+              ),
+            ),
+          ),
           Positioned.fill(
             child:
                 widget.playerRouteBuilder?.call(args) ??
@@ -1223,18 +1560,27 @@ class AppShellState extends ConsumerState<AppShell>
                   key: ValueKey(_playerSessionId),
                   args: args,
                   orchestrator: orch,
+                  isHandheld:
+                      widget.deviceType == DeviceType.phone ||
+                      widget.deviceType == DeviceType.tablet,
                   epgService: _appState.epgService,
                   xtreamService: _appState.xtreamService,
                   comskipSettings: _appState.comskipSettings,
+                  hasDvrFeature: _appState.hasDvrFeature,
                   viewerId: viewerId,
+                  viewSettingsService: _appState.viewSettingsService,
                   onNextChannel: args.type == 'live' ? _openNextChannel : null,
                   onPreviousChannel: args.type == 'live'
                       ? _openPreviousChannel
+                      : null,
+                  onReplaceItem: args.type == 'series'
+                      ? _openPlayerDirect
                       : null,
                   onRecordProgram:
                       args.type == 'live' && _appState.hasDvrFeature
                       ? _handleRecordButtonTap
                       : null,
+                  onTrackDialogVisibilityChanged: _setPlayerModalDialogVisible,
                   isRecordingCurrentChannel:
                       args.type == 'live' &&
                       recordingChannelIds.contains(args.streamId),
@@ -1360,7 +1706,8 @@ class AppShellState extends ConsumerState<AppShell>
                   },
                   traktService: _appState.traktService,
                   onPlaybackFailure: () {
-                    _playerHasFailed = true;
+                    if (!mounted) return;
+                    setState(() => _playerHasFailed = true);
                     unawaited(_systemUiPolicy.applyBrowsing());
                   },
                   onClose: _closePlayer,
@@ -1395,7 +1742,7 @@ class AppShellState extends ConsumerState<AppShell>
 
           // The sidebar physically slides off-screen to the left and the
           // content pane's left edge animates out to meet it, both on the
-          // same AnimatedPositioned duration/curve — timed to start the
+          // same AnimatedPositioned duration/curve - timed to start the
           // instant `_pushDetail(..., fullScreen: true)` flips this state
           // (before the route push/pop even begins), so this motion and the
           // detail route's own slide transition (_slidePage in
@@ -1913,8 +2260,10 @@ class _HomeScreen extends ConsumerStatefulWidget {
     required this.onVodSelect,
     required this.onSeriesSelect,
     required this.onProgressSelect,
+    required this.onContinueWatchingMore,
     required this.onRecordingsSelect,
     required this.onAioStreamsItemSelect,
+    this.useSidebarLayout = false,
     this.onSidebarActivate,
   });
 
@@ -1923,8 +2272,10 @@ class _HomeScreen extends ConsumerStatefulWidget {
   final void Function(VodItem) onVodSelect;
   final void Function(Series) onSeriesSelect;
   final void Function(Progress) onProgressSelect;
+  final VoidCallback onContinueWatchingMore;
   final VoidCallback onRecordingsSelect;
   final void Function(AIOStreamsItem, int integrationId) onAioStreamsItemSelect;
+  final bool useSidebarLayout;
   final VoidCallback? onSidebarActivate;
 
   @override
@@ -2003,16 +2354,33 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     }
 
     final l = AppLocalizations.of(context);
-    final continueWatchingItems = progressList
-        .where(_isResumeEligible)
-        .map((p) => _resumePreviewItem(p, vodItems, seriesList))
-        .whereType<MediaPreviewItem>()
-        .toList(growable: false);
+    final continueWatchingItems = continueWatchingPreviewItems(
+      context,
+      progressList: progressList,
+      vodItems: vodItems,
+      seriesList: seriesList,
+      onProgressSelect: widget.onProgressSelect,
+    );
+    const continueWatchingRowLimit = 4;
+    final continueWatchingOverflow =
+        continueWatchingItems.length - continueWatchingRowLimit;
+    final continueWatchingRowItems = [
+      ...continueWatchingItems.take(continueWatchingRowLimit),
+      if (continueWatchingOverflow > 0)
+        MediaPreviewItem(
+          title: l.homeContinueWatchingSeeAll,
+          subtitle: l.homeContinueWatchingMoreCount(continueWatchingOverflow),
+          fallbackIcon: Icons.history,
+          onTap: widget.onContinueWatchingMore,
+        ),
+    ];
     final continueWatchingSection = MediaPreviewSection(
       title: l.homeContinueWatching,
+      titleIcon: Icons.history,
       emptyLabel: l.homeNoContinueWatching,
-      items: continueWatchingItems,
+      items: continueWatchingRowItems,
       landscapeStyle: true,
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final favoriteChannels = channels
@@ -2045,12 +2413,15 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
 
     final liveSection = MediaPreviewSection(
       title: favoriteChannels.isEmpty ? l.navLiveTv : l.homeFavoriteChannels,
+      titleIcon: favoriteChannels.isEmpty ? Icons.live_tv : Icons.star,
       emptyLabel: l.homeNoLiveTv,
       items: liveSectionChannels.map(liveChannelItem).toList(growable: false),
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final moviesSection = MediaPreviewSection(
       title: l.navVod,
+      titleIcon: Icons.movie,
       emptyLabel: l.homeNoMovies,
       posterStyle: true,
       items: vodItems
@@ -2058,7 +2429,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             (item) => MediaPreviewItem(
               title: item.name,
               imageUrl: item.logoUrl,
-              subtitle: item.rating == null ? l.homeMovie : '★ ${item.rating}',
+              subtitle: item.year ?? l.homeMovie,
+              ratingLabel: item.rating == null ? null : '★ ${item.rating}',
               fallbackIcon: Icons.movie,
               fallbackTitle: item.name,
               isFavorite: _favoriteVodIds.contains(item.id),
@@ -2070,10 +2442,12 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             ),
           )
           .toList(growable: false),
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final seriesSection = MediaPreviewSection(
       title: l.navSeries,
+      titleIcon: Icons.tv,
       emptyLabel: l.homeNoSeries,
       posterStyle: true,
       items: seriesList
@@ -2081,9 +2455,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             (series) => MediaPreviewItem(
               title: series.name,
               imageUrl: series.coverUrl,
-              subtitle: series.rating == null
-                  ? l.navSeries
-                  : '★ ${series.rating}',
+              subtitle: series.year ?? l.navSeries,
+              ratingLabel: series.rating == null ? null : '★ ${series.rating}',
               fallbackIcon: Icons.tv,
               fallbackTitle: series.name,
               isFavorite: _favoriteSeriesIds.contains(series.id),
@@ -2095,10 +2468,12 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             ),
           )
           .toList(growable: false),
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final recordingsSection = MediaPreviewSection(
       title: 'DVR',
+      titleIcon: Icons.video_library,
       emptyLabel: 'No DVR recordings available',
       items: [
         MediaPreviewItem(
@@ -2110,6 +2485,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
           onTap: () => widget.onRecordingsSelect(),
         ),
       ],
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     return Scaffold(
@@ -2128,141 +2504,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
         ],
       ),
     );
-  }
-
-  bool _isResumeEligible(Progress progress) {
-    return progress.contentType != ContentType.live &&
-        progress.positionSeconds >= 30 &&
-        !progress.completed;
-  }
-
-  MediaPreviewItem? _resumePreviewItem(
-    Progress progress,
-    List<VodItem> vodItems,
-    List<Series> seriesList,
-  ) {
-    if (progress.contentType == ContentType.vod) {
-      if (progress.title != null) {
-        final hasBackdrop = progress.backdropUrl != null;
-        final fraction =
-            (progress.durationSeconds != null && progress.durationSeconds! > 0)
-            ? (progress.positionSeconds / progress.durationSeconds!).clamp(
-                0.0,
-                1.0,
-              )
-            : null;
-        final plot = progress.plot;
-        final subtitle = plot != null
-            ? (plot.length > 120 ? '${plot.substring(0, 117)}…' : plot)
-            : null;
-        final vodFallbackLogo = (!hasBackdrop && progress.thumbnailUrl == null)
-            ? vodItems
-                  .firstWhereOrNull((v) => v.id == progress.streamId)
-                  ?.logoUrl
-            : null;
-        return MediaPreviewItem(
-          title: progress.title!,
-          subtitle: subtitle,
-          imageUrl:
-              progress.backdropUrl ?? progress.thumbnailUrl ?? vodFallbackLogo,
-          fallbackIcon: Icons.movie,
-          imageFit: hasBackdrop ? BoxFit.cover : BoxFit.contain,
-          imageBackgroundColor: hasBackdrop ? null : Colors.black,
-          fallbackTitle: progress.title,
-          progressFraction: fraction,
-          overlayLabel: progress.year,
-          overlayBadges: <String>[
-            if (progress.rating != null) '★ ${progress.rating}',
-            if (progress.runtime != null) progress.runtime!,
-          ],
-          onTap: () => widget.onProgressSelect(progress),
-        );
-      }
-      final item = vodItems.firstWhereOrNull(
-        (item) => item.id == progress.streamId,
-      );
-      if (item == null) return null;
-      final fraction =
-          (progress.durationSeconds != null && progress.durationSeconds! > 0)
-          ? (progress.positionSeconds / progress.durationSeconds!).clamp(
-              0.0,
-              1.0,
-            )
-          : null;
-      return MediaPreviewItem(
-        title: item.name,
-        imageUrl: item.logoUrl,
-        fallbackIcon: Icons.movie,
-        imageFit: BoxFit.contain,
-        imageBackgroundColor: Colors.black,
-        fallbackTitle: item.name,
-        progressFraction: fraction,
-        overlayBadges: <String>[
-          if (item.rating != null) '★ ${item.rating!.toStringAsFixed(1)}',
-        ],
-        onTap: () => widget.onProgressSelect(progress),
-      );
-    }
-
-    if (progress.contentType == ContentType.episode) {
-      if (progress.seriesId != null &&
-          (progress.seriesName != null || progress.title != null)) {
-        final displayTitle = progress.seriesName ?? progress.title!;
-        final fraction =
-            (progress.durationSeconds != null && progress.durationSeconds! > 0)
-            ? (progress.positionSeconds / progress.durationSeconds!).clamp(
-                0.0,
-                1.0,
-              )
-            : null;
-        final episodeSubtitle =
-            progress.episodeTitle ??
-            (progress.seasonNumber != null
-                ? 'Season ${progress.seasonNumber}'
-                : null);
-        final seriesFallback = seriesList.firstWhereOrNull(
-          (s) => s.id == progress.seriesId,
-        );
-        return MediaPreviewItem(
-          title: displayTitle,
-          subtitle: episodeSubtitle,
-          imageUrl:
-              progress.thumbnailUrl ??
-              progress.backdropUrl ??
-              seriesFallback?.backdropUrl ??
-              seriesFallback?.coverUrl,
-          fallbackIcon: Icons.tv,
-          fallbackTitle: displayTitle,
-          progressFraction: fraction,
-          overlayLabel: progress.seasonNumber != null
-              ? 'S${progress.seasonNumber}${progress.episodeNumber != null ? ' E${progress.episodeNumber}' : ''}'
-              : null,
-          overlayBadges: <String>[
-            if (progress.rating != null) '★ ${progress.rating}',
-            if (progress.runtime != null) progress.runtime!,
-          ],
-          onTap: () => widget.onProgressSelect(progress),
-        );
-      }
-      if (progress.seriesId != null) {
-        final series = seriesList.firstWhereOrNull(
-          (series) => series.id == progress.seriesId,
-        );
-        if (series == null) return null;
-        return MediaPreviewItem(
-          title: series.name,
-          imageUrl: series.backdropUrl ?? series.coverUrl,
-          subtitle: progress.seasonNumber != null
-              ? AppLocalizations.of(context).homeSeason(progress.seasonNumber!)
-              : AppLocalizations.of(context).navSeries,
-          fallbackIcon: Icons.tv,
-          fallbackTitle: series.name,
-          onTap: () => widget.onProgressSelect(progress),
-        );
-      }
-    }
-
-    return null;
   }
 }
 

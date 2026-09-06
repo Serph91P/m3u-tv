@@ -17,15 +17,27 @@ class TrackSelector extends StatelessWidget {
     required this.selectedSubtitleTrackId,
     required this.onAudioTrackSelected,
     required this.onSubtitleTrackSelected,
+    this.onDialogVisibilityChanged,
     this.isAudioTrackSelectionKnown = false,
     this.isSubtitleTrackSelectionKnown = false,
+    this.supportsHdrToggle = false,
+    this.hdrEnabled = true,
+    this.onHdrEnabledChanged,
     super.key,
   });
 
-  static const double buttonWidth = 136;
   static const double buttonHeight = 48;
-  static const double buttonGap = 6;
-  static const double controlsWidth = buttonWidth * 2 + buttonGap;
+  // Halved from 6 -- the perceived gap between Audio/Subtitles used to be
+  // dominated by each button sitting centered inside its own fixed-width
+  // cell (see the old `buttonWidth`), not by this constant, so shrinking it
+  // alone wouldn't have done much. Removing the per-button cell (below)
+  // fixed the bulk of it; this still halves the deliberate gap on top.
+  static const double buttonGap = 3;
+  // Rough reservation for [PlaybackControls]' non-compact layout math and
+  // its `Align(centerRight)` box -- no longer the exact width of the button
+  // row now that each button sizes to its own content instead of a fixed
+  // cell, but only needs to be a safe upper bound.
+  static const double controlsWidth = 300;
 
   /// Available audio tracks.
   final List<PlaybackTrack> audioTracks;
@@ -48,45 +60,68 @@ class TrackSelector extends StatelessWidget {
 
   /// Called when the user selects a subtitle track.
   final ValueChanged<String?> onSubtitleTrackSelected;
+  final ValueChanged<bool>? onDialogVisibilityChanged;
+
+  /// Whether the active backend can toggle HDR playback (currently only
+  /// `DesktopLibmpvBackend` on Linux/Windows -- see [HdrToggleProvider]).
+  final bool supportsHdrToggle;
+
+  /// Current HDR setting, only meaningful when [supportsHdrToggle] is true.
+  final bool hdrEnabled;
+
+  /// Called when the user taps the HDR button to flip [hdrEnabled].
+  final ValueChanged<bool>? onHdrEnabledChanged;
 
   @override
   Widget build(BuildContext context) {
+    // Each button now sizes to its own content (height pinned, width
+    // intrinsic) instead of being centered inside a fixed-width cell -- the
+    // old fixed cell was wide enough to fit "Subtitles" without shrinking,
+    // which left "Audio" (a shorter label) surrounded by dead space on
+    // both sides. That dead space, not `buttonGap` itself, was the bulk of
+    // the visually "large gap" between the two buttons.
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (supportsHdrToggle)
+          Padding(
+            padding: EdgeInsets.only(
+              right: audioTracks.isNotEmpty || subtitleTracks.isNotEmpty
+                  ? buttonGap
+                  : 0,
+            ),
+            child: SizedBox(
+              height: buttonHeight,
+              child: AppButton(
+                icon: Icons.hdr_on,
+                label: hdrEnabled ? 'HDR On' : 'HDR Off',
+                onPressed: () => onHdrEnabledChanged?.call(!hdrEnabled),
+              ),
+            ),
+          ),
         if (audioTracks.isNotEmpty)
           SizedBox(
-            width: buttonWidth,
             height: buttonHeight,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: AppButton(
-                icon: Icons.audiotrack,
-                label: 'Audio',
-                onPressed: () => _showAudioDialog(context),
-              ),
+            child: AppButton(
+              icon: Icons.audiotrack,
+              label: 'Audio',
+              onPressed: () => _showAudioDialog(context),
             ),
           ),
         if (audioTracks.isNotEmpty && subtitleTracks.isNotEmpty)
           const SizedBox(width: buttonGap),
         if (subtitleTracks.isNotEmpty)
           SizedBox(
-            width: buttonWidth,
             height: buttonHeight,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: AppButton(
-                icon: Icons.subtitles,
-                label: 'Subtitles',
-                onPressed: () => _showSubtitleDialog(context),
-              ),
+            child: AppButton(
+              icon: Icons.subtitles,
+              label: 'Subtitles',
+              onPressed: () => _showSubtitleDialog(context),
             ),
           ),
       ],
     );
-    // Individual buttons already shrink their own label via FittedBox, but
-    // the row's total width (2 * buttonWidth + gap) is otherwise fixed —
-    // wrapping the whole row lets it scale down as a unit instead of
+    // Wrapping the whole row lets it scale down as a unit instead of
     // overflowing off the edge of narrow/portrait screens.
     return FittedBox(
       fit: BoxFit.scaleDown,
@@ -100,6 +135,7 @@ class TrackSelector extends StatelessWidget {
       : selectedAudioTrackId ?? audioTracks.firstOrNull?.id;
 
   void _showAudioDialog(BuildContext context) {
+    onDialogVisibilityChanged?.call(true);
     unawaited(
       showDialog<void>(
         context: context,
@@ -130,11 +166,12 @@ class TrackSelector extends StatelessWidget {
             ),
           );
         },
-      ),
+      ).whenComplete(() => onDialogVisibilityChanged?.call(false)),
     );
   }
 
   void _showSubtitleDialog(BuildContext context) {
+    onDialogVisibilityChanged?.call(true);
     unawaited(
       showDialog<void>(
         context: context,
@@ -167,7 +204,7 @@ class TrackSelector extends StatelessWidget {
             ),
           );
         },
-      ),
+      ).whenComplete(() => onDialogVisibilityChanged?.call(false)),
     );
   }
 }

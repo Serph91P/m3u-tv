@@ -2,7 +2,9 @@ package dev.sparkison.tv
 
 import android.content.Context
 import android.net.Uri
-import android.view.Surface
+import android.os.Handler
+import android.os.Looper
+import android.view.SurfaceView
 import androidx.annotation.OptIn
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -27,7 +29,6 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.view.TextureRegistry
 
 /**
  * Media3/ExoPlayer-based playback plugin for Android.
@@ -38,6 +39,24 @@ import io.flutter.view.TextureRegistry
  * than held in a single field -- this lets Multiview run several concurrent
  * ExoPlayer instances over the one channel pair without any registration
  * changes. Mirrors the tvOS AvKitPlaybackPlugin.swift multi-instance shape.
+ *
+ * Renders into a `SurfaceView` hosted by a Flutter `PlatformView`
+ * (`m3u_tv/android_exo_view`, see Media3PlatformView.kt) rather than a
+ * Flutter `SurfaceProducer` texture -- see Media3PlatformView.kt's header
+ * comment for why a real window-attached surface is required for correct
+ * HDR rendering. The `SurfaceView` is created by Flutter (asynchronously,
+ * on its own schedule) and registered via [attachSurfaceView]; `load` calls
+ * that arrive first wait for it via [waitForSurfaceView], mirroring
+ * MpvPlayerPlugin.kt's `waitForCore`.
+ *
+ * All ExoPlayer creation/control here runs on Flutter's platform (main/UI)
+ * thread, the default `MethodChannel` dispatch thread -- an attempt to move
+ * this to a dedicated background thread via `ExoPlayer.Builder.setLooper`
+ * (to fix a real main-thread Choreographer-skipped-frames jank on `load`)
+ * caused a black screen on real Shield hardware instead (HDR display-mode
+ * switching still fired, so frames were reaching SurfaceFlinger, but nothing
+ * rendered) -- reverted pending a correctly-targeted fix backed by real
+ * diagnostic evidence rather than another blind attempt.
  */
 class Media3PlaybackPlugin(
     private val context: Context,
@@ -45,14 +64,48 @@ class Media3PlaybackPlugin(
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler, DefaultLifecycleObserver {
     private val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
-    private val textures = flutterEngine.renderer
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var events: EventChannel.EventSink? = null
     private val states = mutableMapOf<String, PlayerState>()
+    private val surfaceViews = mutableMapOf<String, SurfaceView>()
 
     init {
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+    }
+
+    /**
+     * Creates (or returns the existing) `SurfaceView` for [playerId],
+     * called synchronously by [Media3PlatformView] when Flutter creates the
+     * platform view. If a player is already loaded for this id (the view
+     * was torn down and recreated under a live player, e.g. a Multiview
+     * tile relayout), reattaches it immediately.
+     */
+    fun attachSurfaceView(playerId: String, viewContext: Context): SurfaceView {
+        val surfaceView = SurfaceView(viewContext)
+        surfaceViews[playerId] = surfaceView
+        states[playerId]?.player?.setVideoSurfaceView(surfaceView)
+        return surfaceView
+    }
+
+    fun detachSurfaceView(playerId: String, surfaceView: SurfaceView) {
+        if (surfaceViews[playerId] === surfaceView) {
+            surfaceViews.remove(playerId)
+        }
+    }
+
+    private fun waitForSurfaceView(playerId: String, attemptsRemaining: Int, completion: (SurfaceView?) -> Unit) {
+        val existing = surfaceViews[playerId]
+        if (existing != null) {
+            completion(existing)
+            return
+        }
+        if (attemptsRemaining <= 0) {
+            completion(null)
+            return
+        }
+        mainHandler.postDelayed({ waitForSurfaceView(playerId, attemptsRemaining - 1, completion) }, 20)
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -63,8 +116,21 @@ class Media3PlaybackPlugin(
             when (call.method) {
                 "probe" -> result.success(mapOf("backend" to "media3", "inAppOnly" to true, "externalIntents" to false))
                 "load" -> {
-                    load(playerId, arguments ?: emptyMap())
-                    result.success(mapOf("ok" to true, "textureId" to states[playerId]?.textureId, "backend" to "media3"))
+                    val loadArguments = arguments ?: emptyMap()
+                    waitForSurfaceView(playerId, attemptsRemaining = 100) { surfaceView ->
+                        if (surfaceView == null) {
+                            result.error("android-media3-state", "No video surface attached for $playerId", null)
+                            return@waitForSurfaceView
+                        }
+                        try {
+                            load(playerId, loadArguments, surfaceView)
+                            result.success(mapOf("ok" to true, "backend" to "media3"))
+                        } catch (error: IllegalStateException) {
+                            result.error("android-media3-state", error.message, null)
+                        } catch (error: RuntimeException) {
+                            result.error("android-media3-runtime", error.message, null)
+                        }
+                    }
                 }
                 "play" -> {
                     requirePlayer(playerId).play()
@@ -145,7 +211,7 @@ class Media3PlaybackPlugin(
     }
 
     @OptIn(UnstableApi::class)
-    private fun load(playerId: String, arguments: Map<String, Any?>) {
+    private fun load(playerId: String, arguments: Map<String, Any?>, surfaceView: SurfaceView) {
         releasePlayer(playerId)
 
         val source = arguments["source"] as? Map<*, *> ?: emptyMap<String, Any?>()
@@ -162,12 +228,6 @@ class Media3PlaybackPlugin(
         val startPositionMs = (source["startPositionMs"] as? Number)?.toLong() ?: 0L
         val handleAudioFocus = arguments["handleAudioFocus"] as? Boolean ?: true
 
-        // SurfaceProducer works correctly with Flutter's Impeller renderer.
-        // SurfaceTexture has a known black-screen bug with Impeller on Android.
-        val surfaceProducer = textures.createSurfaceProducer()
-        surfaceProducer.setSize(1920, 1080)
-        val surface = surfaceProducer.getSurface()
-
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
             .setAllowCrossProtocolRedirects(true)
@@ -182,21 +242,20 @@ class Media3PlaybackPlugin(
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
             .setAudioAttributes(audioAttributes, handleAudioFocus)
             .build()
+        val subtitleConfigurations = buildSubtitleConfigurations(source["externalSubtitles"])
         val state = PlayerState(
             playerId = playerId,
             player = player,
-            surfaceProducer = surfaceProducer,
-            surface = surface,
-            textureId = surfaceProducer.id(),
             uri = uri,
+            subtitleConfigurations = subtitleConfigurations,
         )
         state.mediaSession = MediaSession.Builder(context, player).setId(playerId).build()
         states[playerId] = state
 
-        player.setVideoSurface(surface)
+        player.setVideoSurfaceView(surfaceView)
         player.addListener(Media3Listener(playerId))
-        player.setMediaItem(buildMediaItem(uri, source), startPositionMs)
-        emit(playerId, "buffering", uri = uri, positionMs = startPositionMs, textureId = state.textureId)
+        player.setMediaItem(buildMediaItem(uri, source, subtitleConfigurations), startPositionMs)
+        emit(playerId, "buffering", uri = uri, positionMs = startPositionMs)
         player.prepare()
         player.play()
     }
@@ -207,9 +266,15 @@ class Media3PlaybackPlugin(
     private fun releasePlayer(playerId: String) {
         val state = states.remove(playerId) ?: return
         state.mediaSession?.release()
+        // Detach the surface before release() instead of letting release()
+        // discover and tear it down itself: ACodec's disconnectFromSurface
+        // then folds into the same synchronous call as decoder/renderer
+        // teardown, and on this NVIDIA decoder that combined path is what
+        // shows up as multi-second main-thread Davey frames right at
+        // teardown (see Media3PlaybackPlugin's class doc for why release()
+        // must stay on the main thread rather than move off it).
+        state.player.clearVideoSurfaceView(surfaceViews[playerId])
         state.player.release()
-        state.surface.release()
-        state.surfaceProducer.release()
         emit(playerId, "disposed")
     }
 
@@ -219,7 +284,6 @@ class Media3PlaybackPlugin(
         uri: String? = null,
         positionMs: Long? = null,
         durationMs: Long? = null,
-        textureId: Long? = null,
         videoAspectRatio: Double? = null,
         audioTracks: List<Map<String, Any?>>? = null,
         subtitleTracks: List<Map<String, Any?>>? = null,
@@ -235,7 +299,6 @@ class Media3PlaybackPlugin(
         if (uri != null) event["uri"] = uri
         if (positionMs != null) event["positionMs"] = positionMs
         if (durationMs != null) event["durationMs"] = durationMs
-        if (textureId != null) event["textureId"] = textureId
         if (videoAspectRatio != null) event["videoAspectRatio"] = videoAspectRatio
         if (audioTracks != null) event["audioTracks"] = audioTracks
         if (subtitleTracks != null) event["subtitleTracks"] = subtitleTracks
@@ -337,7 +400,6 @@ class Media3PlaybackPlugin(
             val state = states[playerId] ?: return
             if (videoSize.width > 0 && videoSize.height > 0) {
                 if (state.lastVideoWidth != videoSize.width || state.lastVideoHeight != videoSize.height) {
-                    state.surfaceProducer.setSize(videoSize.width, videoSize.height)
                     state.lastVideoWidth = videoSize.width
                     state.lastVideoHeight = videoSize.height
                     val aspectRatio = (videoSize.width * videoSize.pixelWidthHeightRatio) / videoSize.height
@@ -378,7 +440,7 @@ class Media3PlaybackPlugin(
         override fun onPlayerError(error: PlaybackException) {
             val state = states[playerId]
             if (state != null && state.retryAsTs(error)) {
-                emit(playerId, "buffering", uri = state.uri, positionMs = state.player.currentPosition, textureId = state.textureId)
+                emit(playerId, "buffering", uri = state.uri, positionMs = state.player.currentPosition)
                 state.player.prepare()
                 return
             }
@@ -397,10 +459,8 @@ class Media3PlaybackPlugin(
     private data class PlayerState(
         val playerId: String,
         val player: ExoPlayer,
-        val surfaceProducer: TextureRegistry.SurfaceProducer,
-        val surface: Surface,
-        val textureId: Long,
         val uri: String,
+        val subtitleConfigurations: List<MediaItem.SubtitleConfiguration> = emptyList(),
         var mediaSession: MediaSession? = null,
         var retriedHlsAsProgressive: Boolean = false,
         var lastVideoWidth: Int = 0,
@@ -412,16 +472,22 @@ class Media3PlaybackPlugin(
             }
 
             retriedHlsAsProgressive = true
-            val mediaItem = MediaItem.Builder()
+            val builder = MediaItem.Builder()
                 .setUri(Uri.parse(uri))
                 .setMimeType(MimeTypes.VIDEO_MP2T)
-                .build()
-            player.setMediaItem(mediaItem, player.currentPosition)
+            if (subtitleConfigurations.isNotEmpty()) {
+                builder.setSubtitleConfigurations(subtitleConfigurations)
+            }
+            player.setMediaItem(builder.build(), player.currentPosition)
             return true
         }
     }
 
-    private fun buildMediaItem(uri: String, source: Map<*, *>): MediaItem {
+    private fun buildMediaItem(
+        uri: String,
+        source: Map<*, *>,
+        subtitleConfigurations: List<MediaItem.SubtitleConfiguration>,
+    ): MediaItem {
         val isLive = source["isLive"] as? Boolean ?: false
         val metadata = source["metadata"] as? Map<*, *>
         val containerExtension = metadata?.get("container_extension") as? String
@@ -434,10 +500,41 @@ class Media3PlaybackPlugin(
             else -> null
         }
 
-        return if (mimeType != null) {
-            MediaItem.Builder().setUri(Uri.parse(uri)).setMimeType(mimeType).build()
-        } else {
-            MediaItem.fromUri(Uri.parse(uri))
+        val builder = MediaItem.Builder().setUri(Uri.parse(uri))
+        if (mimeType != null) {
+            builder.setMimeType(mimeType)
+        }
+        if (subtitleConfigurations.isNotEmpty()) {
+            builder.setSubtitleConfigurations(subtitleConfigurations)
+        }
+        return builder.build()
+    }
+
+    private fun buildSubtitleConfigurations(raw: Any?): List<MediaItem.SubtitleConfiguration> {
+        val entries = raw as? List<*> ?: return emptyList()
+        return entries.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val subtitleUri = map["uri"] as? String ?: return@mapNotNull null
+            val language = map["language"] as? String
+            val label = map["title"] as? String
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUri))
+                .setMimeType(subtitleMimeTypeFromUri(subtitleUri))
+                .apply {
+                    if (language != null) setLanguage(language)
+                    if (label != null) setLabel(label)
+                }
+                .setSelectionFlags(0)
+                .build()
+        }
+    }
+
+    private fun subtitleMimeTypeFromUri(uri: String): String {
+        val path = Uri.parse(uri).path ?: uri
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "vtt" -> MimeTypes.TEXT_VTT
+            "ttml", "dfxp", "xml" -> MimeTypes.APPLICATION_TTML
+            "ssa", "ass" -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.APPLICATION_SUBRIP
         }
     }
 

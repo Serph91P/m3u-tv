@@ -10,6 +10,12 @@ import UIKit
 /// AppleAvKitAdapter can drive either platform through the same
 /// MethodChannel + EventChannel contract.
 ///
+/// Every call after "probe" carries a Dart-assigned `playerId` string, and
+/// player state is keyed by it (`states[playerId]`) rather than held in a
+/// single field -- this lets Multiview run several concurrent AVPlayers over
+/// the one channel pair without any AppDelegate/registration changes.
+/// Mirrors tvos/Runner/AvKitPlaybackPlugin.swift.
+///
 /// Channel names:
 ///   Method:  m3u_tv/apple_avkit
 ///   Events:  m3u_tv/apple_avkit/events
@@ -19,11 +25,26 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
 
     private let textureRegistry: FlutterTextureRegistry
     private var eventSink: FlutterEventSink?
-    private var state: _PlayerState?
+    private var states: [String: _PlayerState] = [:]
 
     init(textureRegistry: FlutterTextureRegistry) {
         self.textureRegistry = textureRegistry
         super.init()
+        configureAudioSession()
+    }
+
+    // Multiview runs several concurrent AVPlayers sharing one AVAudioSession.
+    // Without an explicit category, each player.play() call can implicitly
+    // (re)configure/reactivate the session, racing the other tiles for it and
+    // causing audio glitching/desync. Setting this once up front avoids that
+    // renegotiation.
+    private func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            // Non-fatal -- AVPlayer still plays using the session's default config.
+        }
     }
 
     // MARK: FlutterStreamHandler
@@ -41,18 +62,21 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
     // MARK: MethodChannel handler
 
     func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let args = call.arguments as? [String: Any]
+        let playerId = (args?["playerId"] as? String) ?? "default"
+
         switch call.method {
         case "probe":
             result(["backend": "avkit", "inAppOnly": true, "externalIntents": false])
 
         case "load":
-            guard let args = call.arguments as? [String: Any],
+            guard let args = args,
                   let source = args["source"] as? [String: Any],
                   let uri = source["uri"] as? String else {
                 result(FlutterError(code: "avkit-load-missing-uri", message: "Missing source uri", details: nil))
                 return
             }
-            releasePlayer()
+            releasePlayer(playerId: playerId)
 
             let headers = source["headers"] as? [String: String] ?? [:]
             let userAgent = source["userAgent"] as? String
@@ -81,9 +105,13 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
             let item = AVPlayerItem(asset: asset)
             let player = AVPlayer(playerItem: item)
 
-            // Pixel buffer output for FlutterTexture
+            // Pixel buffer output for FlutterTexture. Metal compatibility must be
+            // requested explicitly -- without it CoreVideo hands back buffers
+            // FlutterDarwinExternalTextureMetal can't wrap, failing every frame
+            // with CVReturn -6660 (kCVReturnPixelBufferNotMetalCompatible).
             let pixelBufferAttributes: [String: Any] = [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferMetalCompatibilityKey as String: true,
             ]
             let videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: pixelBufferAttributes)
             item.add(videoOutput)
@@ -96,59 +124,68 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
             avTexture.startDisplayLink()
 
             let playerState = _PlayerState(
+                playerId: playerId,
                 player: player,
                 item: item,
                 texture: avTexture,
                 textureId: textureId,
                 uri: uri
             )
-            state = playerState
+            states[playerId] = playerState
             playerState.addObservers(plugin: self)
 
             if startMs > 0 {
                 let startTime = CMTime(value: CMTimeValue(startMs), timescale: 1000)
                 player.seek(to: startTime)
             }
-            emit(type: "buffering", textureId: textureId, uri: uri)
+            emit(playerId: playerId, type: "buffering", textureId: textureId, uri: uri)
             player.play()
 
             result(["ok": true, "textureId": textureId, "backend": "avkit"])
 
         case "play":
-            state?.player.play()
+            states[playerId]?.player.play()
             result(nil)
 
         case "pause":
-            state?.player.pause()
+            states[playerId]?.player.pause()
             result(nil)
 
         case "seek":
-            guard let args = call.arguments as? [String: Any],
-                  let posMs = (args["positionMs"] as? NSNumber)?.int64Value else {
+            guard let posMs = (args?["positionMs"] as? NSNumber)?.int64Value else {
                 result(FlutterError(code: "avkit-seek-missing", message: "Missing positionMs", details: nil))
                 return
             }
             let time = CMTime(value: CMTimeValue(posMs), timescale: 1000)
-            state?.player.seek(to: time)
+            states[playerId]?.player.seek(to: time)
             result(nil)
 
         case "stop":
-            state?.player.pause()
-            emit(type: "stopped")
+            states[playerId]?.player.pause()
+            emit(playerId: playerId, type: "stopped")
+            result(nil)
+
+        case "setVolume":
+            let volume = (args?["volume"] as? NSNumber)?.floatValue ?? 1
+            states[playerId]?.player.volume = volume
+            // Volume alone only attenuates post-decode gain -- a "muted" tile
+            // (e.g. an unfocused Multiview tile) keeps decoding and rendering
+            // audio, competing with other concurrent AVPlayers for the shared
+            // hardware audio route. Disabling the audio track stops decode
+            // entirely so muted tiles no longer contend for that resource.
+            setAudioTracksEnabled(playerId: playerId, enabled: volume > 0)
             result(nil)
 
         case "setAudioTrack":
-            let args = call.arguments as? [String: Any]
-            selectTrack(characteristic: .audible, trackId: args?["trackId"] as? String)
+            selectTrack(playerId: playerId, characteristic: .audible, trackId: args?["trackId"] as? String)
             result(nil)
 
         case "setSubtitleTrack":
-            let args = call.arguments as? [String: Any]
-            selectTrack(characteristic: .legible, trackId: args?["trackId"] as? String)
+            selectTrack(playerId: playerId, characteristic: .legible, trackId: args?["trackId"] as? String)
             result(nil)
 
         case "dispose":
-            releasePlayer()
+            releasePlayer(playerId: playerId)
             result(nil)
 
         default:
@@ -158,52 +195,52 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
 
     // MARK: Internal
 
-    func releasePlayer() {
-        guard let s = state else { return }
+    func releasePlayer(playerId: String) {
+        guard let s = states.removeValue(forKey: playerId) else { return }
         s.player.pause()
         s.removeObservers()
         s.texture.stopDisplayLink()
         textureRegistry.unregisterTexture(s.textureId)
-        state = nil
-        emit(type: "disposed")
+        emit(playerId: playerId, type: "disposed")
     }
 
-    fileprivate func handleStatusChange(item: AVPlayerItem) {
-        guard let s = state, s.item === item else { return }
+    fileprivate func handleStatusChange(playerId: String, item: AVPlayerItem) {
+        guard let s = states[playerId], s.item === item else { return }
         switch item.status {
         case .readyToPlay:
-            let posMs = currentPositionMs()
+            let posMs = currentPositionMs(playerId: playerId)
             emit(
+                playerId: playerId,
                 type: s.player.rate > 0 ? "playing" : "ready",
                 positionMs: posMs,
                 videoAspectRatio: videoAspectRatio(for: item),
-                audioTracks: playbackTracks(characteristic: .audible),
-                subtitleTracks: playbackTracks(characteristic: .legible),
-                selectedAudioTrackId: selectedTrackId(characteristic: .audible),
-                selectedSubtitleTrackId: selectedTrackId(characteristic: .legible),
+                audioTracks: playbackTracks(playerId: playerId, characteristic: .audible),
+                subtitleTracks: playbackTracks(playerId: playerId, characteristic: .legible),
+                selectedAudioTrackId: selectedTrackId(playerId: playerId, characteristic: .audible),
+                selectedSubtitleTrackId: selectedTrackId(playerId: playerId, characteristic: .legible),
                 includeSelectedAudioTrackId: true,
                 includeSelectedSubtitleTrackId: true
             )
         case .failed:
             let msg = item.error?.localizedDescription ?? "AVPlayer item failed"
-            emit(type: "error", code: "avkit-item-failed", message: msg, recoverable: true)
+            emit(playerId: playerId, type: "error", code: "avkit-item-failed", message: msg, recoverable: true)
         default:
             break
         }
     }
 
-    fileprivate func handleRateChange() {
-        guard let s = state else { return }
-        let posMs = currentPositionMs()
-        emit(type: s.player.rate > 0 ? "playing" : "ready", positionMs: posMs)
+    fileprivate func handleRateChange(playerId: String) {
+        guard let s = states[playerId] else { return }
+        let posMs = currentPositionMs(playerId: playerId)
+        emit(playerId: playerId, type: s.player.rate > 0 ? "playing" : "ready", positionMs: posMs)
     }
 
-    fileprivate func handlePlaybackEnded() {
-        emit(type: "end", positionMs: currentPositionMs())
+    fileprivate func handlePlaybackEnded(playerId: String) {
+        emit(playerId: playerId, type: "end", positionMs: currentPositionMs(playerId: playerId))
     }
 
-    private func selectTrack(characteristic: AVMediaCharacteristic, trackId: String?) {
-        guard let item = state?.item,
+    private func selectTrack(playerId: String, characteristic: AVMediaCharacteristic, trackId: String?) {
+        guard let item = states[playerId]?.item,
               let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: characteristic) else {
             return
         }
@@ -215,19 +252,20 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
         }
 
         emit(
-            type: state?.player.rate ?? 0 > 0 ? "playing" : "ready",
-            positionMs: currentPositionMs(),
-            audioTracks: playbackTracks(characteristic: .audible),
-            subtitleTracks: playbackTracks(characteristic: .legible),
-            selectedAudioTrackId: selectedTrackId(characteristic: .audible),
-            selectedSubtitleTrackId: selectedTrackId(characteristic: .legible),
+            playerId: playerId,
+            type: (states[playerId]?.player.rate ?? 0) > 0 ? "playing" : "ready",
+            positionMs: currentPositionMs(playerId: playerId),
+            audioTracks: playbackTracks(playerId: playerId, characteristic: .audible),
+            subtitleTracks: playbackTracks(playerId: playerId, characteristic: .legible),
+            selectedAudioTrackId: selectedTrackId(playerId: playerId, characteristic: .audible),
+            selectedSubtitleTrackId: selectedTrackId(playerId: playerId, characteristic: .legible),
             includeSelectedAudioTrackId: true,
             includeSelectedSubtitleTrackId: true
         )
     }
 
-    private func playbackTracks(characteristic: AVMediaCharacteristic) -> [[String: Any?]] {
-        guard let item = state?.item,
+    private func playbackTracks(playerId: String, characteristic: AVMediaCharacteristic) -> [[String: Any?]] {
+        guard let item = states[playerId]?.item,
               let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: characteristic) else {
             return []
         }
@@ -241,8 +279,8 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
         }
     }
 
-    private func selectedTrackId(characteristic: AVMediaCharacteristic) -> String? {
-        guard let item = state?.item,
+    private func selectedTrackId(playerId: String, characteristic: AVMediaCharacteristic) -> String? {
+        guard let item = states[playerId]?.item,
               let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: characteristic),
               let selected = item.selectedMediaOption(in: group),
               let index = group.options.firstIndex(of: selected) else {
@@ -252,14 +290,21 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
         return "\(prefix):\(index)"
     }
 
+    private func setAudioTracksEnabled(playerId: String, enabled: Bool) {
+        guard let item = states[playerId]?.item else { return }
+        for track in item.tracks where track.assetTrack?.mediaType == .audio {
+            track.isEnabled = enabled
+        }
+    }
+
     private func parseTrackIndex(_ trackId: String) -> Int? {
         let parts = trackId.split(separator: ":")
         guard parts.count == 2 else { return nil }
         return Int(parts[1])
     }
 
-    private func currentPositionMs() -> Int64 {
-        guard let player = state?.player else { return 0 }
+    private func currentPositionMs(playerId: String) -> Int64 {
+        guard let player = states[playerId]?.player else { return 0 }
         let seconds = CMTimeGetSeconds(player.currentTime())
         return seconds.isFinite ? Int64(seconds * 1000) : 0
     }
@@ -271,6 +316,7 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
     }
 
     private func emit(
+        playerId: String,
         type: String,
         textureId: Int64? = nil,
         uri: String? = nil,
@@ -286,7 +332,7 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
         message: String? = nil,
         recoverable: Bool = false
     ) {
-        var event: [String: Any] = ["type": type, "backend": "appleAvKit"]
+        var event: [String: Any] = ["type": type, "backend": "appleAvKit", "playerId": playerId]
         if let id = textureId  { event["textureId"]   = id       }
         if let u  = uri         { event["uri"]         = u        }
         if let p  = positionMs  { event["positionMs"]  = p        }
@@ -305,6 +351,7 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
 // MARK: - Player state
 
 private class _PlayerState {
+    let playerId: String
     let player: AVPlayer
     let item: AVPlayerItem
     let texture: _AvKitTexture
@@ -315,7 +362,8 @@ private class _PlayerState {
     private var rateObservation: NSKeyValueObservation?
     private var endObserver: NSObjectProtocol?
 
-    init(player: AVPlayer, item: AVPlayerItem, texture: _AvKitTexture, textureId: Int64, uri: String) {
+    init(playerId: String, player: AVPlayer, item: AVPlayerItem, texture: _AvKitTexture, textureId: Int64, uri: String) {
+        self.playerId  = playerId
         self.player    = player
         self.item      = item
         self.texture   = texture
@@ -324,18 +372,19 @@ private class _PlayerState {
     }
 
     func addObservers(plugin: AvKitPlaybackPlugin) {
+        let id = playerId
         statusObservation = item.observe(\.status, options: [.new]) { [weak plugin] item, _ in
-            plugin?.handleStatusChange(item: item)
+            plugin?.handleStatusChange(playerId: id, item: item)
         }
         rateObservation = player.observe(\.rate, options: [.new]) { [weak plugin] _, _ in
-            plugin?.handleRateChange()
+            plugin?.handleRateChange(playerId: id)
         }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
         ) { [weak plugin] _ in
-            plugin?.handlePlaybackEnded()
+            plugin?.handlePlaybackEnded(playerId: id)
         }
     }
 

@@ -33,7 +33,40 @@
   "disconnect": "Déconnecter",
   "unknown": "Inconnu",
   "admin": "Administrateur",
-  "liveTvSearchHint": "Rechercher dans la Télévision en direct…",
+  "mediaCategoryFilterButton": "Filter",
+  "mediaCategoryFilterScreenTitle": "Categories",
+  "liveTvViewModeList": "List",
+  "liveTvViewModeGrid": "Grid",
+  "liveTvViewModeEpg": "EPG",
+  "liveTvSearchHint": "Rechercher…",
+  "liveTvUpcomingAirings": "Prochainement",
+  "liveTvSearchFilterAll": "Tout",
+  "liveTvOnNow": "En direct",
+  "liveTvAiringUntil": "Jusqu'à {time}",
+  "@liveTvAiringUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "liveTvAiringTomorrow": "Demain {time}",
+  "@liveTvAiringTomorrow": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "liveTvMoreAirings": "{count, plural, =1{+1 autre} other{+{count} autres}}",
+  "@liveTvMoreAirings": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "liveTvShowResultsLoading": "Recherche d'émissions…",
   "liveTvNoChannels": "Aucune chaîne disponible",
   "liveTvAllChannels": "Toutes les chaînes",
   "liveTvFavorites": "★ Favoris",
@@ -45,17 +78,10 @@
   "liveTvRemoveFavorite": "Retirer des favoris",
   "liveTvCatchupShows": "Programmes de rattrapage",
   "catchupShowsEmpty": "Aucun programme de rattrapage disponible",
+  "catchupShowsLoading": "Chargement des programmes de rattrapage…",
   "liveTvAddMultiview": "Ajouter à Multivue",
   "liveTvRemoveMultiview": "Retirer de Multivue",
   "liveTvMultiviewFull": "Multivue est complet (9 flux max)",
-  "liveTvMultiviewCount": "Multivue · {count}",
-  "@liveTvMultiviewCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "multiviewTitle": "Multivue",
   "multiviewEmpty": "Aucun flux - appuyez longuement sur une chaîne dans Live TV et choisissez Ajouter à Multivue",
   "multiviewMove": "Déplacer",
@@ -65,6 +91,17 @@
   "multiviewBackToGrid": "Retour à la grille",
   "multiviewRemove": "Retirer de Multivue",
   "multiviewRetry": "Échec de la lecture - sélectionner pour réessayer",
+  "multiviewManageTitle": "Gérer Multivue",
+  "multiviewClearAll": "Tout retirer",
+  "multiviewRemoveChannel": "Retirer {channel}",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "Fermer",
   "catchupBadgeAvailable": "Catchup disponible",
   "catchupBadgeAvailableDays": "Catchup disponible : {days} j",
   "@catchupBadgeAvailableDays": {
@@ -95,6 +132,8 @@
   },
   "playerStartFromBeginning": "Recommencer depuis le début",
   "playerResume": "Reprendre",
+  "playerClearProgress": "Effacer la progression",
+  "playerProgressCleared": "Progression effacée",
   "playerSkipPreviousTooltip": "Chaîne précédente",
   "playerSkipNextTooltip": "Chaîne suivante",
   "playerNowPlayingMovie": "Film",
@@ -112,12 +151,17 @@
   },
   "playerCommercialSkipped": "Publicité ignorée",
   "playerSkipCommercial": "Ignorer la publicité",
+  "playerSkipCredits": "Ignorer le générique",
+  "playerSkipIntro": "Ignorer l'intro",
+  "playerUpNext": "À suivre",
+  "playerUpNextPlay": "Lire la suite",
+  "playerUpNextDismiss": "Ignorer",
   "searchHint": "Rechercher Télévision en direct, films et séries…",
   "searchSectionLiveTv": "Télévision en direct",
   "searchSectionMovies": "Films",
   "searchSectionSeries": "Série",
-  "vodSearchHint": "Rechercher des films…",
-  "seriesSearchHint": "Rechercher des séries…",
+  "vodSearchHint": "Rechercher…",
+  "seriesSearchHint": "Rechercher…",
   "settingsTitle": "Paramètres",
   "settingsGeneral": "Général",
   "settingsIntegrations": "Intégrations",
@@ -192,7 +236,7 @@
   "pairingScanQr": "Scannez pour ouvrir la page de couplage sur votre téléphone",
   "pairingOpenBrowser": "Ouvrir dans le navigateur",
   "pairingPendingGoTo": "Sur votre téléphone ou ordinateur, allez sur :",
-  "pairingPendingEnterCode": "Puis entrez ce code :",
+  "pairingPendingEnterCode": "Code d'appairage :",
   "pairingPendingWaiting": "En attente d'approbation…",
   "settingsContentCache": "Cache de contenu",
   "settingsCacheSubtitle": "Le contenu en cache se charge instantanément. Les données se rafraîchissent automatiquement en arrière-plan.",
@@ -221,6 +265,17 @@
   "settingsCreate": "Créer",
   "homeContinueWatching": "Reprendre",
   "homeNoContinueWatching": "Rien à reprendre",
+  "homeContinueWatchingSeeAll": "Tout afficher",
+  "homeContinueWatchingMoreCount": "{count, plural, =1{+1 autre} other{+{count} autres}}",
+  "@homeContinueWatchingMoreCount": {
+    "description": "Subtitle on the Continue Watching row's overflow tile, showing how many additional resumable titles exist beyond the ones shown directly in the row.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeUpNext": "À suivre",
   "homeNoLiveTv": "Pas de Télévision en direct disponible",
   "homeFavoriteChannels": "Chaînes favorites",
   "homeNoFavoriteChannels": "Aucune chaîne favorite disponible",
@@ -287,6 +342,51 @@
       }
     }
   },
+  "seriesSeasons": "Saisons",
+  "seriesCast": "Casting",
+  "seriesEpisodeCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
+  "@seriesEpisodeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesPlayEpisode": "Lire S{season}E{episode}",
+  "@seriesPlayEpisode": {
+    "placeholders": {
+      "season": {
+        "type": "int"
+      },
+      "episode": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesResumeEpisode": "Reprendre S{season}E{episode}",
+  "@seriesResumeEpisode": {
+    "placeholders": {
+      "season": {
+        "type": "int"
+      },
+      "episode": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesMarkWatched": "Marquer comme vu",
+  "seriesMarkUnwatched": "Marquer comme non vu",
+  "seriesMarkedWatched": "Marqué comme vu",
+  "seriesMarkedUnwatched": "Marqué comme non vu",
+  "seriesMarkSyncFailed": "Impossible de synchroniser le statut vu",
+  "seriesMarkSeasonPrompt": "Mettre à jour le statut vu pour tous les épisodes de la saison {number} ?",
+  "@seriesMarkSeasonPrompt": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "traktWatchHistory": "Historique de visionnage",
   "traktWatchHistorySubtitle": "Synchronisez votre historique de visionnage avec Trakt pour suivre votre progression sur toutes les applications et services.",
   "traktNotConfigured": "Les identifiants du client Trakt ne sont pas configurés.",
@@ -313,6 +413,29 @@
   "searchTypeToSearch": "Saisir pour rechercher",
   "vodPlayMovie": "Lire le film",
   "vodContinueMovie": "Continuer le film",
+  "vodCast": "Casting",
+  "castShowAll": "Voir tout le casting",
+  "vodTimeLeftMinutes": "{minutes, plural, =1{Il reste 1 min} other{Il reste {minutes} min}}",
+  "@vodTimeLeftMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "vodTimeLeftHoursMinutes": "Il reste {hours} h {minutes} min",
+  "@vodTimeLeftHoursMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Obtenir les sources",
   "aiostreamsLoadingStreams": "Chargement des sources…",
@@ -331,7 +454,7 @@
   "requestsTitle": "Demandes",
   "requestsTabSearch": "Recherche",
   "requestsTabMyRequests": "Mes Demandes",
-  "requestsSearchHint": "Rechercher des films et séries…",
+  "requestsSearchHint": "Rechercher…",
   "requestsNoResults": "Aucun résultat trouvé",
   "requestsAlreadyAvailable": "Déjà disponible",
   "requestsAlreadyRequested": "Déjà demandé",
@@ -534,6 +657,34 @@
     }
   },
   "showSeriesRuleActive": "Règle de série active",
+  "showScheduled": "Programmé",
+  "showBatchRecord": "Enregistrer ({count})",
+  "@showBatchRecord": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleSummary": "{scheduled, plural, =1{1 épisode programmé} other{{scheduled} épisodes programmés}}. {failed, plural, =0{Tous réussis.} =1{1 échec.} other{{failed} échecs.}}",
+  "@showBatchScheduleSummary": {
+    "placeholders": {
+      "scheduled": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleFailures": "Échecs : {titles}",
+  "@showBatchScheduleFailures": {
+    "placeholders": {
+      "titles": {
+        "type": "String"
+      }
+    }
+  },
   "showDetailTitle": "Détails du show",
   "showEpisodesCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
   "@showEpisodesCount": {
@@ -597,7 +748,18 @@
   "settingsLiveTvLayoutList": "Liste",
   "settingsLiveTvLayoutGrid": "Grille",
   "settingsLiveTvLayoutTimeline": "Chronologie",
+  "settingsLiveTvChannelColumn": "Colonne des chaînes",
+  "settingsLiveTvChannelColumnLogoTitle": "Logo + Titre",
+  "settingsLiveTvChannelColumnLogoOnly": "Logo uniquement",
+  "settingsLiveTvChannelColumnTitleOnly": "Titre uniquement",
   "settingsEpgStartView": "Le guide démarre à",
   "settingsEpgStartViewCurrentTime": "Heure actuelle",
-  "settingsEpgStartViewPrimeTime": "Prime time"
+  "settingsEpgStartViewPrimeTime": "Prime time",
+  "settingsDefaultStartPage": "Page de démarrage par défaut",
+  "settingsHdrMode": "Mode HDR",
+  "settingsHdrModeHint": "Autoriser les vidéos HDR à basculer l'écran en mode HDR. Windows et Linux uniquement.",
+  "settingsMatchRefreshRate": "Adapter la fréquence de rafraîchissement",
+  "settingsMatchRefreshRateHint": "Bascule le moniteur sur la fréquence d'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l'écran noir. Windows uniquement.",
+  "settingsToggleOn": "Activé",
+  "settingsToggleOff": "Désactivé"
 }

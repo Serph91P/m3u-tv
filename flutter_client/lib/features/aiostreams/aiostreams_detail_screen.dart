@@ -9,6 +9,9 @@ import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
+import 'package:m3u_tv/shared/cached_backdrop_image.dart';
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
@@ -221,35 +224,12 @@ class _MovieBody extends StatelessWidget {
       ),
     );
 
-    if (backdrop == null) return content;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.network(backdrop, fit: BoxFit.cover),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.2),
-                Colors.black.withValues(alpha: 0.85),
-                theme.colorScheme.surface,
-              ],
-              stops: const [0.0, 0.5, 1.0],
-            ),
-          ),
-        ),
-        Align(
-          alignment: Alignment.bottomLeft,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.sizeOf(context).height * 0.1,
-            ),
-            child: content,
-          ),
-        ),
-      ],
+    return BackdropDetailHero(
+      backdropUrl: backdrop,
+      contentPadding: EdgeInsets.only(
+        bottom: MediaQuery.sizeOf(context).height * 0.1,
+      ),
+      content: content,
     );
   }
 
@@ -259,33 +239,14 @@ class _MovieBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
+        CompactBackdropBand(
           height: 220,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (backdrop != null)
-                Image.network(backdrop, fit: BoxFit.cover)
-              else
-                ResilientMediaImage(
-                  imageUrl: item.poster,
-                  fallbackIcon: Icons.movie,
-                  borderRadius: 0,
-                  fallbackTitle: item.name,
-                ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, theme.colorScheme.surface],
-                      stops: const [0.4, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          backdropUrl: backdrop,
+          backdropFallback: ResilientMediaImage(
+            imageUrl: item.poster,
+            fallbackIcon: Icons.movie,
+            borderRadius: 0,
+            fallbackTitle: item.name,
           ),
         ),
         Expanded(
@@ -496,7 +457,7 @@ class _SeriesBodyState extends State<_SeriesBody> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(backdrop, fit: BoxFit.cover),
+                CachedBackdropImage(backdrop),
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -556,7 +517,7 @@ class _SeriesBodyState extends State<_SeriesBody> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(backdrop, fit: BoxFit.cover),
+                      CachedBackdropImage(backdrop),
                       Positioned.fill(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
@@ -888,11 +849,12 @@ class _AIOEpisodeTileState extends State<_AIOEpisodeTile> {
                       width: 120,
                       height: 68,
                       child: video.thumbnail != null
-                          ? Image.network(
-                              video.thumbnail!,
+                          ? CachedMediaThumbnail(
+                              url: video.thumbnail!,
+                              width: 120,
+                              height: 68,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  _episodeNumberBadge(colorScheme),
+                              fallback: _episodeNumberBadge(colorScheme),
                             )
                           : _episodeNumberBadge(colorScheme),
                     ),

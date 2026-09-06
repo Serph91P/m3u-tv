@@ -70,7 +70,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get admin => '管理员';
 
   @override
-  String get liveTvSearchHint => '搜索直播电视…';
+  String get mediaCategoryFilterButton => 'Filter';
+
+  @override
+  String get mediaCategoryFilterScreenTitle => 'Categories';
+
+  @override
+  String get liveTvViewModeList => 'List';
+
+  @override
+  String get liveTvViewModeGrid => 'Grid';
+
+  @override
+  String get liveTvViewModeEpg => 'EPG';
+
+  @override
+  String get liveTvSearchHint => '搜索…';
+
+  @override
+  String get liveTvUpcomingAirings => '即将播出';
+
+  @override
+  String get liveTvSearchFilterAll => '全部';
+
+  @override
+  String get liveTvShowResultsLoading => '正在搜索节目…';
+
+  @override
+  String get liveTvOnNow => '正在播出';
+
+  @override
+  String liveTvAiringUntil(String time) {
+    return '$time 结束';
+  }
+
+  @override
+  String liveTvAiringTomorrow(String time) {
+    return '明天 $time';
+  }
+
+  @override
+  String liveTvMoreAirings(int count) {
+    return '+$count 更多';
+  }
 
   @override
   String get liveTvNoChannels => '暂无可用频道';
@@ -106,6 +148,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get catchupShowsEmpty => '暂无可回看节目';
 
   @override
+  String get catchupShowsLoading => '正在加载回看节目…';
+
+  @override
   String get liveTvAddMultiview => '添加到多画面';
 
   @override
@@ -113,11 +158,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get liveTvMultiviewFull => '多画面已满（最多 9 路）';
-
-  @override
-  String liveTvMultiviewCount(int count) {
-    return '多画面 · $count';
-  }
 
   @override
   String get multiviewTitle => '多画面';
@@ -145,6 +185,20 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get multiviewRetry => '播放失败，选择以重试';
+
+  @override
+  String get multiviewManageTitle => '管理多画面';
+
+  @override
+  String get multiviewClearAll => '全部清除';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return '移除 $channel';
+  }
+
+  @override
+  String get close => '关闭';
 
   @override
   String get catchupBadgeAvailable => '可回看';
@@ -199,6 +253,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerResume => '恢复播放';
 
   @override
+  String get playerClearProgress => '清除进度';
+
+  @override
+  String get playerProgressCleared => '进度已清除';
+
+  @override
   String get playerSkipPreviousTooltip => '上一个频道';
 
   @override
@@ -222,6 +282,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerSkipCommercial => '跳过广告';
 
   @override
+  String get playerSkipCredits => '跳过片尾';
+
+  @override
+  String get playerSkipIntro => '跳过片头';
+
+  @override
+  String get playerUpNext => '即将播放';
+
+  @override
+  String get playerUpNextPlay => '播放下一集';
+
+  @override
+  String get playerUpNextDismiss => '关闭';
+
+  @override
   String get searchHint => '搜索直播电视、电影和剧集…';
 
   @override
@@ -234,10 +309,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchSectionSeries => '剧集';
 
   @override
-  String get vodSearchHint => '搜索电影…';
+  String get vodSearchHint => '搜索…';
 
   @override
-  String get seriesSearchHint => '搜索剧集…';
+  String get seriesSearchHint => '搜索…';
 
   @override
   String get settingsTitle => '设置';
@@ -482,7 +557,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingPendingGoTo => '在您的手机或电脑上，访问：';
 
   @override
-  String get pairingPendingEnterCode => '然后输入此代码：';
+  String get pairingPendingEnterCode => '配对代码：';
 
   @override
   String get pairingPendingWaiting => '等待批准…';
@@ -492,6 +567,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeNoContinueWatching => '暂无可继续观看的内容';
+
+  @override
+  String get homeContinueWatchingSeeAll => '查看全部';
+
+  @override
+  String homeContinueWatchingMoreCount(int count) {
+    return '+$count 更多';
+  }
+
+  @override
+  String get homeUpNext => '即将播放';
 
   @override
   String get homeNoLiveTv => '暂无直播电视';
@@ -578,6 +664,53 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get seriesSeasons => '剧集季';
+
+  @override
+  String get seriesCast => '演员阵容';
+
+  @override
+  String seriesEpisodeCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 集',
+      one: '1 集',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String seriesPlayEpisode(int season, int episode) {
+    return '播放 S${season}E$episode';
+  }
+
+  @override
+  String seriesResumeEpisode(int season, int episode) {
+    return '继续观看 S${season}E$episode';
+  }
+
+  @override
+  String get seriesMarkWatched => '标记为已观看';
+
+  @override
+  String get seriesMarkUnwatched => '标记为未观看';
+
+  @override
+  String get seriesMarkedWatched => '已标记为已观看';
+
+  @override
+  String get seriesMarkedUnwatched => '已标记为未观看';
+
+  @override
+  String get seriesMarkSyncFailed => '无法同步观看状态';
+
+  @override
+  String seriesMarkSeasonPrompt(int number) {
+    return '更新第 $number 季所有剧集的观看状态？';
+  }
+
+  @override
   String get traktWatchHistory => '观看历史';
 
   @override
@@ -638,6 +771,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vodContinueMovie => '继续播放';
 
   @override
+  String get vodCast => '演员阵容';
+
+  @override
+  String get castShowAll => '查看全部演员';
+
+  @override
+  String vodTimeLeftMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: '还剩$minutes分钟',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String vodTimeLeftHoursMinutes(int hours, int minutes) {
+    return '还剩$hours小时$minutes分钟';
+  }
+
+  @override
   String get navAioStreams => 'AIOStreams';
 
   @override
@@ -692,7 +846,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get requestsTabMyRequests => '我的请求';
 
   @override
-  String get requestsSearchHint => '搜索电影和剧集…';
+  String get requestsSearchHint => '搜索…';
 
   @override
   String get requestsNoResults => '未找到结果';
@@ -1036,6 +1190,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get showSeriesRuleActive => '剧集规则已启用';
 
   @override
+  String get showScheduled => '已计划';
+
+  @override
+  String showBatchRecord(int count) {
+    return '录制 ($count)';
+  }
+
+  @override
+  String showBatchScheduleSummary(int scheduled, int failed) {
+    String _temp0 = intl.Intl.pluralLogic(
+      failed,
+      locale: localeName,
+      other: '失败 $failed 个。',
+      one: '失败 1 个。',
+      zero: '全部成功。',
+    );
+    return '已安排 $scheduled 个录制。$_temp0';
+  }
+
+  @override
+  String showBatchScheduleFailures(String titles) {
+    return '失败: $titles';
+  }
+
+  @override
   String get showDetailTitle => '节目详情';
 
   @override
@@ -1108,6 +1287,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsLiveTvLayoutTimeline => '时间线';
 
   @override
+  String get settingsLiveTvChannelColumn => '频道列显示';
+
+  @override
+  String get settingsLiveTvChannelColumnLogoTitle => '台标+名称';
+
+  @override
+  String get settingsLiveTvChannelColumnLogoOnly => '仅台标';
+
+  @override
+  String get settingsLiveTvChannelColumnTitleOnly => '仅名称';
+
+  @override
   String get settingsEpgStartView => '节目单起始时间';
 
   @override
@@ -1115,4 +1306,27 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => '黄金时段';
+
+  @override
+  String get settingsDefaultStartPage => '默认启动页面';
+
+  @override
+  String get settingsHdrMode => 'HDR 模式';
+
+  @override
+  String get settingsHdrModeHint =>
+      '允许 HDR 视频将显示器切换到 HDR 模式。仅限 Windows 和 Linux。';
+
+  @override
+  String get settingsMatchRefreshRate => '匹配显示器刷新率';
+
+  @override
+  String get settingsMatchRefreshRateHint =>
+      '播放开始时将显示器切换为视频的帧率。可能会使屏幕短暂黑屏。仅限 Windows。';
+
+  @override
+  String get settingsToggleOn => '开';
+
+  @override
+  String get settingsToggleOff => '关';
 }

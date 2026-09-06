@@ -138,10 +138,53 @@ void main() {
       expect(find.text('Tears of Steel'), findsOneWidget);
     });
 
-    testWidgets('shows loading indicator while fetching', (tester) async {
+    testWidgets(
+      'dynamic category tab filters movies by overlapping category_ids',
+      (tester) async {
+        // m3u-editor's dynamic TMDB categories overlap the regular groups:
+        // a member keeps its primary categoryId and additionally carries the
+        // dynamic category id in categoryIds.
+        final items = [
+          const VodItem(
+            id: 1,
+            name: 'Big Buck Bunny',
+            streamUrl: 'http://example.com/1.mp4',
+            containerExtension: 'mp4',
+            categoryId: '20',
+            categoryIds: ['20', '900000001'],
+          ),
+          const VodItem(
+            id: 2,
+            name: 'Sintel',
+            streamUrl: 'http://example.com/2.mp4',
+            containerExtension: 'mp4',
+            categoryId: '20',
+          ),
+        ];
+        final categories = [
+          const Category(id: '900000001', name: 'Trending Now'),
+          const Category(id: '20', name: 'Action'),
+        ];
+
+        await tester.pumpWidget(
+          _TestApp(vodItems: items, categories: categories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Trending Now'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Big Buck Bunny'), findsOneWidget);
+        expect(find.text('Sintel'), findsNothing);
+      },
+    );
+
+    testWidgets('shows loading indicator only when there is nothing to show', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _TestApp(
-          vodItems: testVodItems,
+          vodItems: const [],
           categories: testCategories,
           isLoading: true,
         ),
@@ -150,6 +193,25 @@ void main() {
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
+
+    testWidgets(
+      'keeps the populated grid visible during a background refresh',
+      (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            vodItems: testVodItems,
+            categories: testCategories,
+            isLoading: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(find.text('Big Buck Bunny'), findsOneWidget);
+      },
+    );
 
     testWidgets('shows not configured message when not connected', (
       tester,
@@ -193,12 +255,41 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'sintel');
       await tester.pumpAndSettle();
 
       expect(find.text('Sintel'), findsOneWidget);
       expect(find.text('Big Buck Bunny'), findsNothing);
       expect(find.text('Tears of Steel'), findsNothing);
+    });
+
+    testWidgets('replacing a query is debounced; old results stay until the '
+        'pause', (tester) async {
+      await tester.pumpWidget(
+        _TestApp(vodItems: testVodItems, categories: testCategories),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      // First query applies immediately (no debounce-length empty flash).
+      await tester.enterText(find.byType(TextField), 'sintel');
+      await tester.pumpAndSettle();
+      expect(find.text('Sintel'), findsOneWidget);
+
+      // Replacing it: the grid keeps showing the previous match for the
+      // debounce window, then switches once typing settles.
+      await tester.enterText(find.byType(TextField), 'steel');
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Sintel'), findsOneWidget);
+      expect(find.text('Tears of Steel'), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Sintel'), findsNothing);
+      expect(find.text('Tears of Steel'), findsOneWidget);
     });
 
     testWidgets('inline search composes with category filter', (tester) async {
@@ -208,6 +299,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Action'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.search));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'steel');
       await tester.pumpAndSettle();
@@ -243,6 +336,34 @@ void main() {
 
       expect(find.text('★ 4.5'), findsOneWidget);
     });
+
+    testWidgets(
+      'mobile layout shows a Filter button instead of category chips, '
+      'and selecting a category filters the grid',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            vodItems: testVodItems,
+            categories: testCategories,
+            useSidebarLayout: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Filter'), findsOneWidget);
+        expect(find.text('Action'), findsNothing);
+
+        await tester.tap(find.text('Filter'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Action'), findsOneWidget);
+        await tester.tap(find.text('Action'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Big Buck Bunny'), findsOneWidget);
+        expect(find.text('Sintel'), findsNothing);
+      },
+    );
   });
 }
 
@@ -252,6 +373,7 @@ class _TestApp extends StatelessWidget {
     required this.categories,
     this.isLoading = false,
     this.isConfigured = true,
+    this.useSidebarLayout = true,
     this.onVodSelect,
   });
 
@@ -259,6 +381,7 @@ class _TestApp extends StatelessWidget {
   final List<Category> categories;
   final bool isLoading;
   final bool isConfigured;
+  final bool useSidebarLayout;
   final void Function(VodItem)? onVodSelect;
 
   @override
@@ -273,8 +396,10 @@ class _TestApp extends StatelessWidget {
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData.dark(useMaterial3: true),
         home: VodScreen(
+          useSidebarLayout: useSidebarLayout,
           onVodSelect: onVodSelect ?? (_) {},
         ),
       ),

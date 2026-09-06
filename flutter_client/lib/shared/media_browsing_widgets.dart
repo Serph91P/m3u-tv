@@ -1,8 +1,15 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart'
     show CachedNetworkImageProvider;
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show KeyDownEvent, KeyEvent, LogicalKeyboardKey;
+import 'package:m3u_tv/main.dart' show TvZoomScale;
+import 'package:m3u_tv/shared/app_button.dart' show kStadiumFocusEffects;
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
@@ -32,6 +39,9 @@ class MediaBrowsingMetrics {
   // Landscape "Continue Watching" cards: 16:9 thumbnail + text area.
   static const double landscapeCardWidth = 280;
   static const double landscapeCardHeight = 205; // 157.5 (9/16×280) + 47 text
+  // Width of the TV/Desktop interstitial search+category strip
+  // (MediaCategoryNav) between the sidebar and a screen's content grid.
+  static const double interstitialNavWidth = 200;
 }
 
 class InlineMediaSearchField extends StatefulWidget {
@@ -42,15 +52,37 @@ class InlineMediaSearchField extends StatefulWidget {
     this.autofocus = false,
     this.focusNode,
     this.textInputAction = TextInputAction.search,
+    this.activateOnSelect = false,
     super.key,
   });
 
   final String query;
   final ValueChanged<String> onChanged;
   final String hintText;
+
+  /// When [activateOnSelect] is false: autofocuses the real text field
+  /// (opens the keyboard immediately). When [activateOnSelect] is true:
+  /// autofocuses the inactive, button-like facade instead - see
+  /// [activateOnSelect].
   final bool autofocus;
   final FocusNode? focusNode;
   final TextInputAction textInputAction;
+
+  /// TV/desktop d-pad screens embed this field alongside other browsable
+  /// content (category chips, a content grid) rather than on a
+  /// dedicated search screen. A plain [TextField] can't tell "the user
+  /// d-padded past this on their way elsewhere" apart from "the user wants
+  /// to type" - both just focus it, which opens the keyboard and starts
+  /// eating Left/Right for cursor movement instead of navigation.
+  ///
+  /// When true, the field starts as a non-editing, [DpadInkWell]-focusable
+  /// button showing the current query (or hint); only pressing Select on it
+  /// opens the real text field and grabs keyboard focus. Back/Escape while
+  /// editing returns to the button instead of falling through to the
+  /// screen's own Back handling. [autofocus] then targets that button, not
+  /// the text field. Screens with a dedicated search purpose (e.g.
+  /// `SearchScreen`) should leave this false.
+  final bool activateOnSelect;
 
   @override
   State<InlineMediaSearchField> createState() => _InlineMediaSearchFieldState();
@@ -59,7 +91,19 @@ class InlineMediaSearchField extends StatefulWidget {
 class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   late final TextEditingController _controller;
   FocusNode? _internalFocusNode;
+  // Wraps the TextField + Clear button as one focus scope. Listening on this
+  // instead of _focusNode directly lets us tell "d-padded from the TextField
+  // to its own Clear button" (a descendant of this node still has focus)
+  // apart from "d-padded away from the field entirely" (nothing under this
+  // node has focus) - see _handleFocusChange.
+  final FocusNode _containerFocusNode = FocusNode(
+    debugLabel: 'InlineMediaSearchField container',
+  );
+  final FocusNode _clearFocusNode = FocusNode(
+    debugLabel: 'InlineMediaSearchField clear button',
+  );
   bool _focused = false;
+  late bool _activated = !widget.activateOnSelect;
 
   FocusNode get _focusNode =>
       widget.focusNode ?? (_internalFocusNode ??= FocusNode());
@@ -68,7 +112,7 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.query);
-    _focusNode.addListener(_handleFocusChange);
+    _containerFocusNode.addListener(_handleFocusChange);
   }
 
   @override
@@ -80,29 +124,86 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
         selection: TextSelection.collapsed(offset: widget.query.length),
       );
     }
-    if (oldWidget.focusNode != widget.focusNode) {
-      (oldWidget.focusNode ?? _internalFocusNode)?.removeListener(
-        _handleFocusChange,
-      );
-      _focusNode.addListener(_handleFocusChange);
-    }
   }
 
   @override
   void dispose() {
-    _focusNode.removeListener(_handleFocusChange);
+    _containerFocusNode
+      ..removeListener(_handleFocusChange)
+      ..dispose();
+    _clearFocusNode.dispose();
     _internalFocusNode?.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   void _handleFocusChange() {
-    if (mounted) setState(() => _focused = _focusNode.hasFocus);
+    if (!mounted) return;
+    setState(() => _focused = _containerFocusNode.hasFocus);
+    // Losing focus for any reason (d-pad navigating away, not just an
+    // explicit Escape/Back press) reverts to the inactive facade - a live
+    // TextField left mounted-but-unfocused looks and behaves differently
+    // from the facade button it should have become again. Checking the
+    // container node (rather than the TextField's own _focusNode) means
+    // moving focus onto the adjacent Clear button - still a descendant of
+    // this node - does not count as leaving.
+    if (!_containerFocusNode.hasFocus) _deactivate();
   }
 
   void _clear() {
     _controller.clear();
     widget.onChanged('');
+  }
+
+  void _activate() {
+    setState(() => _activated = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  void _deactivate() {
+    if (!widget.activateOnSelect || !_activated) return;
+    setState(() => _activated = false);
+  }
+
+  /// [TextField]'s default `onTapOutside` unfocuses on mouse pointer-DOWN
+  /// (not tap-up) for any point outside the [TextField] itself - it has no
+  /// notion of the Clear button being logically part of this component. Left
+  /// as default, a mouse-down on Clear counts as "outside", unfocuses
+  /// _focusNode, deactivates the field and unmounts the Clear button before
+  /// its own tap-up ever fires, so the click appears to do nothing. Only
+  /// unfocus for a point genuinely outside this whole widget (i.e. still let
+  /// clicking elsewhere on screen close the field, matching Escape/Back).
+  void _handleTapOutside(PointerDownEvent event) {
+    final renderObject = _containerFocusNode.context?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.attached) {
+      final local = renderObject.globalToLocal(event.position);
+      if (renderObject.paintBounds.contains(local)) return;
+    }
+    _focusNode.unfocus();
+  }
+
+  KeyEventResult _handleEditingKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.goBack) {
+      _deactivate();
+      return KeyEventResult.handled;
+    }
+    // EditableText's own Shortcuts consume Left/Right (and, on multi-line
+    // fields, Up) for cursor/selection movement before they ever bubble out
+    // to the app's d-pad traversal, so there is otherwise no d-pad path from
+    // a focused TextField to the adjacent Clear button - Down is the one
+    // arrow a single-line field never claims, so it doubles as "jump to
+    // Clear" while editing.
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+        widget.query.isNotEmpty &&
+        _focusNode.hasFocus) {
+      _clearFocusNode.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -111,63 +212,156 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
     const radius = BorderRadius.all(
       Radius.circular(MediaBrowsingMetrics.cardRadius),
     );
-    const noBorder = OutlineInputBorder(
-      borderRadius: radius,
-      borderSide: BorderSide.none,
+
+    // Fixed so the facade button and the real TextField below are pixel
+    // identical in height - letting each derive its own height from font
+    // metrics/padding produced a visible size jump on activate/deactivate.
+    const fieldHeight = 52.0;
+    final hintStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: colorScheme.onSurfaceVariant,
     );
-    return Stack(
-      children: [
-        TextField(
-          controller: _controller,
-          focusNode: _focusNode,
+
+    if (widget.activateOnSelect && !_activated) {
+      return SizedBox(
+        height: fieldHeight,
+        child: DpadInkWell(
+          onTap: _activate,
           autofocus: widget.autofocus,
-          textInputAction: widget.textInputAction,
-          decoration: InputDecoration(
-            hintText: widget.hintText,
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: widget.query.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: 'Clear search',
-                    icon: const Icon(Icons.clear),
-                    onPressed: _clear,
+          borderRadius: radius,
+          color: colorScheme.surfaceContainerHigh,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.search,
+                  size: 24,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.query.isEmpty ? widget.hintText : widget.query,
+                    overflow: TextOverflow.ellipsis,
+                    style: widget.query.isEmpty
+                        ? hintStyle
+                        : hintStyle?.copyWith(color: colorScheme.onSurface),
                   ),
-            filled: true,
-            fillColor: colorScheme.surfaceContainerHigh,
-            border: noBorder,
-            enabledBorder: noBorder,
-            focusedBorder: noBorder,
+                ),
+              ],
+            ),
           ),
-          onChanged: widget.onChanged,
         ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AnimatedOpacity(
-              opacity: _focused ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 150),
-              child: CustomPaint(
-                painter: GradientBorderPainter(
-                  borderRadius: radius,
-                  width: 2.5,
-                  gradient: LinearGradient(
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                    colors: [colorScheme.primary, colorScheme.secondary],
+      );
+    }
+
+    return SizedBox(
+      height: fieldHeight,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            // Built the same way as the facade's Row (below) rather than
+            // via InputDecoration's prefixIcon/isCollapsed machinery - that
+            // machinery lays its content out top-aligned once the decorator
+            // is stretched taller than its content, and there's no
+            // vertical-centering knob for it. A plain Row centers its
+            // children by default, so it just works.
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: radius,
+              ),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 12,
+                  right: widget.query.isEmpty ? 12 : 4,
+                ),
+                child: Focus(
+                  focusNode: _containerFocusNode,
+                  canRequestFocus: false,
+                  skipTraversal: true,
+                  // Handles Escape/Back and the Clear-button jump regardless
+                  // of whether the TextField or the Clear button itself
+                  // holds focus - both are descendants of this node.
+                  onKeyEvent: widget.activateOnSelect
+                      ? _handleEditingKey
+                      : null,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search,
+                        size: 24,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          autofocus:
+                              !widget.activateOnSelect && widget.autofocus,
+                          onTapOutside: widget.activateOnSelect
+                              ? _handleTapOutside
+                              : null,
+                          textInputAction: widget.textInputAction,
+                          style: hintStyle?.copyWith(
+                            color: colorScheme.onSurface,
+                          ),
+                          decoration: InputDecoration.collapsed(
+                            hintText: widget.hintText,
+                            hintStyle: hintStyle,
+                          ),
+                          onChanged: widget.onChanged,
+                          onSubmitted: (_) => _deactivate(),
+                        ),
+                      ),
+                      if (widget.query.isNotEmpty)
+                        DpadFocusable(
+                          focusNode: _clearFocusNode,
+                          onSelect: _clear,
+                          effects: kStadiumFocusEffects,
+                          child: IconButton(
+                            tooltip: 'Clear search',
+                            icon: const Icon(Icons.clear),
+                            onPressed: _clear,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _focused ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 150),
+                child: CustomPaint(
+                  painter: GradientBorderPainter(
+                    borderRadius: radius,
+                    width: 2.5,
+                    gradient: LinearGradient(
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                      colors: [colorScheme.primary, colorScheme.secondary],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class ResilientMediaImage extends StatelessWidget {
+class ResilientMediaImage extends StatefulWidget {
   const ResilientMediaImage({
     required this.imageUrl,
     required this.fallbackIcon,
+    this.fallbackImageUrls = const <String>[],
     this.width,
     this.height,
     this.fit = BoxFit.cover,
@@ -179,6 +373,11 @@ class ResilientMediaImage extends StatelessWidget {
   });
 
   final String? imageUrl;
+
+  /// Alternate URLs to try, in order, once [imageUrl] has failed its retries
+  /// (a season poster that 404s falling back to the series poster, then the
+  /// backdrop). Only the icon fallback shows once every URL is exhausted.
+  final List<String> fallbackImageUrls;
   final IconData fallbackIcon;
   final double? width;
   final double? height;
@@ -189,33 +388,135 @@ class ResilientMediaImage extends StatelessWidget {
   final Color? backgroundColor;
 
   @override
+  State<ResilientMediaImage> createState() => _ResilientMediaImageState();
+}
+
+class _ResilientMediaImageState extends State<ResilientMediaImage> {
+  // On a cold app start, every row on the home screen fires its poster
+  // requests at once, which blows past flutter_cache_manager's hardcoded
+  // concurrentFetches limit (10). Requests queued behind that limit can lose
+  // the race against transient network hiccups, and neither
+  // cached_network_image nor flutter_cache_manager retry on their own - the
+  // failed entry is simply evicted, so the image sits on the fallback icon
+  // until something (e.g. a manual app reload) asks for it again. Retrying
+  // here with backoff closes that gap without needing to touch the shared
+  // cache manager's concurrency settings.
+  static const _maxRetries = 3;
+
+  int _attempt = 0;
+  bool _retryScheduled = false;
+
+  /// Index into [_urlChain] currently being displayed.
+  int _urlIndex = 0;
+
+  List<String> get _urlChain => [
+    ?_nonEmpty(widget.imageUrl),
+    ...widget.fallbackImageUrls.map(_nonEmpty).whereType<String>(),
+  ];
+
+  static String? _nonEmpty(String? value) =>
+      (value == null || value.trim().isEmpty) ? null : value;
+
+  String? get _currentUrl {
+    final chain = _urlChain;
+    return _urlIndex < chain.length ? chain[_urlIndex] : null;
+  }
+
+  @override
+  void didUpdateWidget(covariant ResilientMediaImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl ||
+        !listEquals(oldWidget.fallbackImageUrls, widget.fallbackImageUrls)) {
+      _attempt = 0;
+      _urlIndex = 0;
+      _retryScheduled = false;
+    }
+  }
+
+  void _scheduleRetry() {
+    if (_retryScheduled) return;
+    final hasNextUrl = _urlIndex < _urlChain.length - 1;
+    // Give the last URL the full retry budget (transient-failure recovery);
+    // when a better candidate is waiting, fail over after a single quick retry.
+    final retryBudget = hasNextUrl ? 1 : _maxRetries;
+    if (_attempt >= retryBudget) {
+      if (!hasNextUrl) return;
+      _retryScheduled = true;
+      unawaited(
+        Future.microtask(() {
+          _retryScheduled = false;
+          if (mounted) {
+            setState(() {
+              _urlIndex++;
+              _attempt = 0;
+            });
+          }
+        }),
+      );
+      return;
+    }
+    _retryScheduled = true;
+    final delay = Duration(milliseconds: 500 * (1 << _attempt));
+    _attempt++;
+    Future.delayed(delay, () {
+      _retryScheduled = false;
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final fallback = _MediaImageFallback(
-      icon: fallbackIcon,
-      title: fallbackTitle,
+      icon: widget.fallbackIcon,
+      title: widget.fallbackTitle,
     );
-    final url = imageUrl;
+    final url = _currentUrl;
+    // Oversample beyond raw pixel density so detailed logos (thin
+    // text/wordmarks) survive downscaling instead of being crushed to a
+    // blocky, aliased decode that no display-time FilterQuality can recover.
+    // ResizeImage never upscales past the source's intrinsic size, so this
+    // is free when the source is already small.
+    final devicePixelRatio =
+        MediaQuery.devicePixelRatioOf(context) * 2 * TvZoomScale.of(context);
+    final cacheWidth = widget.width == null
+        ? null
+        : (widget.width! * devicePixelRatio).round();
+    final cacheHeight = widget.height == null
+        ? null
+        : (widget.height! * devicePixelRatio).round();
+    final provider = url == null || url.isEmpty
+        ? null
+        : CachedNetworkImageProvider(
+            url,
+            cacheManager: MediaImageCacheManager(),
+          );
 
     final image = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: SizedBox(
-        width: width,
-        height: height,
+        width: widget.width,
+        height: widget.height,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: backgroundColor ?? colorScheme.surfaceContainerHighest,
+            color:
+                widget.backgroundColor ?? colorScheme.surfaceContainerHighest,
           ),
-          child: url == null || url.isEmpty
+          child: provider == null
               ? fallback
               : Image(
-                  image: CachedNetworkImageProvider(
-                    url,
-                    cacheManager: MediaImageCacheManager(),
-                  ),
-                  fit: fit,
-                  width: width,
-                  height: height,
+                  image: cacheWidth == null && cacheHeight == null
+                      ? provider
+                      : ResizeImage(
+                          provider,
+                          width: cacheWidth,
+                          height: cacheHeight,
+                          policy: ResizeImagePolicy.fit,
+                        ),
+                  fit: widget.fit,
+                  width: widget.width,
+                  height: widget.height,
+                  filterQuality: FilterQuality.high,
                   gaplessPlayback: true,
                   frameBuilder:
                       (context, child, frame, wasSynchronouslyLoaded) {
@@ -228,13 +529,16 @@ class ResilientMediaImage extends StatelessWidget {
                     if (loadingProgress == null) return child;
                     return fallback;
                   },
-                  errorBuilder: (_, _, _) => fallback,
+                  errorBuilder: (_, _, _) {
+                    _scheduleRetry();
+                    return fallback;
+                  },
                 ),
         ),
       ),
     );
-    if (aspectRatio == null) return image;
-    return AspectRatio(aspectRatio: aspectRatio!, child: image);
+    if (widget.aspectRatio == null) return image;
+    return AspectRatio(aspectRatio: widget.aspectRatio!, child: image);
   }
 }
 
@@ -538,6 +842,9 @@ class MediaPreviewItem {
     this.progressFraction,
     this.overlayBadges = const <String>[],
     this.overlayLabel,
+    this.emphasisLabel,
+    this.upNextLabel,
+    this.ratingLabel,
   });
 
   final String title;
@@ -556,11 +863,34 @@ class MediaPreviewItem {
   /// 0.0-1.0 progress shown as a bar along the bottom of the image.
   final double? progressFraction;
 
+  /// When non-null, landscape cards show this text as a primary-colour badge in
+  /// the top-right corner (where the progress percent normally sits) and
+  /// suppress the bottom progress bar. Used for synthetic "up next" episode
+  /// entries; the caller supplies the localized string.
+  final String? upNextLabel;
+
+  /// Short rating string (e.g. `★ 8.1`) appended to the muted line under the
+  /// title on default/poster cards, after [subtitle] and a `•` separator when
+  /// both are present. Read only by `_buildDefaultContent`.
+  final String? ratingLabel;
+
   /// Short text labels rendered as chips overlaid on the image (right-aligned).
   final List<String> overlayBadges;
 
   /// Optional label shown left-aligned opposite the overlay badges.
   final String? overlayLabel;
+
+  /// A short, high-value string rendered between the title and subtitle on
+  /// default/poster cards at title-scale weight - for a 10-foot UI, the one
+  /// datum that must survive a glance from the couch (here: when a programme
+  /// airs). Null on every existing rail, which renders exactly today's tree.
+  ///
+  /// Rendered ONLY by `_buildDefaultContent`. Landscape cards have no room and
+  /// deliberately ignore it - see the assert in `build`. Note the precedent:
+  /// `overlayLabel`, `overlayBadges` and `progressFraction` are declared here
+  /// but read only by `_buildLandscapeContent` (L745-878), so they silently do
+  /// nothing on default cards. Do not add to that trap.
+  final String? emphasisLabel;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -568,22 +898,36 @@ class MediaPreviewSection extends StatefulWidget {
     required this.title,
     required this.emptyLabel,
     required this.items,
+    this.titleIcon,
     this.posterStyle = false,
     this.landscapeStyle = false,
+    this.useSidebarLayout = false,
     this.onSidebarActivate,
     super.key,
   });
 
   final String title;
+  final IconData? titleIcon;
   final String emptyLabel;
   final List<MediaPreviewItem> items;
   final bool posterStyle;
   final bool landscapeStyle;
+
+  /// Whether this row is hosted inside `AppShell`'s TV/desktop sidebar
+  /// layout, where the content pane sits at a fixed `left: 64` (the
+  /// collapsed rail's width - see [_kSidebarRailInset]) instead of filling
+  /// the full window width.
+  final bool useSidebarLayout;
   final VoidCallback? onSidebarActivate;
 
   @override
   State<MediaPreviewSection> createState() => _MediaPreviewSectionState();
 }
+
+/// Mirrors the collapsed-state width of `NavigationSidebar` and the fixed
+/// `left` inset `AppShell._buildTvLayout` gives its content pane outside of
+/// the full-screen-detail transition (see [_MediaPreviewSectionState.build]).
+const double _kSidebarRailInset = 64;
 
 class _MediaPreviewSectionState extends State<MediaPreviewSection> {
   final ScrollController _controller = ScrollController();
@@ -597,80 +941,104 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
   @override
   Widget build(BuildContext context) {
     final visibleItems = widget.items.take(12).toList(growable: false);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double baseWidth;
-        final double baseHeight;
-        if (widget.landscapeStyle) {
-          baseWidth = MediaBrowsingMetrics.landscapeCardWidth;
-          baseHeight = MediaBrowsingMetrics.landscapeCardHeight;
-        } else if (widget.posterStyle) {
-          baseWidth = MediaBrowsingMetrics.posterCardWidth;
-          baseHeight = MediaBrowsingMetrics.posterCardHeight;
-        } else {
-          baseWidth = MediaBrowsingMetrics.previewCardWidth;
-          baseHeight = MediaBrowsingMetrics.previewCardHeight;
-        }
-        final scale = _previewCardScale(constraints.maxWidth);
-        final cardWidth = baseWidth * scale;
-        final cardHeight = baseHeight * scale;
+    final double baseWidth;
+    final double baseHeight;
+    if (widget.landscapeStyle) {
+      baseWidth = MediaBrowsingMetrics.landscapeCardWidth;
+      baseHeight = MediaBrowsingMetrics.landscapeCardHeight;
+    } else if (widget.posterStyle) {
+      baseWidth = MediaBrowsingMetrics.posterCardWidth;
+      baseHeight = MediaBrowsingMetrics.posterCardHeight;
+    } else {
+      baseWidth = MediaBrowsingMetrics.previewCardWidth;
+      baseHeight = MediaBrowsingMetrics.previewCardHeight;
+    }
+    // Scale off the window width rather than this row's LayoutBuilder
+    // constraints: pushing a full-screen detail route re-parents the content
+    // pane's `left` from 64 to 0 (see AppShell._buildTvLayout), and this row
+    // stays mounted underneath that transition, so a constraints-derived
+    // cardWidth would change the ResizeImage cache key every animation
+    // frame, forcing a fresh decode per frame and flickering the thumbnails.
+    // Subtracting the fixed rail inset and the row's own horizontal page
+    // padding up front keeps the result correct for the sidebar layout's
+    // steady state without reintroducing that per-frame dependency.
+    final availableWidth =
+        MediaQuery.sizeOf(context).width -
+        (widget.useSidebarLayout ? _kSidebarRailInset : 0) -
+        MediaBrowsingMetrics.pagePadding * 2;
+    final scale = _previewCardScale(availableWidth);
+    final cardWidth = baseWidth * scale;
+    final cardHeight = baseHeight * scale;
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.titleIcon != null) ...[
+                Icon(
+                  widget.titleIcon,
+                  size: 20,
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
+                const SizedBox(width: 8),
+              ],
               Text(
                 widget.title,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontSize: 18),
               ),
-              const SizedBox(height: MediaBrowsingMetrics.chipGap),
-              if (visibleItems.isEmpty)
-                Text(widget.emptyLabel)
-              else
-                SizedBox(
-                  height: cardHeight + 16,
-                  // ExcludeSemantics prevents the tvOS framework bug where
-                  // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
-                  // during the semantics flush phase, causing an assertion crash
-                  // when scrolling quickly.
-                  child: ExcludeSemantics(
-                    child: DpadRegion(
-                      memoryKey: 'preview-row/${widget.title}',
-                      horizontalEdge: DpadEdgeBehavior.stop,
-                      onEdge: (direction) {
-                        if (direction == TraversalDirection.left) {
-                          widget.onSidebarActivate?.call();
-                        }
-                      },
-                      child: Scrollbar(
-                        controller: _controller,
-                        thumbVisibility: true,
-                        trackVisibility: true,
-                        child: ListView.separated(
-                          controller: _controller,
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.only(bottom: 12),
-                          itemCount: visibleItems.length,
-                          separatorBuilder: (_, _) => const SizedBox(
-                            width: MediaBrowsingMetrics.itemGap,
-                          ),
-                          itemBuilder: (context, index) => MediaPreviewCard(
-                            item: visibleItems[index],
-                            posterStyle: widget.posterStyle,
-                            landscapeStyle: widget.landscapeStyle,
-                            autofocus: index == 0,
-                            cardWidth: cardWidth,
-                          ),
-                        ),
+            ],
+          ),
+          const SizedBox(height: MediaBrowsingMetrics.chipGap),
+          if (visibleItems.isEmpty)
+            Text(widget.emptyLabel)
+          else
+            SizedBox(
+              height: cardHeight + 16,
+              // ExcludeSemantics prevents the tvOS framework bug where
+              // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
+              // during the semantics flush phase, causing an assertion crash
+              // when scrolling quickly.
+              child: ExcludeSemantics(
+                child: DpadRegion(
+                  memoryKey: 'preview-row/${widget.title}',
+                  horizontalEdge: DpadEdgeBehavior.stop,
+                  onEdge: (direction) {
+                    if (direction == TraversalDirection.left) {
+                      widget.onSidebarActivate?.call();
+                    }
+                  },
+                  child: Scrollbar(
+                    controller: _controller,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    child: ListView.separated(
+                      controller: _controller,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.only(bottom: 12),
+                      itemCount: visibleItems.length,
+                      separatorBuilder: (_, _) => const SizedBox(
+                        width: MediaBrowsingMetrics.itemGap,
+                      ),
+                      itemBuilder: (context, index) => MediaPreviewCard(
+                        item: visibleItems[index],
+                        posterStyle: widget.posterStyle,
+                        landscapeStyle: widget.landscapeStyle,
+                        autofocus: index == 0,
+                        cardWidth: cardWidth,
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -687,6 +1055,7 @@ class MediaPreviewCard extends StatefulWidget {
     this.landscapeStyle = false,
     this.autofocus = false,
     this.cardWidth,
+    this.keepAlive = true,
     super.key,
   });
 
@@ -696,6 +1065,12 @@ class MediaPreviewCard extends StatefulWidget {
   final bool autofocus;
   final double? cardWidth;
 
+  /// Horizontal preview rows keep cards alive so sideways scrolling does not
+  /// re-decode their thumbnails. Vertical grids (Movies/Series listing pages)
+  /// pass false: those lists can run to thousands of items, where keeping every
+  /// scrolled-past card mounted is an unbounded memory cost.
+  final bool keepAlive;
+
   @override
   State<MediaPreviewCard> createState() => _MediaPreviewCardState();
 }
@@ -703,14 +1078,17 @@ class MediaPreviewCard extends StatefulWidget {
 class _MediaPreviewCardState extends State<MediaPreviewCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => widget.keepAlive;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final colorScheme = Theme.of(context).colorScheme;
     final item = widget.item;
-    final isRating = item.subtitle?.startsWith('★') ?? false;
+    assert(
+      !widget.landscapeStyle || item.emphasisLabel == null,
+      'MediaPreviewItem.emphasisLabel is not rendered by landscape cards.',
+    );
     final width =
         widget.cardWidth ??
         (widget.landscapeStyle
@@ -727,10 +1105,14 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
         onLongTap: item.onLongTap,
         color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
-        clipBehavior: Clip.antiAlias,
+        // Landscape cards still edge-clip their full-bleed thumbnail. Default/
+        // poster cards deliberately do not clip: the card's rounded background
+        // stays visible behind the poster, which carries its own matching
+        // corner radius (see `_buildDefaultContent`) - the detail-page look.
+        clipBehavior: widget.landscapeStyle ? Clip.antiAlias : Clip.none,
         child: widget.landscapeStyle
             ? _buildLandscapeContent(context, colorScheme, width)
-            : _buildDefaultContent(context, colorScheme, isRating),
+            : _buildDefaultContent(context, colorScheme),
       ),
     );
   }
@@ -881,6 +1263,31 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                       color: colorScheme.primary,
                     ),
                   ),
+                if (widget.item.upNextLabel != null)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          widget.item.upNextLabel!,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: colorScheme.onPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -916,13 +1323,16 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
     );
   }
 
-  Widget _buildDefaultContent(
-    BuildContext context,
-    ColorScheme colorScheme,
-    bool isRating,
-  ) {
+  Widget _buildDefaultContent(BuildContext context, ColorScheme colorScheme) {
     final item = widget.item;
     final posterStyle = widget.posterStyle;
+    // Year and rating share the muted line under the title, joined by a
+    // separator when both are present (e.g. "2004 • ★ 8.1").
+    final subtitleText = [
+      if (item.subtitle != null && item.subtitle!.isNotEmpty) item.subtitle!,
+      if (item.ratingLabel != null && item.ratingLabel!.isNotEmpty)
+        item.ratingLabel!,
+    ].join(' • ');
     final mediaImage = ResilientMediaImage(
       imageUrl: item.imageUrl,
       fallbackIcon: item.fallbackIcon,
@@ -930,7 +1340,7 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
       aspectRatio: item.imageAspectRatio,
       fallbackTitle: item.fallbackTitle,
       backgroundColor: item.imageBackgroundColor,
-      borderRadius: 0,
+      borderRadius: MediaBrowsingMetrics.cardRadius,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -973,20 +1383,32 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: posterStyle ? FontWeight.normal : FontWeight.w700,
                 ),
-                maxLines: posterStyle ? 2 : 1,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              if (item.subtitle != null) ...[
+              if (item.emphasisLabel != null) ...[
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    item.emphasisLabel!,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+              if (subtitleText.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
-                  item.subtitle!,
+                  subtitleText,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: posterStyle && isRating
-                        ? const Color(0xFFFFCC00)
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: posterStyle && isRating
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.normal,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

@@ -22,11 +22,75 @@ abstract class VideoTextureProvider {
   int? get textureId;
 }
 
-/// A [PlayerAdapter] that Multiview can drive: one concurrently playable,
-/// texture-backed instance per grid tile. [setVolume] mutes/unmutes a tile
-/// by audio focus without touching its playback state, which none of the
-/// other [PlayerAdapter] methods express.
-abstract class MultiviewBackend implements PlayerAdapter, VideoTextureProvider {
+/// A [PlayerAdapter] that renders through a native `FlutterPlatformView`
+/// (e.g. `AppKitView`) instead of a `Texture`. Used by backends that draw
+/// directly to a native surface owned by the platform's compositor (GPU/Metal
+/// on macOS, `AVSampleBufferDisplayLayer` on iOS/tvOS) to avoid the
+/// CVPixelBuffer/texture-copy bridge that [VideoTextureProvider] backends go
+/// through.
+abstract class PlatformViewProvider {
+  /// The registered platform view type, e.g. `'m3u_tv/mac_mpv_view'`.
+  String get platformViewType;
+
+  /// Creation-time arguments passed to the platform view factory, if any.
+  Map<String, dynamic>? get platformViewCreationParams;
+
+  /// Tears down the native resources backing this platform view (e.g. a
+  /// native player core holding an unretained pointer into the view's
+  /// layer) without closing this adapter's [PlayerAdapter.onState]/
+  /// [PlayerAdapter.onError] streams, so the adapter is still safe to
+  /// [PlayerAdapter.load] again later. Must not resolve until native
+  /// teardown has actually finished releasing that pointer -- callers rely
+  /// on this to unmount the platform view safely afterward.
+  Future<void> releaseNativeView();
+}
+
+/// A [PlayerAdapter] that renders through a native platform surface Flutter's
+/// own compositor knows nothing about (currently: `DesktopLibmpvBackend`'s
+/// Wayland `wl_subsurface` video plane on Linux, used when the GPU render
+/// path is available -- see `linux/wayland_video_surface.h`). Unlike
+/// [PlatformViewProvider], there is no Flutter-managed view to size or
+/// position: the widget hosting this backend must report its own on-screen
+/// rect explicitly via [reportVideoRect] on every layout, and the native
+/// side positions its surface to match.
+abstract class NativePlaneProvider {
+  /// True once the native backend has confirmed (via its `load` response)
+  /// that it is actually rendering through the native plane rather than
+  /// falling back to [VideoTextureProvider]. Until a load completes this is
+  /// `false`, so callers should keep rendering the [VideoTextureProvider]
+  /// path (or a black placeholder) until it flips.
+  bool get usesNativePlane;
+
+  /// Reports the widget's current on-screen rect, in physical pixels within
+  /// the native window, plus the current device pixel ratio.
+  void reportVideoRect(
+    double x,
+    double y,
+    double width,
+    double height,
+    double devicePixelRatio,
+  );
+}
+
+/// A [PlayerAdapter] that exposes a user-facing HDR on/off override, mirroring
+/// the same `hdr-enabled` control the open-source Plezy player exposes.
+/// Implemented by `DesktopLibmpvBackend` (Linux/Windows) only -- Apple's mpv
+/// backends and ExoPlayer decide HDR automatically from the source and
+/// display, with no equivalent override.
+// ignore: one_member_abstracts
+abstract class HdrToggleProvider {
+  Future<void> setHdrEnabled(
+    // ignore: avoid_positional_boolean_parameters
+    bool enabled,
+  );
+}
+
+/// A [PlayerAdapter] that Multiview can drive: one concurrently playable
+/// instance per grid tile, rendered via either [VideoTextureProvider] or
+/// [PlatformViewProvider]. [setVolume] mutes/unmutes a tile by audio focus
+/// without touching its playback state, which none of the other
+/// [PlayerAdapter] methods express.
+abstract class MultiviewBackend implements PlayerAdapter {
   Future<void> setVolume(double volume);
 }
 
@@ -141,6 +205,9 @@ class PlaybackSource {
     this.userAgent,
     this.headers = const <String, String>{},
     this.metadata = const <String, Object?>{},
+    this.externalSubtitles = const <ExternalSubtitle>[],
+    this.hdrEnabled = true,
+    this.matchDisplayRefreshRate = false,
   });
 
   final String uri;
@@ -153,7 +220,54 @@ class PlaybackSource {
   final Map<String, String> headers;
   final Map<String, Object?> metadata;
 
+  /// Sidecar subtitle files (e.g. `.srt`/`.vtt`) to load alongside [uri],
+  /// in addition to whatever tracks are embedded in the container. A native
+  /// mpv backend adds each of these via mpv's `sub-add` command on load.
+  final List<ExternalSubtitle> externalSubtitles;
+
+  /// Whether the native mpv desktop backends (Linux/Windows) may switch the
+  /// OS display into HDR mode for HDR content. Mirrors the persisted
+  /// `ViewSettingsService.hdrEnabled` setting; every other backend ignores it.
+  final bool hdrEnabled;
+
+  /// Whether the Windows desktop backend may switch the monitor to a refresh
+  /// rate matching the source frame rate on load. Off by default because the
+  /// mode switch briefly blanks the whole display; every other backend
+  /// ignores it. Mirrors `ViewSettingsService.matchRefreshRate`.
+  final bool matchDisplayRefreshRate;
+
   double? get videoAspectRatio => playbackAspectRatioFromMetadata(metadata);
+
+  PlaybackSource copyWith({
+    String? uri,
+    String? title,
+    Duration? startPosition,
+    bool? isLive,
+    String? videoCodec,
+    String? audioCodec,
+    String? userAgent,
+    Map<String, String>? headers,
+    Map<String, Object?>? metadata,
+    List<ExternalSubtitle>? externalSubtitles,
+    bool? hdrEnabled,
+    bool? matchDisplayRefreshRate,
+  }) {
+    return PlaybackSource(
+      uri: uri ?? this.uri,
+      title: title ?? this.title,
+      startPosition: startPosition ?? this.startPosition,
+      isLive: isLive ?? this.isLive,
+      videoCodec: videoCodec ?? this.videoCodec,
+      audioCodec: audioCodec ?? this.audioCodec,
+      userAgent: userAgent ?? this.userAgent,
+      headers: headers ?? this.headers,
+      metadata: metadata ?? this.metadata,
+      externalSubtitles: externalSubtitles ?? this.externalSubtitles,
+      hdrEnabled: hdrEnabled ?? this.hdrEnabled,
+      matchDisplayRefreshRate:
+          matchDisplayRefreshRate ?? this.matchDisplayRefreshRate,
+    );
+  }
 }
 
 double? playbackAspectRatioFromMetadata(Map<String, Object?> metadata) {
@@ -195,6 +309,16 @@ class PlaybackTrack {
 
   final String id;
   final String label;
+  final String? language;
+}
+
+/// A sidecar subtitle file to load alongside a [PlaybackSource]'s main
+/// [PlaybackSource.uri], e.g. a `.srt`/`.vtt` found next to a VOD file.
+class ExternalSubtitle {
+  const ExternalSubtitle({required this.uri, this.title, this.language});
+
+  final String uri;
+  final String? title;
   final String? language;
 }
 
@@ -332,6 +456,18 @@ class PlaybackException implements Exception {
 
   @override
   String toString() => 'PlaybackException($backend, $code): $message';
+}
+
+/// A native mpv `PlatformViewProvider` backend's native core failed to
+/// initialize (e.g. `mpv_create`/`mpv_initialize` failed on the Swift side).
+/// Shared between `MacMpvNativeBackend` and `AppleMpvNativeBackend`.
+class NativeMpvUnavailableException extends PlaybackException {
+  NativeMpvUnavailableException(
+    String message, {
+    required super.backend,
+  }) : super(message: message, code: unavailableCode, recoverable: true);
+
+  static const String unavailableCode = 'backend_unavailable';
 }
 
 class _Unchanged {

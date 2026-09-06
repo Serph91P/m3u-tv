@@ -127,6 +127,9 @@ Object? _encodeCacheData(String key, Object? data) {
   if (data is List<Series>) {
     return data.map(_seriesToJson).toList(growable: false);
   }
+  if (data is List<EpgProgram>) {
+    return data.map(_epgProgramToJson).toList(growable: false);
+  }
   if (data is List<Viewer>) {
     return data.map((viewer) => viewer.toJson()).toList(growable: false);
   }
@@ -186,6 +189,7 @@ Object? _decodeCacheData(String key, Object? raw) {
               containerExtension: '${json['container_extension'] ?? 'mp4'}',
               logoUrl: _nullableString(json['stream_icon']),
               categoryId: _nullableString(json['category_id']),
+              categoryIds: _stringList(json['category_ids']),
               rating: _asDouble(json['rating']),
             );
           })
@@ -200,6 +204,11 @@ Object? _decodeCacheData(String key, Object? raw) {
           .toList(
             growable: false,
           ),
+    'epgGuide' =>
+      list
+          ?.map((item) => _epgProgramFromJson(_asMap(item)))
+          .whereType<EpgProgram>()
+          .toList(growable: false),
     _ => raw,
   };
 }
@@ -231,6 +240,7 @@ Map<String, Object?> _vodToJson(VodItem item) => <String, Object?>{
   'container_extension': item.containerExtension,
   if (item.logoUrl != null) 'stream_icon': item.logoUrl,
   if (item.categoryId != null) 'category_id': item.categoryId,
+  if (item.categoryIds.isNotEmpty) 'category_ids': item.categoryIds,
   if (item.rating != null) 'rating': item.rating,
 };
 
@@ -238,10 +248,37 @@ Map<String, Object?> _seriesToJson(Series series) => <String, Object?>{
   'series_id': series.id,
   'name': series.name,
   if (series.coverUrl != null) 'cover': series.coverUrl,
+  if (series.backdropUrl != null) 'backdrop_path': series.backdropUrl,
   if (series.categoryId != null) 'category_id': series.categoryId,
+  // Decoded via Series.fromXtream, which reads `category_ids` natively.
+  if (series.categoryIds.isNotEmpty) 'category_ids': series.categoryIds,
   if (series.plot != null) 'plot': series.plot,
-  if (series.rating != null) 'rating_5based': series.rating,
+  if (series.rating != null) 'rating': series.rating,
+  if (series.tmdbId != null) 'tmdb_id': series.tmdbId,
 };
+
+Map<String, Object?> _epgProgramToJson(EpgProgram program) => <String, Object?>{
+  'channel_id': program.channelId,
+  'title': program.title,
+  'description': program.description,
+  'start': program.start.toIso8601String(),
+  'end': program.end.toIso8601String(),
+  if (program.subtitle != null) 'subtitle': program.subtitle,
+};
+
+EpgProgram? _epgProgramFromJson(Map<String, Object?> json) {
+  final start = DateTime.tryParse('${json['start']}');
+  final end = DateTime.tryParse('${json['end']}');
+  if (start == null || end == null) return null;
+  return EpgProgram(
+    channelId: '${json['channel_id'] ?? ''}',
+    title: '${json['title'] ?? ''}',
+    description: '${json['description'] ?? ''}',
+    start: start,
+    end: end,
+    subtitle: _nullableString(json['subtitle']),
+  );
+}
 
 Map<String, Object?> _asMap(Object? value) =>
     value is Map ? value.cast<String, Object?>() : const <String, Object?>{};
@@ -264,6 +301,10 @@ bool _asBool(Object? value) {
   final text = '$value'.trim().toLowerCase();
   return text == '1' || text == 'true' || text == 'yes';
 }
+
+List<String> _stringList(Object? value) => value is List
+    ? value.map(_nullableString).whereType<String>().toList(growable: false)
+    : const <String>[];
 
 String? _nullableString(Object? value) {
   if (value == null) return null;

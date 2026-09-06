@@ -184,6 +184,13 @@ flutter build linux --release
 flutter build windows --release
 ```
 
+Two Windows artifacts are published per release, with different trust models (see issue #118):
+
+- **`m3u-tv-vX.Y.Z-windows.zip`** - a portable, unsigned build (the same one produced by the command above, from `build-windows` in `.github/workflows/release.yml`). Windows SmartScreen will show an "unrecognized publisher" warning on first run since there's no Authenticode signature - this is expected, not a bug. No code-signing certificate is purchased or held for this artifact.
+- **`m3u-tv-vX.Y.Z-windows.msix`** (same job, via `dart run msix:create`) - the Microsoft Store submission package. Microsoft Partner Center signs this package at ingestion using its own certificate (`store: true` in `msix_config` in `pubspec.yaml` - see the comment there), so an app installed from the Store gets a trusted, SmartScreen-clean install with none of the above warning. This is the recommended install path for users who want a signed build; the `.msix` in the GitHub Release itself is not independently trusted until it goes through the Store (it can be sideloaded for testing with Developer Mode, but that doesn't carry Partner Center's signature).
+
+We deliberately do not Authenticode-sign the raw `.zip`/`.exe` - that would require purchasing and rotating a separate code-signing certificate (traditional Authenticode cert or Azure Trusted Signing) for an artifact that duplicates what the Store MSIX already covers. If that changes, update this section and the CI job together.
+
 ## Updating icons and splash screens
 
 All platform icons and splash screens are generated from the SVG source at `../logo.svg`.
@@ -371,8 +378,8 @@ supportedLocales: AppLocalizations.supportedLocales,
 
 See [../docs/release/platform-release-matrix.md](../docs/release/platform-release-matrix.md) for full release gates.
 
-- Android playback defaults to Media3/ExoPlayer. The blocking fallback is m3u-editor server transcode when direct playback fails.
-- Android mpv/libmpv remains future-gated and non-blocking.
+- Android playback now uses native mpv (`PlaybackBackend.androidMpv`) as the primary path, with Media3/ExoPlayer as the automatic fallback and m3u-editor server transcode as the final fallback when direct playback fails.
+- Native mpv playback has only been confirmed via limited manual testing on physical Android TV hardware; subtitle rendering, HDR, and broader device/codec QA remain open.
 - Emulator logs are supplemental only. Release sign-off requires physical Android phone/tablet QA and physical Android TV hardware QA on the target API level.
 
 ## Toolchain versions

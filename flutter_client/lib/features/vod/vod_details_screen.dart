@@ -6,6 +6,10 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
+import 'package:m3u_tv/shared/cast_strip.dart';
+import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -31,9 +35,51 @@ class VodDetailsScreen extends StatefulWidget {
 }
 
 class _VodDetailsScreenState extends State<VodDetailsScreen> {
-  late final Future<VodInfo?>? _future = widget.xtreamService?.getVodInfo(
-    widget.item.id,
-  );
+  late final Future<VodInfo?>? _future = widget.xtreamService
+      ?.getVodInfo(widget.item.id)
+      .then((info) {
+        unawaited(
+          _resolveDominantColor(
+            _notEmpty(info.backdropUrl) ??
+                _notEmpty(info.coverUrl) ??
+                widget.item.logoUrl,
+          ),
+        );
+        return info;
+      });
+
+  Color? _dominantColor;
+
+  /// Wired into the wide-layout cast row so pressing up off the cast cards
+  /// returns focus to the primary Play button (the raw-`Focus` [CastStrip]
+  /// consumes every arrow key, so it must hand vertical navigation back
+  /// explicitly).
+  final FocusNode _playFocusNode = FocusNode(debugLabel: 'vodPlayButton');
+
+  @override
+  void dispose() {
+    _playFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // No xtreamService means the FutureBuilder branch never runs (and never
+    // resolves a colour from fetched VodInfo) - fall back to the item's own
+    // poster so this path still gets the colour-match treatment.
+    if (_future == null) {
+      unawaited(_resolveDominantColor(widget.item.logoUrl));
+    }
+  }
+
+  /// Extracts a dominant tone from the backdrop (or poster, if no backdrop)
+  /// so the hero can bleed it past the image edge, matching the Series
+  /// detail page. Any failure just leaves the theme surface as-is.
+  Future<void> _resolveDominantColor(String? url) async {
+    final color = await resolveDominantBackdropColor(url);
+    if (color != null && mounted) setState(() => _dominantColor = color);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +91,8 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
               item: widget.item,
               progressList: widget.progressList,
               onPlay: widget.onPlay,
+              dominantColor: _dominantColor,
+              playFocusNode: _playFocusNode,
             )
           : FutureBuilder<VodInfo?>(
               future: _future,
@@ -55,6 +103,8 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
                   isLoading: snapshot.connectionState != ConnectionState.done,
                   progressList: widget.progressList,
                   onPlay: widget.onPlay,
+                  dominantColor: _dominantColor,
+                  playFocusNode: _playFocusNode,
                 );
               },
             ),
@@ -65,10 +115,12 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
 class _VodDetailsBody extends StatelessWidget {
   const _VodDetailsBody({
     required this.item,
+    required this.playFocusNode,
     this.info,
     this.isLoading = false,
     this.progressList = const [],
     this.onPlay,
+    this.dominantColor,
   });
 
   final VodItem item;
@@ -76,6 +128,15 @@ class _VodDetailsBody extends StatelessWidget {
   final bool isLoading;
   final List<Progress> progressList;
   final void Function(PlayerArgs)? onPlay;
+
+  /// Focus target for the wide cast row's "up" hop - the primary Play button.
+  final FocusNode playFocusNode;
+
+  /// Palette-extracted tone from the backdrop/poster; falls back to the
+  /// theme surface. Matches the Series detail page's colour-match treatment.
+  /// Raw dominant swatch from [resolveDominantBackdropColor]; toned per
+  /// layout below (a phone needs a lighter, more saturated wash than a TV).
+  final Color? dominantColor;
 
   static const double _wideBreakpoint = 600;
 
@@ -86,10 +147,15 @@ class _VodDetailsBody extends StatelessWidget {
     final progress = _resumeProgress;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < _wideBreakpoint) {
-          return _buildNarrow(context, theme, details, progress);
+        final compact = constraints.maxWidth < _wideBreakpoint;
+        final swatch = dominantColor;
+        final bg = swatch != null
+            ? deepBackdropTone(swatch, vivid: compact)
+            : theme.colorScheme.surface;
+        if (compact) {
+          return _buildNarrow(context, theme, bg, details, progress);
         }
-        return _buildWide(context, theme, details, progress);
+        return _buildWide(context, theme, bg, details, progress);
       },
     );
   }
@@ -109,133 +175,137 @@ class _VodDetailsBody extends StatelessWidget {
   Widget _buildWide(
     BuildContext context,
     ThemeData theme,
+    Color bg,
     _ResolvedVodDetails details,
     Progress? progress,
   ) {
     final backdrop = details.backdropUrl;
+    final richCast = details.richCast;
+    final l = AppLocalizations.of(context);
+    // The poster + details Row fills the available height (its own info column
+    // scrolls); the rich cast row is pinned full-width below it, kept out of
+    // that vertical scrollable so left/right card navigation never drags the
+    // page. Mirrors the Series detail layout.
     final content = Padding(
       padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 220,
-            child: AspectRatio(
-              aspectRatio: 0.68,
-              child: ResilientMediaImage(
-                imageUrl: details.coverUrl,
-                fallbackIcon: Icons.movie,
-                borderRadius: MediaBrowsingMetrics.cardRadius,
-                fallbackTitle: details.name,
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: AspectRatio(
+                    aspectRatio: 0.68,
+                    child: ResilientMediaImage(
+                      imageUrl: details.coverUrl,
+                      fallbackIcon: Icons.movie,
+                      borderRadius: MediaBrowsingMetrics.cardRadius,
+                      fallbackTitle: details.name,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: MediaBrowsingMetrics.pagePadding),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: _infoColumn(context, theme, details, progress),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (richCast != null && richCast.isNotEmpty) ...[
+            const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+            Semantics(
+              label: l.vodCast,
+              container: true,
+              // Same scrollable locked-focus row the Series detail uses. It is
+              // pinned here (always on-screen), so no reveal callback; up hops
+              // back to the Play button.
+              child: CastStrip(
+                members: richCast,
+                onNavigateUp: playFocusNode.requestFocus,
               ),
             ),
-          ),
-          const SizedBox(width: MediaBrowsingMetrics.pagePadding),
-          Expanded(
-            child: SingleChildScrollView(
-              child: _infoColumn(context, theme, details, progress),
-            ),
-          ),
+          ],
         ],
       ),
     );
 
-    // Always use the backdrop Stack layout so the poster stays bottom-aligned
-    // before and after the backdrop URL loads in, avoiding a layout jump.
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (backdrop != null) Image.network(backdrop, fit: BoxFit.cover),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.2),
-                Colors.black.withValues(alpha: 0.85),
-                theme.colorScheme.surface,
-              ],
-              stops: const [0.0, 0.5, 1.0],
-            ),
-          ),
-        ),
-        Align(
-          alignment: Alignment.bottomLeft,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.sizeOf(context).height * 0.1,
-            ),
-            child: content,
-          ),
-        ),
-      ],
+    // Colour-matched scrim, same treatment as the Series detail page.
+    return BackdropDetailHero(
+      backdropUrl: backdrop,
+      alwaysShowScrim: true,
+      showBackgroundColorLayer: true,
+      backgroundColor: bg,
+      scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
+      contentPadding: const EdgeInsets.only(top: 24, bottom: 24),
+      content: content,
     );
   }
 
   Widget _buildNarrow(
     BuildContext context,
     ThemeData theme,
+    Color bg,
     _ResolvedVodDetails details,
     Progress? progress,
   ) {
     final backdrop = details.backdropUrl;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 220,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Backdrop fills the area when available; otherwise the
-              // gradient alone provides the surface transition.
-              if (backdrop != null) Image.network(backdrop, fit: BoxFit.cover),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, theme.colorScheme.surface],
-                      stops: const [0.4, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-              // Always show the poster thumbnail at the same position so it
-              // stays stable before and after the backdrop loads.
-              Positioned(
-                left: 16,
-                bottom: 16,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: ResilientMediaImage(
-                    imageUrl: details.coverUrl,
-                    fallbackIcon: Icons.movie,
-                    width: 80,
-                    height: 118,
-                    borderRadius: 0,
-                    fallbackTitle: details.name,
-                  ),
-                ),
-              ),
-            ],
-          ),
+    final poster = SizedBox(
+      width: 120,
+      child: AspectRatio(
+        aspectRatio: 0.68,
+        child: ResilientMediaImage(
+          imageUrl: details.coverUrl,
+          fallbackIcon: Icons.movie,
+          borderRadius: MediaBrowsingMetrics.cardRadius,
+          fallbackTitle: details.name,
         ),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: _infoColumn(
-              context,
-              theme,
-              details,
-              progress,
-              fullWidthButton: true,
-            ),
+      ),
+    );
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          poster,
+          const SizedBox(height: 16),
+          _infoColumn(
+            context,
+            theme,
+            details,
+            progress,
+            fullWidthButton: true,
+            compact: true,
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+
+    // Backdrop capped to half the viewport (not full height) so the poster/
+    // title/synopsis aren't pushed below the fold, and stays fixed in place
+    // - `content` scrolls over/past it - matching the Series detail page's
+    // mobile layout. A lighter top/mid scrim than the wide layout so the
+    // real backdrop colour still reads in the band (portrait shows so little
+    // of it that a heavy scrim leaves it near-black).
+    final bandHeight = MediaQuery.sizeOf(context).height * 0.5;
+    return BackdropDetailHero(
+      backdropUrl: backdrop,
+      backdropHeight: bandHeight,
+      contentAlignment: Alignment.topLeft,
+      alwaysShowScrim: true,
+      showBackgroundColorLayer: true,
+      backgroundColor: bg,
+      scrimColors: [bg.withValues(alpha: 0.2), bg.withValues(alpha: 0.8), bg],
+      // Let the poster/title ride well up into the lower half of the
+      // backdrop (standard mobile hero look) rather than clearing it.
+      contentPadding: EdgeInsets.only(top: bandHeight * 0.44, bottom: 24),
+      content: content,
     );
   }
 
@@ -245,30 +315,61 @@ class _VodDetailsBody extends StatelessWidget {
     _ResolvedVodDetails details,
     Progress? progress, {
     bool fullWidthButton = false,
+    bool compact = false,
   }) {
     final l = AppLocalizations.of(context);
-    final buttonLabel = progress == null ? l.vodPlayMovie : l.vodContinueMovie;
-    return ItemMetaInfo(
-      name: details.name,
-      chips: [
-        if (details.year != null) details.year!,
-        if (details.genre != null) details.genre!,
-        if (details.duration != null) details.duration!,
-        if (details.rating != null) '★ ${details.rating}',
-        if (details.containerExtension != null)
-          details.containerExtension!.toUpperCase(),
-      ],
-      buttonLabel: buttonLabel,
-      onPlay: () => _play(details, progress),
-      fullWidthButton: fullWidthButton,
-      progressValue: _progressValue(progress),
-      isLoading: isLoading,
-      plot: details.plot ?? 'No synopsis available.',
-      credits: [
-        if (details.director != null)
-          MetaCreditLine(label: 'Director', value: details.director!),
-        if (details.cast != null)
-          MetaCreditLine(label: 'Cast', value: details.cast!),
+    final buttonLabel = progress == null
+        ? l.vodPlayMovie
+        : (_timeLeftLabel(context, progress) ?? l.vodContinueMovie);
+    final richCast = details.richCast;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ItemMetaInfo(
+          name: details.name,
+          clearLogoUrl: details.clearLogoUrl,
+          primaryActionFocusNode: playFocusNode,
+          chips: [
+            if (details.year != null) details.year!,
+            if (details.genre != null) details.genre!,
+            if (details.duration != null) details.duration!,
+            if (details.rating != null) '★ ${details.rating}',
+            if (details.containerExtension != null)
+              details.containerExtension!.toUpperCase(),
+          ],
+          buttonLabel: buttonLabel,
+          onPlay: () => _play(
+            details,
+            startPosition: progress?.positionSeconds.toDouble(),
+          ),
+          onStartOver: progress == null
+              ? null
+              // ignore: prefer_int_literals
+              : () => _play(details, startPosition: 0.0),
+          fullWidthButton: fullWidthButton,
+          progressValue: _progressValue(progress),
+          isLoading: isLoading,
+          plot: details.plot ?? 'No synopsis available.',
+          credits: [
+            if (details.director != null)
+              MetaCreditLine(label: 'Director', value: details.director!),
+            if (details.cast != null)
+              MetaCreditLine(label: 'Cast', value: details.cast!),
+          ],
+        ),
+        // Wide layout renders the cast row full-width below the poster +
+        // details block (see _buildWide); only the narrow layout keeps it
+        // inline here, as a compact picker chip under the synopsis.
+        if (compact && richCast != null && richCast.isNotEmpty) ...[
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+          CastMemberRow(
+            members: richCast,
+            semanticLabel: l.vodCast,
+            compact: true,
+            onShowAll: () => showAllCast(context, richCast),
+            allCastSemanticLabel: l.castShowAll,
+          ),
+        ],
       ],
     );
   }
@@ -279,14 +380,27 @@ class _VodDetailsBody extends StatelessWidget {
     return (progress.positionSeconds / duration).clamp(0.0, 1.0);
   }
 
-  void _play(_ResolvedVodDetails details, Progress? progress) {
+  String? _timeLeftLabel(BuildContext context, Progress? progress) {
+    final duration = progress?.durationSeconds;
+    if (progress == null || duration == null || duration <= 0) return null;
+    final remainingSeconds = (duration - progress.positionSeconds).clamp(
+      0,
+      duration,
+    );
+    final totalMinutes = (remainingSeconds / 60).ceil().clamp(1, duration);
+    final l = AppLocalizations.of(context);
+    if (totalMinutes < 60) return l.vodTimeLeftMinutes(totalMinutes);
+    return l.vodTimeLeftHoursMinutes(totalMinutes ~/ 60, totalMinutes % 60);
+  }
+
+  void _play(_ResolvedVodDetails details, {double? startPosition}) {
     onPlay?.call(
       PlayerArgs(
         streamUrl: item.streamUrl,
         title: details.name,
         type: 'vod',
         streamId: item.id,
-        startPosition: progress?.positionSeconds.toDouble(),
+        startPosition: startPosition,
         metadata: <String, Object?>{
           'title': details.name,
           if (details.containerExtension != null)
@@ -297,6 +411,7 @@ class _VodDetailsBody extends StatelessWidget {
           if (details.coverUrl != null) 'thumbnail_url': details.coverUrl,
           if (details.tmdbId != null) 'tmdb_id': details.tmdbId,
           if (details.plot != null) 'plot': details.plot,
+          if (details.edlUrl != null) 'edl_url': details.edlUrl,
         },
       ),
     );
@@ -314,14 +429,17 @@ class _ResolvedVodDetails {
   String? get genre => _notEmpty(info?.genre);
   String? get director => _notEmpty(info?.director);
   String? get cast => _notEmpty(info?.cast);
+  List<CastMember>? get richCast => info?.richCast;
   String? get year => _notEmpty(info?.year) ?? _notEmpty(info?.releaseDate);
   String? get duration => _notEmpty(info?.duration);
   double? get rating => info?.rating ?? item.rating;
   String? get coverUrl => _notEmpty(info?.coverUrl) ?? _notEmpty(item.logoUrl);
   String? get backdropUrl => _notEmpty(info?.backdropUrl);
+  String? get clearLogoUrl => _notEmpty(info?.clearLogoUrl);
   String? get containerExtension =>
       _notEmpty(info?.containerExtension) ?? item.containerExtension;
   int? get tmdbId => info?.tmdbId;
+  String? get edlUrl => _notEmpty(info?.edlUrl);
 }
 
 String? _notEmpty(String? value) {

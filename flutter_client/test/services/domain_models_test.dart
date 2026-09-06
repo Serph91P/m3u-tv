@@ -133,6 +133,59 @@ void main() {
     });
   });
 
+  group('VodInfo.edlUrl from get_vod_info', () {
+    test('reads edl_url nested under info (DVR-backed movie)', () {
+      final info = VodInfo.fromXtream(<String, Object?>{
+        'info': {
+          'edl_url': 'https://xtream.example/dvr/movie/edl',
+        },
+        'movie_data': {
+          'stream_id': 201,
+          'name': 'Recorded Movie',
+          'container_extension': 'mp4',
+        },
+      });
+      expect(info.edlUrl, 'https://xtream.example/dvr/movie/edl');
+    });
+
+    test('null when no edl_url is present anywhere', () {
+      final info = VodInfo.fromXtream(<String, Object?>{
+        'info': {'plot': 'A regular movie'},
+        'movie_data': {
+          'stream_id': 202,
+          'name': 'Regular Movie',
+          'container_extension': 'mp4',
+        },
+      });
+      expect(info.edlUrl, isNull);
+    });
+  });
+
+  group('Episode.edlUrl from get_series_info', () {
+    test('reads top-level edl_url (DVR-backed episode)', () {
+      final episode = Episode.fromXtream(<String, Object?>{
+        'id': '123',
+        'episode_num': 2,
+        'title': 'Target Episode',
+        'container_extension': 'mp4',
+        'season': 1,
+        'edl_url': 'https://xtream.example/dvr/series/ep-edl',
+      });
+      expect(episode.edlUrl, 'https://xtream.example/dvr/series/ep-edl');
+    });
+
+    test('null when edl_url is absent', () {
+      final episode = Episode.fromXtream(<String, Object?>{
+        'id': '124',
+        'episode_num': 1,
+        'title': 'Non-DVR Episode',
+        'container_extension': 'mp4',
+        'season': 1,
+      });
+      expect(episode.edlUrl, isNull);
+    });
+  });
+
   group('DvrStorageInfo.fromXtream', () {
     test('parses a quota-scoped response', () {
       final info = DvrStorageInfo.fromXtream(<String, Object?>{
@@ -308,5 +361,87 @@ void main() {
         expect(ep.subtitle, '42');
       },
     );
+  });
+
+  // m3u-tv #263: XMLTV <sub-title> is often a segment/topic, not an episode
+  // name, so it must never replace the show <title> at a display site.
+  group('EpgProgram.displayTitle', () {
+    EpgProgram program({required String title, String? subtitle}) => EpgProgram(
+      channelId: 'c1',
+      title: title,
+      description: '',
+      start: DateTime.utc(2026, 1, 1, 12),
+      end: DateTime.utc(2026, 1, 1, 13),
+      subtitle: subtitle,
+    );
+
+    test('no subtitle returns the title unchanged', () {
+      expect(
+        program(title: 'Wissen vor acht - Natur').displayTitle,
+        'Wissen vor acht - Natur',
+      );
+    });
+
+    test('distinct subtitle is appended after the title', () {
+      expect(
+        program(
+          title: 'Wissen vor acht - Natur',
+          subtitle: 'Rettet das Riff - Korallen in Gefahr!',
+        ).displayTitle,
+        'Wissen vor acht - Natur - Rettet das Riff - Korallen in Gefahr!',
+      );
+    });
+
+    test('blank/whitespace subtitle is ignored', () {
+      expect(program(title: 'News', subtitle: '   ').displayTitle, 'News');
+    });
+
+    test('subtitle identical to the title is not duplicated', () {
+      expect(program(title: 'News', subtitle: 'News').displayTitle, 'News');
+    });
+
+    test('blank title falls back to the subtitle alone', () {
+      expect(
+        program(title: '', subtitle: 'Episode Name').displayTitle,
+        'Episode Name',
+      );
+    });
+  });
+
+  group('overlapping category_ids (dynamic TMDB categories)', () {
+    test('VodItem.fromXtream stringifies the category_ids array', () {
+      final item = VodItem.fromXtream(<String, Object?>{
+        'stream_id': 1,
+        'name': 'Flow',
+        'category_id': '357',
+        // m3u-editor emits ints here; the model must stringify them.
+        'category_ids': <Object?>[357, 900000001],
+      }, 'http://example.com/1.mp4');
+
+      expect(item.categoryId, '357');
+      expect(item.categoryIds, <String>['357', '900000001']);
+    });
+
+    test('VodItem.categoryIds is empty when the array is absent', () {
+      final item = VodItem.fromXtream(<String, Object?>{
+        'stream_id': 1,
+        'name': 'Flow',
+        'category_id': '357',
+      }, 'http://example.com/1.mp4');
+
+      expect(item.categoryIds, isEmpty);
+    });
+
+    test('Series.fromXtream stringifies the category_ids array', () {
+      final series = Series.fromXtream(<String, Object?>{
+        'series_id': 2,
+        'name': 'Hot Show',
+        'category_id': '30',
+        'category_ids': <Object?>[30, 900000002],
+      });
+
+      expect(series.categoryId, '30');
+      expect(series.categoryIds, <String>['30', '900000002']);
+    });
   });
 }

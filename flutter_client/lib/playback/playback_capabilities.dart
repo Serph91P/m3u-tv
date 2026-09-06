@@ -3,10 +3,10 @@ enum PlaybackPlatform { android, apple, desktop, server }
 enum PlaybackBackend {
   androidExoPlayer,
   androidMpv,
-  appleMediaKit,
   appleAvKit,
+  appleMpvNative,
   desktopLibmpv,
-  desktopMediaKit,
+  macMpvNative,
   serverTranscode,
 }
 
@@ -64,7 +64,7 @@ class PlaybackCapabilities {
     supportsAudioTrackSelection: true,
     supportsSubtitleTrackSelection: true,
     supportsEmbeddedSubtitles: true,
-    supportsExternalSubtitles: false,
+    supportsExternalSubtitles: true,
     supportsAdvancedSubtitleFormats: false,
     supportsPlaybackSpeed: true,
     supportsSeek: true,
@@ -91,10 +91,10 @@ class PlaybackCapabilities {
     supportsLiveSeek: false,
   );
 
-  static const PlaybackCapabilities appleMediaKit = PlaybackCapabilities(
+  static const PlaybackCapabilities appleMpvNative = PlaybackCapabilities(
     platform: PlaybackPlatform.apple,
-    backend: PlaybackBackend.appleMediaKit,
-    displayName: 'Apple Media Kit',
+    backend: PlaybackBackend.appleMpvNative,
+    displayName: 'Apple native mpv',
     supportsDirectStreams: true,
     supportsServerTranscodeFallback: true,
     supportsHls: true,
@@ -151,10 +151,10 @@ class PlaybackCapabilities {
     supportsLiveSeek: false,
   );
 
-  static const PlaybackCapabilities desktopMediaKit = PlaybackCapabilities(
+  static const PlaybackCapabilities macMpvNative = PlaybackCapabilities(
     platform: PlaybackPlatform.desktop,
-    backend: PlaybackBackend.desktopMediaKit,
-    displayName: 'Desktop Media Kit',
+    backend: PlaybackBackend.macMpvNative,
+    displayName: 'macOS native mpv',
     supportsDirectStreams: true,
     supportsServerTranscodeFallback: true,
     supportsHls: true,
@@ -195,27 +195,36 @@ class PlaybackCapabilities {
   static const List<PlaybackCapabilities> matrix = <PlaybackCapabilities>[
     androidExoPlayer,
     androidMpv,
-    appleMediaKit,
+    appleMpvNative,
     appleAvKit,
     desktopLibmpv,
-    desktopMediaKit,
+    macMpvNative,
     serverTranscode,
   ];
 
+  /// The declared capability rows for [platform], in fallback order.
+  /// `PlaybackOrchestrator._nativeBackends()` walks this list filtered by
+  /// which backends actually have an adapter registered
+  /// (`_adapters.containsKey`) -- this list is the full theoretical catalog
+  /// for the platform, not a claim that every row is currently wired up in
+  /// `buildPlaybackOrchestrator()` (lib/navigation/app_router.dart) -- see
+  /// `apple_backend_feasibility.dart` for what is actually registered per
+  /// Apple target.
   static List<PlaybackCapabilities> forPlatform(PlaybackPlatform platform) {
     return switch (platform) {
       PlaybackPlatform.android => const <PlaybackCapabilities>[
         androidExoPlayer,
+        androidMpv,
         serverTranscode,
       ],
       PlaybackPlatform.apple => const <PlaybackCapabilities>[
-        appleMediaKit,
+        appleMpvNative,
         appleAvKit,
         serverTranscode,
       ],
       PlaybackPlatform.desktop => const <PlaybackCapabilities>[
+        macMpvNative,
         desktopLibmpv,
-        desktopMediaKit,
         serverTranscode,
       ],
       PlaybackPlatform.server => const <PlaybackCapabilities>[serverTranscode],

@@ -13,6 +13,16 @@ plugins {
 val media3Version = "1.10.1"
 val lifecycleVersion = "2.9.4"
 
+// The mpv-build tarballs' libc++_shared.so (extracted by :libmpv's own
+// extractLibmpvNative task into its build dir, but deliberately left out of
+// that module's own jniLibs -- see android/libmpv/build.gradle.kts) needs to
+// win the merge over whatever default NDK libc++_shared.so AGP would
+// otherwise auto-package for :libmpv's CMake-built glue library, so the
+// runtime STL matches the toolchain generation libmpv.so/libavcodec.so were
+// actually built against. Packaged here, at PROJECT scope, per the
+// packaging{}/sourceSets{} blocks below.
+val libmpvLibcxxJniDir = File(project(":libmpv").layout.buildDirectory.dir("libmpv").get().asFile, "libcxx/jni")
+
 // Reads from (in priority order):
 //   1. Gradle properties  (-PANDROID_KEYSTORE_PATH=...)
 //   2. Environment variables  (ANDROID_KEYSTORE_PATH=...)
@@ -67,7 +77,10 @@ android {
 
     defaultConfig {
         applicationId = "dev.sparkison.tv"
-        minSdk = flutter.minSdkVersion
+        // Overridden ahead of flutter.minSdkVersion (24): kept at 26 as the
+        // app's existing floor (the :libmpv module itself only requires 25,
+        // see android/libmpv/build.gradle.kts).
+        minSdk = maxOf(flutter.minSdkVersion, 26)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -95,12 +108,37 @@ android {
             }
         }
     }
+
+    packaging {
+        jniLibs {
+            // pickFirst only suppresses the duplicate libc++ merge error; the
+            // sourceSets rule below makes the runtime :libmpv extracts from
+            // the mpv-build tarballs win.
+            pickFirsts.add("lib/*/libc++_shared.so")
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            // PROJECT-scope jniLibs merge ahead of subprojects/AARs, so
+            // dependency order cannot accidentally select an older libc++
+            // copy. The directory is :libmpv's extractLibmpvNative output,
+            // wired below via the JniLibFolders task dependency.
+            jniLibs.srcDir(libmpvLibcxxJniDir)
+        }
+    }
 }
 
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+// Gradle snapshots jniLibs source dirs before task execution; this keeps the
+// extracted mpv-build libc++ directory present during input discovery.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn(":libmpv:extractLibmpvNative")
 }
 
 dependencies {
@@ -111,6 +149,10 @@ dependencies {
     implementation("androidx.media3:media3-session:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // mpv Kotlin API + JNI glue, built in-project against the pinned
+    // mpv-build native tarballs -- see android/libmpv/build.gradle.kts.
+    implementation(project(":libmpv"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     testImplementation("junit:junit:4.13.2")
 }
 

@@ -32,6 +32,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: const [
                   Channel(
                     id: 101,
@@ -91,6 +95,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: const [channel],
                 epgService: epgService,
                 onChannelSelect: (_) {},
@@ -149,6 +157,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [channel],
                   epgService: epgService,
                   onChannelSelect: (_) {},
@@ -207,6 +219,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [channel],
                   epgService: epgService,
                   onChannelSelect: (_) {},
@@ -276,6 +292,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [channel],
                   epgService: epgService,
                   onChannelSelect: (_) {},
@@ -306,6 +326,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: const [
                   Channel(
                     id: 101,
@@ -375,6 +399,63 @@ void main() {
     });
 
     testWidgets(
+      'requests EPG for a look-ahead window past the visible rows',
+      (tester) async {
+        final now = DateTime(2026, 7, 31, 12);
+        final channels = <Channel>[
+          for (var i = 1; i <= 40; i += 1)
+            Channel(
+              id: i,
+              name: 'Channel $i',
+              streamUrl: 'https://streams.example/live/$i.m3u8',
+              epgChannelId: 'chan.$i',
+            ),
+        ];
+        final requestedIndexes = <int>{};
+        var sawMultiChannelBatch = false;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(useMaterial3: true),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 300, // ~5 rows visible at _kRowH = 60
+                child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
+                  channels: channels,
+                  epgService: EpgService(clock: () => now),
+                  onChannelSelect: (_) {},
+                  onEnsureEpg: (batch, {startDate, endDate}) {
+                    if (batch.length > 1) sawMultiChannelBatch = true;
+                    for (final channel in batch) {
+                      requestedIndexes.add(channel.id - 1);
+                    }
+                  },
+                  clock: () => now,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Each built row also queues a forward slice, so the guide asks for
+        // channels well beyond the handful that fit on screen.
+        expect(sawMultiChannelBatch, isTrue);
+        expect(
+          requestedIndexes.reduce((a, b) => a > b ? a : b),
+          greaterThanOrEqualTo(20),
+        );
+      },
+    );
+
+    testWidgets(
       'null catchup metadata uses a finite seven-day retention',
       (tester) async {
         final now = DateTime(2026, 7, 31, 12);
@@ -429,6 +510,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: channels,
                   epgService: epg,
                   onChannelSelect: selectedChannels.add,
@@ -491,7 +576,7 @@ void main() {
         tester.widget<DpadInkWell>(olderBlock).onTap?.call();
 
         expect(replayedPrograms, [retainedProgram]);
-        expect(selectedChannels, [channel]);
+        expect(selectedChannels, isEmpty);
       },
     );
 
@@ -547,6 +632,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: channels,
                 epgService: epg,
                 onChannelSelect: selectedChannels.add,
@@ -585,7 +674,7 @@ void main() {
       }
 
       expect(replayedPrograms, isEmpty);
-      expect(selectedChannels, channels);
+      expect(selectedChannels, isEmpty);
     });
 
     testWidgets(
@@ -619,6 +708,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -672,6 +765,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -715,6 +812,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: const [
                   Channel(
                     id: 101,
@@ -762,6 +863,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -781,6 +886,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+
+      // The Channels column is the default landing focus now, not the
+      // day-nav header — move focus there explicitly before exercising
+      // date-control-specific key sequences.
+      _dateControlFocusable(
+        tester,
+        const ValueKey('timeline-previous-day'),
+      ).focusNode?.requestFocus();
+      await tester.pump();
 
       await tester.sendKeyEvent(LogicalKeyboardKey.select);
       await tester.pump();
@@ -816,10 +930,20 @@ void main() {
           supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: DpadRegion(
+              // Matches the production wrapping in live_tv_screen.dart's
+              // `_buildEpgGrid` (`horizontalEdge: stop`) — without it, a
+              // left-arrow with nothing left to focus in this region falls
+              // through to a cross-region search and can land on the
+              // channel column instead of stopping in place.
+              horizontalEdge: DpadEdgeBehavior.stop,
               child: SizedBox(
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -845,6 +969,16 @@ void main() {
         const ValueKey('timeline-previous-day'),
       );
       expect(previous.enabled, isFalse);
+
+      // The Channels column is the default landing focus now, not the
+      // day-nav header. "previous" is disabled, so move focus straight to
+      // "now" (matching what autofocus used to land on) before exercising
+      // the skip-disabled-control behavior below.
+      _dateControlFocusable(
+        tester,
+        const ValueKey('timeline-now'),
+      ).focusNode?.requestFocus();
+      await tester.pump();
       expect(
         _dateControlFocusable(
           tester,
@@ -901,6 +1035,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -922,6 +1060,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // The Channels column is the default landing focus now, not the
+      // day-nav header — move focus to "previous" explicitly (matching
+      // what autofocus used to land on, since it's enabled here) before
+      // exercising the skip-disabled-control behavior below.
+      _dateControlFocusable(
+        tester,
+        const ValueKey('timeline-previous-day'),
+      ).focusNode?.requestFocus();
+      await tester.pump();
       expect(
         _dateControlFocusable(
           tester,
@@ -990,6 +1137,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: const [
                   Channel(
                     id: 101,
@@ -1064,6 +1215,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -1095,6 +1250,10 @@ void main() {
                 width: 800,
                 height: 300,
                 child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
                   channels: const [
                     Channel(
                       id: 101,
@@ -1133,6 +1292,10 @@ void main() {
               width: 800,
               height: 300,
               child: TimelineEpgView(
+                channelColumnFocusNode: FocusScopeNode(),
+                onChannelColumnEdge: (_) {},
+                dayControlsFocusNode: FocusScopeNode(),
+                onDayControlsEdge: (_) {},
                 channels: const [
                   Channel(
                     id: 101,

@@ -375,9 +375,8 @@ void main() {
       'physical Android phone/tablet QA',
       'physical Android TV hardware QA',
       'Emulator logs are supplemental only',
-      'Android playback defaults to Media3/ExoPlayer',
-      'blocking fallback is m3u-editor server transcode',
-      'Android mpv/libmpv remains future-gated and non-blocking',
+      'Media3/ExoPlayer is primary again',
+      'the final fallback',
       'Authenticode/MSIX',
       'Apple Developer ID',
       'Honest Release Blockers',
@@ -406,18 +405,15 @@ void main() {
       );
 
       for (final expected in <String>[
-        'AVKit/AVPlayer-safe default',
-        'MPVKit/libmpv remains GATED',
+        'AVKit/AVPlayer as the safe default',
+        'GATED and tvOS is not release-complete',
         'GPL',
         'LGPL',
         'App Store policy',
-        'crash/runtime review',
-        'native dependency review',
         'legal review',
         'Platform.isIOS vs tvOS',
         'missing tvOS plugin implementations',
-        'community/custom embedder proof',
-        'tvOS remains BLOCKED/GATED',
+        'Community/custom embedder proof',
       ]) {
         expect(appleFeasibility, contains(expected));
       }
@@ -426,7 +422,7 @@ void main() {
         'Blocking release targets: Linux desktop, Windows desktop, Android phone/tablet, and Android TV.',
         'macOS desktop | NON-BLOCKING/GATED',
         'iOS/iPadOS | NON-BLOCKING/GATED',
-        'tvOS | NON-BLOCKING/GATED and BLOCKED',
+        'tvOS | NON-BLOCKING/GATED',
         'Apple/tvOS gates do not block the Desktop+Android release track',
       ]) {
         expect(releaseMatrix, contains(expected));
@@ -532,7 +528,14 @@ void main() {
       );
       expect(releaseSummary, contains('Android + Android TV'));
       expect(releaseSummary, contains('| Linux |'));
-      expect(releaseSummary, contains('| Windows |'));
+      expect(
+        releaseSummary,
+        contains('| Windows (portable, unsigned) |'),
+      );
+      expect(
+        releaseSummary,
+        contains('| Windows (installer, unsigned) |'),
+      );
     },
   );
 
@@ -648,9 +651,6 @@ void main() {
     final releaseWorkflow = readFile(releaseWorkflowPath);
 
     expect(linuxCmake, contains('RENAME "libmpv.so.2"'));
-    expect(linuxCmake, contains('if(TARGET media_kit_video_plugin)'));
-    expect(linuxCmake, contains('BUILD_WITH_INSTALL_RPATH TRUE'));
-    expect(linuxCmake, contains(r'INSTALL_RPATH "$ORIGIN"'));
     expect(releaseWorkflow, contains('name: Build Linux ZIP'));
     expect(releaseWorkflow, contains('name: Verify Linux bundle'));
 
@@ -671,38 +671,6 @@ void main() {
     expect(runBlockIndex, greaterThan(-1));
     final verifyLinuxRunBlock = verifyLinuxStep.substring(
       runBlockIndex + runBlockMarker.length,
-    );
-    final runLines = verifyLinuxRunBlock
-        .split('\n')
-        .map((line) => line.trim())
-        .toList();
-
-    final pluginReadelfIndex = runLines.indexOf(
-      r'readelf -d "$BUNDLE/lib/libmedia_kit_video_plugin.so" '
-      r'\',
-    );
-    expect(
-      pluginReadelfIndex,
-      greaterThan(-1),
-      reason:
-          'The plugin readelf command must be executable in this run block.',
-    );
-    expect(
-      runLines[pluginReadelfIndex + 1],
-      '> /tmp/m3u-tv-media-kit-video-dynamic.txt',
-    );
-    final runpathGrepIndex = runLines.indexOf(
-      r"grep -F 'Library runpath: [$ORIGIN]' "
-      r'\',
-    );
-    expect(
-      runpathGrepIndex,
-      greaterThan(pluginReadelfIndex),
-      reason: 'The executable RUNPATH grep must follow the plugin readelf.',
-    );
-    expect(
-      runLines[runpathGrepIndex + 1],
-      '/tmp/m3u-tv-media-kit-video-dynamic.txt',
     );
 
     expect(
@@ -915,14 +883,10 @@ void main() {
     expect(readme, contains('physical Android phone/tablet QA'));
     expect(readme, contains('physical Android TV hardware QA'));
     expect(readme, contains('Emulator logs are supplemental only'));
-    expect(readme, contains('Android playback defaults to Media3/ExoPlayer'));
+    expect(readme, contains('Android playback now uses native mpv'));
     expect(
       readme,
-      contains('blocking fallback is m3u-editor server transcode'),
-    );
-    expect(
-      readme,
-      contains('Android mpv/libmpv remains future-gated and non-blocking'),
+      contains('server transcode as the final fallback'),
     );
     expect(readme, isNot(contains('device or emulator')));
     expect(readme, isNot(contains('MPV fallback second')));

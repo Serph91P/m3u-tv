@@ -2,11 +2,11 @@
 
 import 'dart:async';
 
+import 'package:m3u_tv/playback/decoder_failure.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
-import 'package:m3u_tv/playback/subtitle_controller_provider.dart';
+import 'package:m3u_tv/playback/stream_probe_failure.dart';
 import 'package:m3u_tv/transcoding/transcoding.dart';
-import 'package:media_kit_video/media_kit_video.dart' as mkv;
 
 abstract class PlaybackTranscodeGateway {
   Future<TranscodeResponse> startServerTranscode(StreamRequest request);
@@ -40,6 +40,20 @@ class PlaybackOrchestrator {
        _bufferingTimeout = bufferingTimeout,
        _retryDelay = retryDelay;
 
+  /// How many extra attempts to give the same backend when a live source's
+  /// initial load fails with the "stream probe failure" shape (see
+  /// [looksLikeStreamProbeFailure]) before falling through to the next
+  /// backend/server-transcode fallback. This is specifically for upstream
+  /// IPTV provider failures (e.g. a transient 5xx) that a different local
+  /// backend can't route around anyway.
+  static const int _streamUnavailableMaxRetries = 2;
+  static const Duration _streamUnavailableRetryDelay = Duration(seconds: 3);
+
+  /// See the comment at its use in [_fallBackToNextBackend]: a settle
+  /// window between releasing one Hybrid Composition platform view and
+  /// creating the next, to avoid a Flutter/Android platform-view swap race.
+  static const Duration _platformViewSettleDelay = Duration(milliseconds: 300);
+
   final PlaybackPlatform _platform;
   final Map<PlaybackBackend, PlayerAdapter> _adapters;
   final PlaybackTranscodeGateway _transcodeGateway;
@@ -49,6 +63,8 @@ class PlaybackOrchestrator {
       StreamController<PlaybackState>.broadcast();
   final StreamController<PlaybackError> _errorController =
       StreamController<PlaybackError>.broadcast();
+  final StreamController<bool> _nativePlaneController =
+      StreamController<bool>.broadcast();
   final List<String> _diagnostics = <String>[];
   final List<StreamSubscription<Object?>> _subscriptions =
       <StreamSubscription<Object?>>[];
@@ -64,20 +80,41 @@ class PlaybackOrchestrator {
   int _playbackGeneration = 0;
   bool _recovering = false;
   bool _disposed = false;
+  bool _nativePlaneActive = false;
 
   Stream<PlaybackState> get onState => _stateController.stream;
   Stream<PlaybackError> get onError => _errorController.stream;
+  Stream<bool> get onNativePlaneCompositionChanged =>
+      _nativePlaneController.stream;
   PlaybackBackend? get activeBackend => _activeBackend;
+  bool get isNativePlaneActive {
+    final adapter = _activeAdapter;
+    return adapter is NativePlaneProvider &&
+        (adapter! as NativePlaneProvider).usesNativePlane;
+  }
+
   int? get activeTextureId {
     final adapter = _activeAdapter;
     if (adapter is! VideoTextureProvider) return null;
     return (adapter! as VideoTextureProvider).textureId;
   }
 
-  mkv.VideoController? get activeSubtitleController {
+  PlatformViewProvider? get activePlatformViewProvider {
     final adapter = _activeAdapter;
-    if (adapter == null || adapter is! SubtitleControllerProvider) return null;
-    return (adapter as SubtitleControllerProvider).subtitleController;
+    if (adapter is! PlatformViewProvider) return null;
+    return adapter! as PlatformViewProvider;
+  }
+
+  NativePlaneProvider? get activeNativePlaneProvider {
+    final adapter = _activeAdapter;
+    if (adapter is! NativePlaneProvider) return null;
+    return adapter! as NativePlaneProvider;
+  }
+
+  HdrToggleProvider? get activeHdrToggleProvider {
+    final adapter = _activeAdapter;
+    if (adapter is! HdrToggleProvider) return null;
+    return adapter! as HdrToggleProvider;
   }
 
   List<String> get diagnostics => List<String>.unmodifiable(_diagnostics);
@@ -98,31 +135,39 @@ class PlaybackOrchestrator {
     if (!_isCurrentGeneration(generation)) return;
     await _cleanupSessions();
     if (!_isCurrentGeneration(generation)) return;
-    _activeAdapter = null;
-    _activeBackend = null;
-    _activeSource = null;
+    _clearActiveAdapter();
 
+    await _tryBackendsThenTranscode(_nativeBackends(), source, generation);
+  }
+
+  /// Walks [backends] in order via [_tryLoadBackend], falling through to
+  /// server transcode if every one of them fails recoverably. Shared by
+  /// [open] (walks the full [_nativeBackends] list) and the mid-stream
+  /// decoder-failure path in [_handleRecoverableActiveFailure] (walks only
+  /// the backends after the one that just failed).
+  Future<void> _tryBackendsThenTranscode(
+    Iterable<PlaybackBackend> backends,
+    PlaybackSource source,
+    int generation, {
+    PlaybackBackend? previousBackend,
+  }) async {
     PlaybackException? lastRecoverableFailure;
-    PlaybackBackend? previousBackend;
-    var attempt = 0;
-    for (final backend in _nativeBackends()) {
+    var priorBackend = previousBackend;
+    var attempt = priorBackend == null ? 0 : 1;
+    for (final backend in backends) {
       if (!_isCurrentGeneration(generation)) return;
       final failure = await _tryLoadBackend(
         backend: backend,
         source: source,
         successDiagnostic: attempt == 0
             ? 'direct:${backend.name}:ready'
-            : 'fallback:${backend.name}:preferred ${previousBackend?.name ?? 'none'} unsupported',
+            : 'fallback:${backend.name}:preferred ${priorBackend?.name ?? 'none'} unsupported',
         generation: generation,
       );
       if (!_isCurrentGeneration(generation)) return;
       attempt += 1;
       if (failure == null) return;
-      if (_platform == PlaybackPlatform.android &&
-          backend == PlaybackBackend.androidExoPlayer) {
-        _diagnostics.add('android-mpv:disabled-future-gated:${failure.code}');
-      }
-      previousBackend = backend;
+      priorBackend = backend;
       if (!failure.recoverable) return;
       lastRecoverableFailure = failure;
     }
@@ -157,23 +202,29 @@ class PlaybackOrchestrator {
     if (_disposed) return;
     await stop();
     _disposed = true;
+    // Deliberately not awaited: awaiting a subscription's cancel() Future
+    // and then later closing the broadcast StreamController it was
+    // subscribed to (which every adapter.dispose() below does, for its own
+    // onState/onError controllers) can deadlock under Flutter's test zone
+    // (confirmed independent of any app code -- a minimal
+    // listen()+await cancel()+close() repro hangs under `flutter_test`,
+    // while the identical sequence completes instantly under plain `dart
+    // run`). cancel() still runs and detaches the listener; just don't
+    // block on its Future completing.
     for (final subscription in _subscriptions) {
-      await subscription.cancel();
+      unawaited(subscription.cancel());
     }
     for (final adapter in _adapters.values.toSet()) {
       await adapter.dispose();
     }
     await _stateController.close();
     await _errorController.close();
+    await _nativePlaneController.close();
   }
 
   Iterable<PlaybackBackend> _nativeBackends() sync* {
     for (final capabilities in PlaybackCapabilities.forPlatform(_platform)) {
       if (capabilities.backend == PlaybackBackend.serverTranscode) {
-        continue;
-      }
-      if (_platform == PlaybackPlatform.android &&
-          capabilities.backend == PlaybackBackend.androidMpv) {
         continue;
       }
       if (_adapters.containsKey(capabilities.backend)) {
@@ -191,54 +242,124 @@ class PlaybackOrchestrator {
     final adapter = _adapters[backend];
     if (adapter == null) return null;
     _bind(adapter);
-    _activeAdapter = adapter;
-    _activeBackend = backend;
-    _activeSource = source;
-    try {
-      await adapter.load(source);
-      if (!_isCurrentGeneration(generation)) {
-        // A newer open()/stop() call has since taken over. This adapter
-        // just started playing content nobody asked for anymore — stop it
-        // rather than leaving it running unsupervised, but only touch the
-        // shared fields if they still point at THIS call's own source. A
-        // newer call may reuse the identical adapter+backend (there's only
-        // one adapter instance per backend), so checking adapter/backend
-        // identity alone can't tell the two calls apart — checking source
-        // identity too can, since each call builds its own PlaybackSource.
+    _setActiveAdapter(adapter, backend, source);
+    if (adapter is PlatformViewProvider) {
+      // A PlatformView-backed adapter's native side can't finish load()
+      // until Flutter actually creates its platform view and the native
+      // create() callback runs -- which can't happen without a widget
+      // rebuild. Nothing otherwise guarantees a rebuild happens in the gap
+      // between selecting this backend and its first real onState event
+      // (that event is what a listener like PlayerScreen would normally
+      // rebuild on, but the adapter can't emit one yet for exactly this
+      // reason). On screens with little incidental UI activity there may be
+      // no other rebuild trigger during that window, so without this the
+      // platform view never mounts and load() times out waiting for a
+      // native side that was never given the chance to attach.
+      _stateController.add(
+        PlaybackState.idle(
+          backend: backend,
+        ).copyWith(status: PlaybackStatus.loading, source: source),
+      );
+    }
+    var streamUnavailableAttempt = 0;
+    while (true) {
+      try {
+        await adapter.load(source);
+        _syncNativePlaneComposition();
+        break;
+      } on PlaybackException catch (error) {
+        final isStreamUnavailable =
+            source.isLive && looksLikeStreamProbeFailure(error.message);
+        if (isStreamUnavailable &&
+            streamUnavailableAttempt < _streamUnavailableMaxRetries) {
+          streamUnavailableAttempt++;
+          _diagnostics.add(
+            'stream-unavailable-retry:${backend.name}:$streamUnavailableAttempt',
+          );
+          _emitError(
+            PlaybackError(
+              backend: backend,
+              message: 'Stream unavailable. Retrying…',
+              code: 'stream_unavailable_retrying',
+              recoverable: true,
+            ),
+          );
+          if (!_isCurrentGeneration(generation)) return error;
+          await adapter.stop();
+          await Future<void>.delayed(_streamUnavailableRetryDelay);
+          if (!_isCurrentGeneration(generation)) return error;
+          continue;
+        }
         if (identical(_activeAdapter, adapter) &&
             _activeBackend == backend &&
             identical(_activeSource, source)) {
-          _activeAdapter = null;
-          _activeBackend = null;
-          _activeSource = null;
+          _clearActiveAdapter();
         }
-        await adapter.stop();
-        return null;
+        if (adapter is PlatformViewProvider) {
+          // This adapter's platform view is about to be unmounted (the
+          // caller falls through to a different backend, and PlayerScreen
+          // rebuilds without this adapter once activePlatformViewProvider no
+          // longer resolves to it). A native platform-view-backed core can
+          // hold an unretained pointer into that view's own layer, so it must
+          // finish releasing it before the widget tree unmounts the view --
+          // otherwise the fallback backend's own rebuild can deallocate the
+          // layer while the native core is still attached to it.
+          await (adapter as PlatformViewProvider).releaseNativeView();
+        }
+        final reportedError = isStreamUnavailable
+            ? PlaybackException(
+                message:
+                    "This channel's stream is currently unavailable from "
+                    'your provider. Please try again in a moment.',
+                backend: error.backend,
+                code: 'stream_unavailable',
+                recoverable: error.recoverable,
+              )
+            : error;
+        _diagnostics.add(
+          'load-failed:${backend.name}:${reportedError.code}:${reportedError.message}',
+        );
+        if (reportedError.recoverable) {
+          _diagnostics.add(
+            'fallback-reason:${reportedError.code}:${reportedError.message}',
+          );
+        }
+        if (!reportedError.recoverable) {
+          _emitError(PlaybackError.fromException(reportedError));
+        }
+        return reportedError;
       }
-      _activeSource = source;
-      _diagnostics
-        ..add(successDiagnostic)
-        ..add('active-backend:${backend.name}:ready');
-      return null;
-    } on PlaybackException catch (error) {
+    }
+    if (!_isCurrentGeneration(generation)) {
+      // A newer open()/stop() call has since taken over. This adapter
+      // just started playing content nobody asked for anymore — stop it
+      // rather than leaving it running unsupervised, but only touch the
+      // shared fields if they still point at THIS call's own source. A
+      // newer call may reuse the identical adapter+backend (there's only
+      // one adapter instance per backend), so checking adapter/backend
+      // identity alone can't tell the two calls apart — checking source
+      // identity too can, since each call builds its own PlaybackSource.
       if (identical(_activeAdapter, adapter) &&
           _activeBackend == backend &&
           identical(_activeSource, source)) {
-        _activeAdapter = null;
-        _activeBackend = null;
-        _activeSource = null;
+        _clearActiveAdapter();
       }
-      _diagnostics.add(
-        'load-failed:${backend.name}:${error.code}:${error.message}',
-      );
-      if (error.recoverable) {
-        _diagnostics.add('fallback-reason:${error.code}:${error.message}');
+      if (adapter is PlatformViewProvider) {
+        // Same use-after-free reasoning as the PlaybackException branch
+        // below: this adapter's platform view is about to be unmounted
+        // (the current generation's own adapter is what's now mounted),
+        // and a native platform-view-backed core can hold an unretained
+        // pointer into that view's layer until this finishes.
+        await (adapter as PlatformViewProvider).releaseNativeView();
       }
-      if (!error.recoverable) {
-        _emitError(PlaybackError.fromException(error));
-      }
-      return error;
+      await adapter.stop();
+      return null;
     }
+    _activeSource = source;
+    _diagnostics
+      ..add(successDiagnostic)
+      ..add('active-backend:${backend.name}:ready');
+    return null;
   }
 
   Future<void> _openServerTranscode(
@@ -360,6 +481,8 @@ class PlaybackOrchestrator {
       isLive: source.isLive,
       userAgent: source.userAgent,
       headers: source.headers,
+      hdrEnabled: source.hdrEnabled,
+      matchDisplayRefreshRate: source.matchDisplayRefreshRate,
       metadata: <String, Object?>{
         ...source.metadata,
         'transcode_stream_id': response.streamId,
@@ -369,9 +492,11 @@ class PlaybackOrchestrator {
     );
 
     _bind(adapter);
-    _activeAdapter = adapter;
-    _activeBackend = PlaybackBackend.serverTranscode;
-    _activeSource = transcodedSource;
+    _setActiveAdapter(
+      adapter,
+      PlaybackBackend.serverTranscode,
+      transcodedSource,
+    );
     try {
       await adapter.load(transcodedSource);
       if (!_isCurrentGeneration(generation)) {
@@ -382,9 +507,7 @@ class PlaybackOrchestrator {
         if (identical(_activeAdapter, adapter) &&
             _activeBackend == PlaybackBackend.serverTranscode &&
             identical(_activeSource, transcodedSource)) {
-          _activeAdapter = null;
-          _activeBackend = null;
-          _activeSource = null;
+          _clearActiveAdapter();
         }
         await adapter.stop();
         if (identical(_activeBroadcast, broadcast) && broadcast != null) {
@@ -401,9 +524,7 @@ class PlaybackOrchestrator {
       if (identical(_activeAdapter, adapter) &&
           _activeBackend == PlaybackBackend.serverTranscode &&
           identical(_activeSource, transcodedSource)) {
-        _activeAdapter = null;
-        _activeBackend = null;
-        _activeSource = null;
+        _clearActiveAdapter();
       }
       await _cleanupSessions();
       _emitError(PlaybackError.fromException(error));
@@ -459,9 +580,7 @@ class PlaybackOrchestrator {
     _cancelBufferingTimer();
     final adapter = _activeAdapter;
     if (adapter == null) return;
-    _activeAdapter = null;
-    _activeBackend = null;
-    _activeSource = null;
+    _clearActiveAdapter();
     await adapter.stop();
   }
 
@@ -509,6 +628,7 @@ class PlaybackOrchestrator {
 
   void _handleAdapterState(PlaybackState state) {
     if (_disposed) return;
+    _syncNativePlaneComposition();
     _stateController.add(state);
     if (state.status == PlaybackStatus.buffering &&
         state.backend == _activeBackend) {
@@ -561,6 +681,24 @@ class PlaybackOrchestrator {
       _emitError(error);
       return;
     }
+
+    if (looksLikeDecoderFailure(error.code)) {
+      final remainingBackends = _nativeBackends()
+          .skipWhile((candidate) => candidate != backend)
+          .skip(1)
+          .toList();
+      if (remainingBackends.isNotEmpty) {
+        await _fallBackToNextBackend(
+          adapter: adapter,
+          backend: backend,
+          source: source,
+          remainingBackends: remainingBackends,
+          error: error,
+        );
+        return;
+      }
+    }
+
     if (_activeRecoveryAttempts >= 1) {
       _beginGeneration();
       await _stopActiveAdapter();
@@ -607,9 +745,92 @@ class PlaybackOrchestrator {
     }
   }
 
+  /// Switches away from [backend] to the first of [remainingBackends] after
+  /// a mid-stream decoder failure (e.g. no on-device EAC3 decoder) that
+  /// retrying the same backend can never recover from. Unlike the
+  /// same-backend retry above, this doesn't count against
+  /// [_activeRecoveryAttempts] -- it's a one-time move to a backend that can
+  /// actually decode the content, not a retry of one that can't.
+  Future<void> _fallBackToNextBackend({
+    required PlayerAdapter adapter,
+    required PlaybackBackend backend,
+    required PlaybackSource source,
+    required List<PlaybackBackend> remainingBackends,
+    required PlaybackError error,
+  }) async {
+    _recovering = true;
+    final generation = _playbackGeneration;
+    _diagnostics.add(
+      'decoder-fallback:${error.code}:${backend.name}->'
+      '${remainingBackends.first.name}',
+    );
+    try {
+      await adapter.stop();
+      if (_disposed || generation != _playbackGeneration) return;
+      if (identical(_activeAdapter, adapter) && _activeBackend == backend) {
+        _clearActiveAdapter();
+      }
+      if (adapter is PlatformViewProvider) {
+        await (adapter as PlatformViewProvider).releaseNativeView();
+        // Give Android's compositor a moment to actually finish tearing
+        // down the old Hybrid Composition SurfaceView before the next
+        // backend's own platform view tries to attach one right after --
+        // chaining stop -> release -> create back-to-back (far tighter
+        // than a cold start, which has natural startup delay before its
+        // first platform view is ever created) has been observed to throw
+        // `UnimplementedError: Not supported for hybrid composition` from
+        // Flutter's own RenderAndroidView mid-swap, which corrupts the
+        // surface handoff and leaves the new backend's video renderer with
+        // no usable Surface (audio keeps playing, video silently drops).
+        if (_disposed || generation != _playbackGeneration) return;
+        await Future<void>.delayed(_platformViewSettleDelay);
+      }
+      if (_disposed || generation != _playbackGeneration) return;
+      await _tryBackendsThenTranscode(
+        remainingBackends,
+        source,
+        generation,
+        previousBackend: backend,
+      );
+    } finally {
+      _recovering = false;
+    }
+  }
+
   void _cancelBufferingTimer() {
     _bufferingTimer?.cancel();
     _bufferingTimer = null;
+  }
+
+  // Every assignment to _activeAdapter/_activeBackend/_activeSource must be
+  // followed by _syncNativePlaneComposition() -- funneling the trio through
+  // these two setters means a future call site can't set the fields and
+  // forget the sync.
+  void _setActiveAdapter(
+    PlayerAdapter adapter,
+    PlaybackBackend backend,
+    PlaybackSource source,
+  ) {
+    _activeAdapter = adapter;
+    _activeBackend = backend;
+    _activeSource = source;
+    _syncNativePlaneComposition();
+  }
+
+  void _clearActiveAdapter() {
+    _activeAdapter = null;
+    _activeBackend = null;
+    _activeSource = null;
+    _syncNativePlaneComposition();
+  }
+
+  void _syncNativePlaneComposition() {
+    final active = isNativePlaneActive;
+    if (_nativePlaneActive == active) return;
+    _nativePlaneActive = active;
+    if (!_disposed && !_nativePlaneController.isClosed) {
+      _nativePlaneController.add(active);
+    }
   }
 
   PlayerAdapter _requireActiveAdapter() {

@@ -27,6 +27,11 @@ const _kPadding = EdgeInsets.symmetric(horizontal: 20, vertical: 12);
 /// it, which is what keeps transport controls visually level with each other.
 const _kIconButtonSize = Size(56, 56);
 
+/// [AppIconButton.dense] footprint - for icon buttons that sit next to text
+/// rather than in a transport-control row (e.g. a modal's close affordance),
+/// where the full 56dp target looks oversized against a title.
+const _kDenseIconButtonSize = Size(40, 40);
+
 enum AppButtonVariant { primary, primaryInverted, tonal, destructive }
 
 const _kBlack = Color(0xFF09090b);
@@ -118,6 +123,7 @@ class _HoverFocusable extends StatefulWidget {
   const _HoverFocusable({
     required this.child,
     required this.onSelect,
+    this.onLongSelect,
     this.autofocus = false,
     this.focusNode,
     this.autoScroll = true,
@@ -125,6 +131,11 @@ class _HoverFocusable extends StatefulWidget {
 
   final Widget child;
   final VoidCallback? onSelect;
+
+  /// D-pad long-select (via [DpadFocusable.onLongSelect]) and touch
+  /// long-press (via an inner [GestureDetector], since Material buttons
+  /// don't expose one themselves) both fire this.
+  final VoidCallback? onLongSelect;
   final bool autofocus;
   final FocusNode? focusNode;
 
@@ -160,8 +171,14 @@ class _HoverFocusableState extends State<_HoverFocusable> {
         autofocus: widget.autofocus,
         autoScroll: widget.autoScroll,
         onSelect: widget.onSelect,
+        onLongSelect: widget.onLongSelect,
         effects: kStadiumFocusEffects,
-        child: widget.child,
+        child: widget.onLongSelect == null
+            ? widget.child
+            : GestureDetector(
+                onLongPress: widget.onLongSelect,
+                child: widget.child,
+              ),
       ),
     );
   }
@@ -183,16 +200,41 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.icon,
+    this.badgeCount,
+    this.badgeColor,
+    this.badgeTextColor,
     this.variant = AppButtonVariant.tonal,
     this.autofocus = false,
     this.focusNode,
     this.loading = false,
     this.autoScroll = true,
-  });
+    this.footer,
+    this.inlineProgressValue,
+    this.onLongPress,
+  }) : assert(
+         footer == null || inlineProgressValue == null,
+         'footer and inlineProgressValue are alternate layouts for '
+         'attaching progress to a button - use only one.',
+       );
 
   final String label;
   final IconData? icon;
+
+  /// Small count badge overlaid on the button's corner (e.g. active
+  /// Multiview tile count) instead of appending the count to [label].
+  final int? badgeCount;
+
+  /// Badge background / text colours. Default to the theme error colours
+  /// (an attention cue, e.g. Multiview); pass a muted pair for a badge that
+  /// is just informational (e.g. an episode tally).
+  final Color? badgeColor;
+  final Color? badgeTextColor;
   final VoidCallback? onPressed;
+
+  /// Fires on D-pad long-select and touch long-press, alongside [onPressed]'s
+  /// plain tap/select (e.g. the Multiview button: tap opens the grid,
+  /// long-press opens a manage-channels dialog).
+  final VoidCallback? onLongPress;
   final AppButtonVariant variant;
   final bool autofocus;
   final FocusNode? focusNode;
@@ -203,6 +245,21 @@ class AppButton extends StatelessWidget {
   /// Shows a spinner in place of the label/icon and disables the button —
   /// for in-flight async actions (e.g. connecting, creating).
   final bool loading;
+
+  /// Optional content stacked below the label/icon row, inside the same
+  /// pill (e.g. a countdown bar for a timed skip prompt) instead of hanging
+  /// below it as a separate element. Width-matched to the label row via
+  /// [IntrinsicWidth] — build [footer] to fill the width it's given (e.g. a
+  /// bare [LinearProgressIndicator], which stretches on its own). Ignored
+  /// while [loading] is true.
+  final Widget? footer;
+
+  /// Renders a fixed-width progress track between [icon] and [label] on a
+  /// single row (e.g. play icon, watched-fraction bar, "33 min left") instead
+  /// of the plain icon+label row — for a resume affordance that shows watch
+  /// progress at a glance without a second element below the button.
+  /// Mutually exclusive with [footer]; ignored while [loading] is true.
+  final double? inlineProgressValue;
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +307,7 @@ class AppButton extends StatelessWidget {
       button = isPrimary
           ? ElevatedButton(style: style, onPressed: null, child: child)
           : FilledButton.tonal(style: style, onPressed: null, child: child);
-    } else if (icon == null) {
+    } else if (icon == null && footer == null && inlineProgressValue == null) {
       button = isPrimary
           ? ElevatedButton(
               style: style,
@@ -262,7 +319,7 @@ class AppButton extends StatelessWidget {
               onPressed: effectiveOnPressed,
               child: Text(label),
             );
-    } else {
+    } else if (footer == null && inlineProgressValue == null) {
       button = isPrimary
           ? ElevatedButton.icon(
               style: style,
@@ -276,14 +333,142 @@ class AppButton extends StatelessWidget {
               icon: Icon(icon),
               label: Text(label),
             );
+    } else if (inlineProgressValue != null) {
+      // A fixed-width track keeps the bar readable at a glance regardless of
+      // how long the trailing label text ends up being in a given locale.
+      final child = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18),
+            const SizedBox(width: 10),
+          ],
+          SizedBox(
+            width: 72,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: inlineProgressValue,
+                minHeight: 4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(label),
+        ],
+      );
+      button = isPrimary
+          ? ElevatedButton(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
+            )
+          : FilledButton.tonal(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
+            );
+    } else {
+      // [footer] present: build the label/icon row by hand (rather than the
+      // `.icon` convenience constructors above, which own their own Row
+      // internally with no seam to attach anything below it) and stack it
+      // over the footer inside one `IntrinsicWidth` column, so the footer —
+      // typically a bare `LinearProgressIndicator`, which otherwise wants
+      // infinite width — matches the label row's natural width exactly.
+      final labelRow = icon == null
+          ? Text(label)
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 18),
+                const SizedBox(width: 8),
+                Text(label),
+              ],
+            );
+      final child = IntrinsicWidth(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(child: labelRow),
+            const SizedBox(height: 8),
+            footer!,
+          ],
+        ),
+      );
+      button = isPrimary
+          ? ElevatedButton(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
+            )
+          : FilledButton.tonal(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
+            );
     }
 
-    return _HoverFocusable(
+    final result = _HoverFocusable(
       autofocus: autofocus,
       focusNode: focusNode,
       autoScroll: autoScroll,
       onSelect: effectiveOnPressed,
+      onLongSelect: loading ? null : onLongPress,
       child: button,
+    );
+    final count = badgeCount;
+    if (count == null) return result;
+    // Material's [Badge] wraps its child in a loose-fit Stack, which
+    // loosens whatever tight width the surrounding layout (e.g. a stretched
+    // Column or an Expanded Row slot) was enforcing on the button, so it
+    // shrinks back to its intrinsic content width instead of filling the
+    // full-width slot the other buttons in the same row/column get.
+    // StackFit.passthrough forwards those constraints unchanged instead.
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
+      children: [
+        result,
+        Positioned(
+          top: -6,
+          right: -6,
+          child: _CountBadge(
+            count: count,
+            color: badgeColor,
+            textColor: badgeTextColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count, this.color, this.textColor});
+
+  final int count;
+  final Color? color;
+  final Color? textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: ShapeDecoration(
+        color: color ?? scheme.error,
+        shape: const StadiumBorder(),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$count',
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: textColor ?? scheme.onError),
+      ),
     );
   }
 }
@@ -301,6 +486,7 @@ class AppIconButton extends StatelessWidget {
     this.autofocus = false,
     this.focusNode,
     this.autoScroll = true,
+    this.dense = false,
   });
 
   final IconData icon;
@@ -313,10 +499,17 @@ class AppIconButton extends StatelessWidget {
   /// See [_HoverFocusable.autoScroll].
   final bool autoScroll;
 
+  /// Smaller footprint + icon for buttons that sit beside text (e.g. a
+  /// modal's close affordance) rather than in a transport-control row.
+  final bool dense;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final baseStyle = IconButton.styleFrom(fixedSize: _kIconButtonSize);
+    final baseStyle = IconButton.styleFrom(
+      fixedSize: dense ? _kDenseIconButtonSize : _kIconButtonSize,
+      iconSize: dense ? 20 : null,
+    );
     final style = switch (variant) {
       AppButtonVariant.destructive => _ghostStyle(
         baseStyle,
@@ -342,7 +535,7 @@ class AppIconButton extends StatelessWidget {
       final elevatedButton = ElevatedButton(
         style: style,
         onPressed: onPressed,
-        child: Icon(icon),
+        child: Icon(icon, size: dense ? 20 : null),
       );
       final tooltipMessage = tooltip;
       rawButton = tooltipMessage == null

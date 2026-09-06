@@ -105,10 +105,44 @@ void main() {
       expect(find.text('Breaking Bad'), findsOneWidget);
     });
 
-    testWidgets('shows loading indicator while fetching', (tester) async {
+    testWidgets(
+      'dynamic category tab filters series by overlapping category_ids',
+      (tester) async {
+        // See the matching VodScreen test — dynamic TMDB categories overlap
+        // the regular category, carried via categoryIds.
+        final seriesList = [
+          const Series(
+            id: 1,
+            name: 'Breaking Bad',
+            categoryId: '30',
+            categoryIds: ['30', '900000002'],
+          ),
+          const Series(id: 2, name: 'Firefly', categoryId: '30'),
+        ];
+        final categories = [
+          const Category(id: '900000002', name: 'Trending Shows'),
+          const Category(id: '30', name: 'Thriller'),
+        ];
+
+        await tester.pumpWidget(
+          _TestApp(seriesList: seriesList, categories: categories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Trending Shows'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Breaking Bad'), findsOneWidget);
+        expect(find.text('Firefly'), findsNothing);
+      },
+    );
+
+    testWidgets('shows loading indicator only when there is nothing to show', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _TestApp(
-          seriesList: testSeriesList,
+          seriesList: const [],
           categories: testCategories,
           isLoading: true,
         ),
@@ -117,6 +151,25 @@ void main() {
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
+
+    testWidgets(
+      'keeps the populated grid visible during a background refresh',
+      (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            seriesList: testSeriesList,
+            categories: testCategories,
+            isLoading: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(find.text('Breaking Bad'), findsOneWidget);
+      },
+    );
 
     testWidgets('shows not configured message when not connected', (
       tester,
@@ -160,6 +213,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'stranger');
       await tester.pumpAndSettle();
 
@@ -174,6 +229,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Thriller'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.search));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'bad');
       await tester.pumpAndSettle();
@@ -210,6 +267,32 @@ void main() {
 
       expect(find.text('★ 4.8'), findsOneWidget);
     });
+
+    testWidgets(
+      'mobile layout shows a Filter button instead of category chips, '
+      'and selecting a category filters the grid',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            seriesList: testSeriesList,
+            categories: testCategories,
+            useSidebarLayout: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Filter'), findsOneWidget);
+
+        await tester.tap(find.text('Filter'));
+        await tester.pumpAndSettle();
+
+        final categoryTab = testCategories.first;
+        await tester.tap(find.text(categoryTab.name));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
 
@@ -219,6 +302,7 @@ class _TestApp extends StatelessWidget {
     required this.categories,
     this.isLoading = false,
     this.isConfigured = true,
+    this.useSidebarLayout = true,
     this.onSeriesSelect,
   });
 
@@ -226,6 +310,7 @@ class _TestApp extends StatelessWidget {
   final List<Category> categories;
   final bool isLoading;
   final bool isConfigured;
+  final bool useSidebarLayout;
   final void Function(Series)? onSeriesSelect;
 
   @override
@@ -240,8 +325,10 @@ class _TestApp extends StatelessWidget {
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData.dark(useMaterial3: true),
         home: SeriesScreen(
+          useSidebarLayout: useSidebarLayout,
           onSeriesSelect: onSeriesSelect ?? (_) {},
         ),
       ),

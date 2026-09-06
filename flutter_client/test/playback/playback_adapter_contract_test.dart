@@ -122,10 +122,10 @@ void main() {
         containsAll(<PlaybackBackend>[
           PlaybackBackend.androidExoPlayer,
           PlaybackBackend.androidMpv,
-          PlaybackBackend.appleMediaKit,
+          PlaybackBackend.appleMpvNative,
           PlaybackBackend.appleAvKit,
           PlaybackBackend.desktopLibmpv,
-          PlaybackBackend.desktopMediaKit,
+          PlaybackBackend.macMpvNative,
           PlaybackBackend.serverTranscode,
         ]),
       );
@@ -133,13 +133,14 @@ void main() {
         PlaybackCapabilities.forPlatform(PlaybackPlatform.android),
         <PlaybackCapabilities>[
           PlaybackCapabilities.androidExoPlayer,
+          PlaybackCapabilities.androidMpv,
           PlaybackCapabilities.serverTranscode,
         ],
       );
       expect(
         PlaybackCapabilities.forPlatform(PlaybackPlatform.apple),
         <PlaybackCapabilities>[
-          PlaybackCapabilities.appleMediaKit,
+          PlaybackCapabilities.appleMpvNative,
           PlaybackCapabilities.appleAvKit,
           PlaybackCapabilities.serverTranscode,
         ],
@@ -147,8 +148,8 @@ void main() {
       expect(
         PlaybackCapabilities.forPlatform(PlaybackPlatform.desktop),
         <PlaybackCapabilities>[
+          PlaybackCapabilities.macMpvNative,
           PlaybackCapabilities.desktopLibmpv,
-          PlaybackCapabilities.desktopMediaKit,
           PlaybackCapabilities.serverTranscode,
         ],
       );
@@ -161,7 +162,7 @@ void main() {
       );
       expect(
         PlaybackCapabilities.androidExoPlayer.supportsExternalSubtitles,
-        isFalse,
+        isTrue,
       );
       expect(
         PlaybackCapabilities.appleAvKit.supportsAdvancedSubtitleFormats,

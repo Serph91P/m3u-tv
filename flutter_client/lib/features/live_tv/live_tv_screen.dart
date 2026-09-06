@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/features/epg/epg_recording_index.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/features/live_tv/catchup_shows_dialog.dart';
+import 'package:m3u_tv/features/multiview/multiview_manage_dialog.dart';
 import 'package:m3u_tv/features/multiview/multiview_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
@@ -16,10 +17,14 @@ import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/epg_show_search_controller.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+import 'package:m3u_tv/shared/media_category_nav.dart';
 import 'package:m3u_tv/shared/recording_dot.dart';
+import 'package:m3u_tv/shared/show_search_results_view.dart';
 
 enum _ViewMode { list, logoGrid, epgGrid }
 
@@ -36,22 +41,44 @@ class LiveTvScreen extends ConsumerStatefulWidget {
     super.key,
     required this.favoritesService,
     required this.onChannelSelect,
+    required this.useSidebarLayout,
     this.viewSettingsService,
     this.onChannelContextChanged,
     this.onCatchupProgramSelect,
     this.onSidebarActivate,
     this.onScheduleProgram,
     this.onEnsureEpg,
+    this.onCatchupEpgRequested,
     this.onCancelRecording,
     this.onCancelAndDeleteRecording,
     this.onRecordSeries,
     this.onEnterFullScreenDetail,
     this.onExitFullScreenDetail,
+    this.onEntryFocusScopeReady,
+    this.onBackHandlerReady,
+    this.onSearchShows,
+    this.onShowSelect,
   });
 
   final FavoritesService favoritesService;
   final ViewSettingsService? viewSettingsService;
   final void Function(Channel) onChannelSelect;
+
+  /// TV/desktop (`true`): search+category render as a vertical strip beside
+  /// the channel list/grid. Mobile (`false`): stacked at the top with a
+  /// Filter button.
+  final bool useSidebarLayout;
+
+  /// TV/desktop only: forwarded to [MediaCategoryNav.onEntryFocusScopeReady]
+  /// so AppShell can always re-enter this screen's strip first when the
+  /// sidebar deactivates.
+  final ValueChanged<FocusScopeNode>? onEntryFocusScopeReady;
+
+  /// TV/desktop only: called once with a handler that intercepts the Back
+  /// key. Returning `true` means this screen handled it itself (moves focus
+  /// to the EPG's Channels column instead of AppShell's default sidebar
+  /// activation); `false` lets AppShell fall through to its usual behavior.
+  final ValueChanged<bool Function()>? onBackHandlerReady;
 
   /// Called with the filtered channel list (category/favorites/search) right
   /// before [onChannelSelect], so the player's skip-previous/skip-next stays
@@ -79,6 +106,14 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   /// so only channels actually scrolled into view get fetched.
   final EnsureEpg? onEnsureEpg;
 
+  /// Fetches the full catchup-retention window of EPG programs for a channel
+  /// when the user opens the catchup dialog. The default-guide fetch driven by
+  /// [onEnsureEpg] only asks for today+tomorrow, so without this the dialog
+  /// would only ever show history that happened to land in the cache. Nullable
+  /// so the screen works unwired - the dialog falls back to cache-only when
+  /// the callback is null.
+  final Future<void> Function(Channel)? onCatchupEpgRequested;
+
   /// Wired from AppShell to `AppShell._enterFullScreenDetail`/
   /// `_exitFullScreenDetail`. Multiview opens via a plain `Navigator.push`
   /// (see `dvr_recordings_screen.dart` for the same pattern), so it needs
@@ -86,19 +121,36 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   final VoidCallback? onEnterFullScreenDetail;
   final VoidCallback? onExitFullScreenDetail;
 
+  /// Wired by AppShell against `XtreamService.searchEpgShows`. Returns EPG
+  /// shows whose titles match the query for the search results view that
+  /// replaces the channel list. Null hides that view entirely (the screen
+  /// works unwired, same convention as [onEnsureEpg]). VOD/Series matches
+  /// are not surfaced here - they have their own dedicated search screens.
+  final Future<List<EpgShow>> Function(String query)? onSearchShows;
+
+  /// Tap handler for a search-result row (both "On Now" and "Upcoming"
+  /// rows navigate to the show detail screen except On Now, which tunes the
+  /// channel directly). Wired by AppShell against `_openShow` so the row
+  /// uses the same immersive full-screen push as Home's previews instead of
+  /// the bare `context.push` fallback that loses the sidebar-hide chrome
+  /// and focus restoration. Nullable so the screen works unwired - a tap is
+  /// a no-op when the callback is null.
+  final void Function(EpgShow)? onShowSelect;
+
   @override
   ConsumerState<LiveTvScreen> createState() => _LiveTvScreenState();
 }
 
-class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
-  // Multiview drives several concurrent player instances. tvOS and Android
-  // multiplex them over their one native channel pair by playerId (see
-  // AvKitPlaybackPlugin.swift / Media3PlaybackPlugin.kt); macOS (media_kit)
-  // and Linux/Windows (the in-process libmpv backend) are multi-instance by
-  // design already. iOS phones/tablets are excluded: Multiview is a TV/
-  // desktop grid feature, not a phone one.
+class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
+    with SingleTickerProviderStateMixin {
+  // Multiview drives several concurrent player instances. tvOS, iOS, and
+  // Android multiplex them over their one native channel pair by playerId
+  // (see AvKitPlaybackPlugin.swift / Media3PlaybackPlugin.kt); macOS and
+  // Linux/Windows (the in-process libmpv backend) are multi-instance by
+  // design already.
   static const Set<String> _multiviewSupportedOperatingSystems = {
     'tvos',
+    'ios',
     'android',
     'macos',
     'linux',
@@ -115,7 +167,63 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   final Map<int, EpgCurrentNext?> _epgMap = {};
   _ViewMode _viewMode = _ViewMode.list;
   EpgStartView _epgStartView = EpgStartView.currentTime;
+  ChannelColumnLayout _channelColumnLayout = ChannelColumnLayout.logoOnly;
   int _viewSettingsGeneration = 0;
+  // Shared across all three view modes since only one is ever mounted at a
+  // time (see the `switch (_viewMode)` in build()).
+  final FocusScopeNode _gridFocusNode = FocusScopeNode();
+  // MediaCategoryNav's strip hands focus off to whichever scope is passed
+  // as gridFocusScopeNode on its right edge - _gridFocusNode has no
+  // focusable descendants while search results have replaced the channel
+  // grid, so the search results get their own scope and build() passes
+  // whichever one is actually live.
+  final FocusScopeNode _searchResultsFocusNode = FocusScopeNode();
+  final GlobalKey<MediaCategoryNavState> _navKey =
+      GlobalKey<MediaCategoryNavState>();
+
+  // Lets the Channels column's and day-nav header's own right-edge handlers
+  // reach the program grid's actual last-focused block directly, rather
+  // than through _gridFocusNode's focus-history stack - that stack now also
+  // holds the Channels column's and day-controls' own (separately-scoped)
+  // entries, which can outrank a real grid block there and send focus back
+  // to one of them instead of into the grid.
+  final GlobalKey<DpadRegionState> _epgGridRegionKey =
+      GlobalKey<DpadRegionState>();
+
+  // EPG-only: a distinct hop between the program grid and the nav strip,
+  // reached via the Back key (see _handleBackFromEpg) rather than spatial
+  // left/right traversal from the grid. skipTraversal keeps this wrapper
+  // node itself out of dpad's spatial candidate search (which otherwise
+  // treats it as a real focusable item, in whichever region its own
+  // BuildContext resolves to) - without it, this node can be picked as a
+  // directional-navigation target in its own right, `.requestFocus()` calls
+  // aimed at *escaping* this region as a fresh candidate would just refocus
+  // itself, and the region behind it (or the day-navigation header, in the
+  // production layout) would never actually receive focus. skipTraversal
+  // does not affect explicit `.requestFocus()` calls (only candidate
+  // search), so entering the region programmatically still works.
+  final FocusScopeNode _channelColumnFocusNode = FocusScopeNode(
+    skipTraversal: true,
+  );
+
+  // Same rationale as _channelColumnFocusNode above, mirrored for the
+  // day-nav header: its own scope so up/down between it and the Channels
+  // column can be jumped to explicitly (see _handleChannelColumnEdge /
+  // _handleDayControlsEdge), since neither scope's boundary lets normal
+  // directional search reach the other on its own.
+  final FocusScopeNode _dayControlsFocusNode = FocusScopeNode(
+    skipTraversal: true,
+  );
+
+  // Lets LiveTvScreen reach TimelineEpgViewState's row-aware
+  // focusChannelColumn/focusProgramGrid directly (see _handleBackFromEpg,
+  // _handleChannelColumnEdge, _handleDayControlsEdge, and the nav strip's
+  // onGridEdgeEnter below) instead of the plain FocusScopeNode.requestFocus()
+  // calls above, which only ever restore whatever Flutter's own focus-history
+  // last landed on - not necessarily the row the user was actually just on.
+  final GlobalKey<TimelineEpgViewState> _timelineEpgViewKey =
+      GlobalKey<TimelineEpgViewState>();
+  final _showSearchController = EpgShowSearchController();
 
   @override
   void initState() {
@@ -123,6 +231,24 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     widget.favoritesService.addListener(_onFavoritesChanged);
     _attachViewSettingsListener();
     unawaited(_initCategory());
+    widget.onBackHandlerReady?.call(_handleBackFromEpg);
+    _showSearchController.addListener(_onShowSearchChanged);
+  }
+
+  void _onShowSearchChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool _handleBackFromEpg() {
+    if (_viewMode != _ViewMode.epgGrid) return false;
+    if (!_gridFocusNode.hasFocus) return false;
+    final state = _timelineEpgViewKey.currentState;
+    if (state != null) {
+      state.focusChannelColumn();
+    } else {
+      _channelColumnFocusNode.requestFocus();
+    }
+    return true;
   }
 
   @override
@@ -140,6 +266,13 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   void dispose() {
     widget.favoritesService.removeListener(_onFavoritesChanged);
     _detachViewSettingsListener(widget.viewSettingsService);
+    _gridFocusNode.dispose();
+    _searchResultsFocusNode.dispose();
+    _channelColumnFocusNode.dispose();
+    _dayControlsFocusNode.dispose();
+    _showSearchController
+      ..removeListener(_onShowSearchChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -165,20 +298,29 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     setState(() {
       _viewMode = _layoutToViewMode(loaded.layout);
       _epgStartView = loaded.epgStartView;
+      _channelColumnLayout = loaded.channelColumnLayout;
     });
   }
 
-  Future<({LiveTvLayout layout, EpgStartView epgStartView})?>
+  Future<
+    ({
+      LiveTvLayout layout,
+      EpgStartView epgStartView,
+      ChannelColumnLayout channelColumnLayout,
+    })?
+  >
   _loadViewSettings() async {
     final viewSettings = widget.viewSettingsService;
     if (viewSettings == null) return null;
     final results = await Future.wait([
       viewSettings.liveTvLayout(),
       viewSettings.epgStartView(),
+      viewSettings.channelColumnLayout(),
     ]);
     return (
       layout: results[0] as LiveTvLayout,
       epgStartView: results[1] as EpgStartView,
+      channelColumnLayout: results[2] as ChannelColumnLayout,
     );
   }
 
@@ -208,6 +350,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           if (loaded != null) {
             _viewMode = _layoutToViewMode(loaded.layout);
             _epgStartView = loaded.epgStartView;
+            _channelColumnLayout = loaded.channelColumnLayout;
           }
         });
       }
@@ -299,7 +442,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   Future<void> _openChannelContextMenu(
     BuildContext context,
     Channel channel,
-    // The program "Record" would act on if tapped — the channel's current
+    // The program "Record" would act on if tapped - the channel's current
     // program from the list/grid views, or whichever block was long-pressed
     // in the EPG timeline (which may be a future program, schedulable ahead
     // of time same as the editor supports; a past program is not, so callers
@@ -463,13 +606,13 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       case _ChannelContextAction.toggleFavorite:
         await _toggleFavorite(channel);
       case _ChannelContextAction.catchupShows:
-        final programs = ref
-            .read(epgServiceProvider)
-            .catchupProgramsForChannel(channel);
+        final epgService = ref.read(epgServiceProvider);
+        final epgLoad = widget.onCatchupEpgRequested?.call(channel);
         final program = await showCatchupShowsDialog(
           context,
           channel: channel,
-          programs: programs,
+          epgService: epgService,
+          epgLoad: epgLoad,
         );
         if (program != null) {
           widget.onCatchupProgramSelect?.call(channel, program);
@@ -543,127 +686,248 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     }
 
     final filtered = _filteredChannels(channels);
+    final channelsById = {for (final c in channels) c.id: c};
     _loadEpgForChannels(filtered, epgService);
-
-    return Scaffold(
-      body: Column(
-        children: [
-          _buildSearchField(),
-          _buildCategoryBar(categories),
-          Expanded(
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      AppLocalizations.of(context).liveTvNoChannels,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  )
-                : switch (_viewMode) {
-                    _ViewMode.epgGrid => _buildEpgGrid(
-                      filtered,
-                      epgService,
-                      recordingChannelIds,
-                      EpgRecordingIndex.fromRecordings(
-                        ref.watch(dvrRecordingsProvider),
-                      ),
-                    ),
-                    _ViewMode.logoGrid => _buildGridView(
-                      filtered,
-                      recordingChannelIds,
-                    ),
-                    _ViewMode.list => _buildListView(
-                      filtered,
-                      recordingChannelIds,
-                    ),
-                  },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchField() {
-    final multiviewCount = ref.watch(multiviewChannelsProvider).length;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        MediaBrowsingMetrics.contentPadding,
-        MediaBrowsingMetrics.contentPadding,
-        MediaBrowsingMetrics.contentPadding,
-        0,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: InlineMediaSearchField(
-              query: _query,
-              hintText: AppLocalizations.of(context).liveTvSearchHint,
-              onChanged: (value) => setState(() => _query = value),
-            ),
-          ),
-          if (_multiviewSupported && multiviewCount > 0) ...[
-            const SizedBox(width: 12),
-            DpadInkWell(
-              onTap: () => unawaited(_openMultiview(context)),
-              borderRadius: const BorderRadius.all(Radius.circular(50)),
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.grid_view, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      AppLocalizations.of(
-                        context,
-                      ).liveTvMultiviewCount(multiviewCount),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryBar(List<Category> categories) {
-    return ScrollableCategoryBar(
+    final l = AppLocalizations.of(context);
+    // Search results replace the channel list/grid entirely (rather than
+    // stacking above it) once a qualifying show search is active - mirrors
+    // SearchScreen's DpadTabBar + Expanded(TabBarView) structure, which
+    // keeps the results in one direct DpadRegion-per-tab instead of nested
+    // regions competing with a separate FocusScope for the channel grid.
+    final showSearchActive =
+        widget.onSearchShows != null && _query.trim().length >= 2;
+    final nav = MediaCategoryNav(
+      key: _navKey,
+      useSidebarLayout: widget.useSidebarLayout,
+      query: _query,
+      onQueryChanged: (value) {
+        setState(() => _query = value);
+        _showSearchController.onQueryChanged(value, widget.onSearchShows);
+      },
+      searchHint: l.liveTvSearchHint,
       tabs: _categoryTabs(categories),
       selectedId: _selectedCategory ?? '',
       onSelected: (id) => setState(() => _selectedCategory = id),
-      leading: IconButton(
-        icon: Icon(switch (_viewMode) {
-          _ViewMode.list => Icons.grid_view,
-          _ViewMode.logoGrid => Icons.view_list,
-          _ViewMode.epgGrid => Icons.list,
-        }),
-        onPressed: () {
-          final next = switch (_viewMode) {
-            _ViewMode.list => _ViewMode.logoGrid,
-            _ViewMode.logoGrid => _ViewMode.epgGrid,
-            _ViewMode.epgGrid => _ViewMode.list,
-          };
-          setState(() => _viewMode = next);
-          final viewSettings = widget.viewSettingsService;
-          if (viewSettings != null) {
-            unawaited(viewSettings.setLiveTvLayout(_viewModeToLayout(next)));
-          } else {
-            unawaited(widget.favoritesService.setLastViewMode(next.name));
-          }
-        },
-        tooltip: switch (_viewMode) {
-          _ViewMode.list => 'Logo grid',
-          _ViewMode.logoGrid => 'EPG grid',
-          _ViewMode.epgGrid => 'List view',
-        },
+      filterButtonLabel: l.mediaCategoryFilterButton,
+      filterScreenTitle: l.mediaCategoryFilterScreenTitle,
+      leading: _buildViewModeToggle(),
+      trailing: _buildMultiviewButton(),
+      onSidebarActivate: widget.onSidebarActivate,
+      // The strip's right edge hands focus to whichever of these actually
+      // has live focusable descendants - _gridFocusNode is empty while
+      // search results have replaced the channel grid.
+      gridFocusScopeNode: showSearchActive
+          ? _searchResultsFocusNode
+          : _gridFocusNode,
+      // In the EPG view, always land on the Channels column row that last
+      // held focus rather than whatever _gridFocusNode's own focus-history
+      // last remembered - once any program block has ever been focused,
+      // that plain FocusScopeNode.requestFocus() would otherwise skip the
+      // Channels column entirely and jump straight back into the grid.
+      onGridEdgeEnter: (!showSearchActive && _viewMode == _ViewMode.epgGrid)
+          ? _focusEpgChannelColumn
+          : null,
+      memoryKeyPrefix: 'live-tv',
+      onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
+    );
+    final content = Expanded(
+      child: Column(
+        children: [
+          if (showSearchActive)
+            Expanded(
+              child: FocusScope(
+                node: _searchResultsFocusNode,
+                child: ShowSearchResultsView(
+                  shows: _showSearchController.results,
+                  isLoading: _showSearchController.isLoading,
+                  error: _showSearchController.error,
+                  channelsById: channelsById,
+                  onChannelSelect: widget.onChannelSelect,
+                  onChannelContextChanged: widget.onChannelContextChanged,
+                  onShowSelect: widget.onShowSelect,
+                  memoryKeyPrefix: 'live-tv/search-results',
+                  onEdge: _handleGridLeftEdge,
+                  resetTabsToken: _showSearchController.searchSessionId,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              // Only show the spinner when there is nothing to display yet.
+              // During a background refresh the populated list stays visible.
+              child: isLoading && channels.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        AppLocalizations.of(context).liveTvNoChannels,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    )
+                  : FocusScope(
+                      node: _gridFocusNode,
+                      child: switch (_viewMode) {
+                        _ViewMode.epgGrid => _buildEpgGrid(
+                          filtered,
+                          epgService,
+                          recordingChannelIds,
+                          EpgRecordingIndex.fromRecordings(
+                            ref.watch(dvrRecordingsProvider),
+                          ),
+                        ),
+                        _ViewMode.logoGrid => _buildGridView(
+                          filtered,
+                          recordingChannelIds,
+                        ),
+                        _ViewMode.list => _buildListView(
+                          filtered,
+                          recordingChannelIds,
+                        ),
+                      },
+                    ),
+            ),
+        ],
       ),
+    );
+
+    return Scaffold(
+      body: widget.useSidebarLayout
+          ? Row(children: [nav, content])
+          : Column(children: [nav, content]),
+    );
+  }
+
+  /// Extracted: the All/On-Now/Upcoming sub-tab rendering, the row widget,
+  /// and the (airingNow + recentEpisodes) -> entries combiner now live in
+  /// `lib/shared/show_search_results_view.dart` and
+  /// `lib/shared/epg_show_results.dart`. Only the parent
+  /// `FocusScope`/`_searchResultsFocusNode` and the `_handleGridLeftEdge`
+  /// binding stay on this screen - both are LiveTvScreen-specific chrome
+  /// for its sidebar-nav integration.
+
+  void _handleGridLeftEdge(TraversalDirection direction) {
+    if (direction != TraversalDirection.left) return;
+    _activateSidebarNav();
+  }
+
+  void _activateSidebarNav() {
+    if (widget.useSidebarLayout) {
+      _navKey.currentState?.requestFocus();
+    } else {
+      widget.onSidebarActivate?.call();
+    }
+  }
+
+  // Targets the program grid's own DpadRegionState directly (via
+  // _epgGridRegionKey) instead of _gridFocusNode's focus-history stack —
+  // that stack also holds the Channels column's and day-controls' own
+  // (separately-scoped) entries, which are more recent than any grid block
+  // whenever the user arrived at either of them via the Back key or the
+  // Channels-column-default landing focus, so falling back through it would
+  // just bounce between those two instead of ever reaching the grid.
+  void _focusEpgGridFallback() {
+    final region = _epgGridRegionKey.currentState;
+    if (region == null) return;
+    final target = region.lastFocused ?? _firstFocusNode(region.focusNodes);
+    target?.requestFocus();
+  }
+
+  FocusNode? _firstFocusNode(Iterable<FocusNode> nodes) {
+    final iterator = nodes.iterator;
+    return iterator.moveNext() ? iterator.current : null;
+  }
+
+  void _handleChannelColumnEdge(TraversalDirection direction) {
+    switch (direction) {
+      case TraversalDirection.right:
+        _focusEpgGrid();
+      case TraversalDirection.up:
+        _dayControlsFocusNode.requestFocus();
+      case TraversalDirection.left:
+        _activateSidebarNav();
+      case TraversalDirection.down:
+        break;
+    }
+  }
+
+  void _handleDayControlsEdge(TraversalDirection direction) {
+    switch (direction) {
+      case TraversalDirection.down:
+        _channelColumnFocusNode.requestFocus();
+      case TraversalDirection.left:
+        _activateSidebarNav();
+      case TraversalDirection.right:
+        _focusEpgGrid();
+      case TraversalDirection.up:
+        break;
+    }
+  }
+
+  // Lands on the currently-airing program in whichever channel row last held
+  // focus (see TimelineEpgViewState._focusedChannelIndex), falling back to
+  // the region-memory-based _focusEpgGridFallback only when that row has no
+  // "now" block to target (e.g. no EPG data yet).
+  void _focusEpgGrid() {
+    final state = _timelineEpgViewKey.currentState;
+    if (state != null) {
+      state.focusProgramGrid();
+    } else {
+      _focusEpgGridFallback();
+    }
+  }
+
+  // Lands on the Channels column row that last held focus, falling back to
+  // Flutter's own remembered focus in _channelColumnFocusNode.
+  void _focusEpgChannelColumn() {
+    final state = _timelineEpgViewKey.currentState;
+    if (state != null) {
+      state.focusChannelColumn();
+    } else {
+      _channelColumnFocusNode.requestFocus();
+    }
+  }
+
+  Widget? _buildMultiviewButton() {
+    final multiviewCount = ref.watch(multiviewChannelsProvider).length;
+    if (!_multiviewSupported || multiviewCount == 0) return null;
+    return AppButton(
+      icon: Icons.grid_view,
+      badgeCount: multiviewCount,
+      label: AppLocalizations.of(context).multiviewTitle,
+      onPressed: () => unawaited(_openMultiview(context)),
+      onLongPress: () => unawaited(showMultiviewManageDialog(context)),
+    );
+  }
+
+  // A tooltip alone doesn't work on TV (hover-only, no mouse), so the
+  // current mode gets an explicit text label alongside its icon rather than
+  // relying on IconButton's tooltip - this also gives the mobile stacked
+  // layout a button matching the Filter button's AppButton styling instead
+  // of a bare IconButton.
+  Widget _buildViewModeToggle() {
+    final l = AppLocalizations.of(context);
+    final (icon, label) = switch (_viewMode) {
+      _ViewMode.list => (Icons.view_list, l.liveTvViewModeList),
+      _ViewMode.logoGrid => (Icons.grid_view, l.liveTvViewModeGrid),
+      _ViewMode.epgGrid => (Icons.view_timeline, l.liveTvViewModeEpg),
+    };
+    return AppButton(
+      icon: icon,
+      label: label,
+      onPressed: () {
+        final next = switch (_viewMode) {
+          _ViewMode.list => _ViewMode.logoGrid,
+          _ViewMode.logoGrid => _ViewMode.epgGrid,
+          _ViewMode.epgGrid => _ViewMode.list,
+        };
+        setState(() => _viewMode = next);
+        final viewSettings = widget.viewSettingsService;
+        if (viewSettings != null) {
+          unawaited(viewSettings.setLiveTvLayout(_viewModeToLayout(next)));
+        } else {
+          unawaited(widget.favoritesService.setLastViewMode(next.name));
+        }
+      },
     );
   }
 
@@ -671,11 +935,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     return DpadRegion(
       memoryKey: 'live-tv/list',
       horizontalEdge: DpadEdgeBehavior.stop,
-      onEdge: (direction) {
-        if (direction == TraversalDirection.left) {
-          widget.onSidebarActivate?.call();
-        }
-      },
+      onEdge: _handleGridLeftEdge,
       child: ScrollbarListView(
         itemCount: channels.length,
         itemBuilder: (context, index) {
@@ -709,16 +969,16 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     EpgRecordingIndex recordingIndex,
   ) {
     return DpadRegion(
+      key: _epgGridRegionKey,
       memoryKey: 'live-tv/epg',
       horizontalEdge: DpadEdgeBehavior.stop,
-      onEdge: (direction) {
-        if (direction == TraversalDirection.left) {
-          widget.onSidebarActivate?.call();
-        }
-      },
+      onEdge: _handleGridLeftEdge,
       child: TimelineEpgView(
+        key: _timelineEpgViewKey,
         channels: channels,
         epgService: epgService,
+        useSidebarLayout: widget.useSidebarLayout,
+        channelColumnLayout: _channelColumnLayout,
         recordingChannelIds: recordingChannelIds,
         recordingStateFor: (channel, program) => recordingIndex.stateFor(
           channelId: channel.id,
@@ -726,6 +986,11 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           programEnd: program.end,
         ),
         epgStartView: _epgStartView,
+        channelColumnFocusNode: _channelColumnFocusNode,
+        onChannelColumnEdge: _handleChannelColumnEdge,
+        dayControlsFocusNode: _dayControlsFocusNode,
+        onDayControlsEdge: _handleDayControlsEdge,
+        onFallbackFocusGrid: _focusEpgGridFallback,
         onChannelSelect: (channel) {
           widget.onChannelContextChanged?.call(channels);
           widget.onChannelSelect(channel);
@@ -733,12 +998,14 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         onCatchupProgramSelect: widget.onCatchupProgramSelect,
         onEnsureEpg: widget.onEnsureEpg,
         onChannelLongPress: (channel, program) => unawaited(
-          // Pass the exact block that was pressed — schedulable for both
+          // Pass the exact block that was pressed - schedulable for both
           // the currently-airing and future programs, same as the editor
           // supports; _openChannelContextMenu withholds "Record" itself
           // if this program has already ended.
           _openChannelContextMenu(context, channel, program),
         ),
+        onChannelColumnLongPress: (channel) =>
+            unawaited(_openChannelContextMenu(context, channel, null)),
       ),
     );
   }
@@ -747,12 +1014,17 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     return DpadRegion(
       memoryKey: 'live-tv/grid',
       horizontalEdge: DpadEdgeBehavior.stop,
-      onEdge: (direction) {
-        if (direction == TraversalDirection.left) {
-          widget.onSidebarActivate?.call();
-        }
-      },
+      onEdge: _handleGridLeftEdge,
       child: ScrollbarGridView(
+        // Zero top inset only, to match the List and EPG views' flush top
+        // edge - ScrollbarGridView's own default padding is symmetric,
+        // which otherwise leaves Grid visibly lower than its siblings.
+        padding: const EdgeInsets.fromLTRB(
+          MediaBrowsingMetrics.contentPadding,
+          0,
+          MediaBrowsingMetrics.contentPadding,
+          MediaBrowsingMetrics.contentPadding,
+        ),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 160,
           mainAxisExtent: 120,

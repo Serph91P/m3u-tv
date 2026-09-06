@@ -12,13 +12,14 @@ import 'package:m3u_tv/app/device_type_resolver.dart';
 import 'package:m3u_tv/app/system_ui_policy.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/go_router_config.dart';
+import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/production_storage.dart';
+import 'package:m3u_tv/services/window_state_service.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:window_manager/window_manager.dart';
@@ -28,18 +29,17 @@ Future<void> main() async {
   tz_data.initializeTimeZones();
   final systemUiPolicy = SystemUiPolicy();
   await systemUiPolicy.applyBrowsing();
-  // MediaKit (libmpv) is used on desktop and iOS. tvOS uses AVKit exclusively.
-  if (!kIsWeb && !Platform.isAndroid && Platform.operatingSystem != 'tvos') {
-    MediaKit.ensureInitialized();
-  }
-  if (!kIsWeb && Platform.isMacOS) {
-    await _configureMacOSWindow();
-  }
   final appState = await _buildAppState();
+  if (_isDesktop) {
+    await _configureDesktopWindow(appState);
+  }
   final nativeTelevisionHint = await resolveNativeTelevisionHint();
   if (_isMobilePushCapable(nativeTelevisionHint)) {
     unawaited(_initPushNotifications(appState));
   }
+  // Resolve the user's preferred start page before the router is built so a
+  // cold launch opens there instead of always on Home.
+  final startPage = await appState.viewSettingsService.defaultStartPage();
   runApp(
     ProviderScope(
       overrides: [overrideAppState(appState)],
@@ -47,27 +47,41 @@ Future<void> main() async {
         nativeTelevisionHint: nativeTelevisionHint,
         appState: appState,
         systemUiPolicy: systemUiPolicy,
+        initialLocation: startPage.route,
       ),
     ),
   );
 }
 
-/// Hides the native titlebar and lets app content extend under the traffic
-/// lights (macOS "hidden inline titlebar" look). AppShell paints the app's
-/// background color (0xFF09090b) into a DragToMoveArea + top inset for
-/// macOS desktop so the window stays draggable, the titlebar reads as a
-/// solid bar, and the sidebar logo doesn't sit under the traffic lights.
-Future<void> _configureMacOSWindow() async {
+bool get _isDesktop =>
+    !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+/// Initializes the desktop window: restores the size/position the user left it
+/// at last run, then keeps it in sync via a [WindowStateService] listener.
+///
+/// On macOS this also hides the native titlebar and lets app content extend
+/// under the traffic lights (the "hidden inline titlebar" look). AppShell
+/// paints the app's background color (0xFF09090b) into a DragToMoveArea + top
+/// inset for macOS desktop so the window stays draggable, the titlebar reads
+/// as a solid bar, and the sidebar logo doesn't sit under the traffic lights.
+Future<void> _configureDesktopWindow(AppStateController appState) async {
   await windowManager.ensureInitialized();
-  const windowOptions = WindowOptions(
-    titleBarStyle: TitleBarStyle.hidden,
-    windowButtonVisibility: true,
-  );
+  final windowOptions = Platform.isMacOS
+      ? const WindowOptions(
+          titleBarStyle: TitleBarStyle.hidden,
+          windowButtonVisibility: true,
+        )
+      : const WindowOptions();
+  final windowState = WindowStateService(appState.viewSettingsService);
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.setTitle('');
+    if (Platform.isMacOS) {
+      await windowManager.setTitle('');
+    }
+    await windowState.restore();
     await windowManager.show();
     await windowManager.focus();
   });
+  windowManager.addListener(windowState);
 }
 
 /// Push is mobile-only: TV builds (Android TV, tvOS) rely on the existing
@@ -87,7 +101,7 @@ Future<void> _initPushNotifications(AppStateController appState) async {
 
 Future<AppStateController> _buildAppState() async {
   final operatingSystem = Platform.operatingSystem;
-  final store = await _createAppStateStore(operatingSystem);
+  final (store, cacheStore) = await _createAppStateStores(operatingSystem);
   final storage = createProductionStorage(
     operatingSystem: operatingSystem,
     persistentStore: store,
@@ -100,11 +114,16 @@ Future<AppStateController> _buildAppState() async {
   }
   return AppStateController(
     persistentStore: storage.appStateStore,
+    cacheStore: cacheStore,
     secureStorage: storage.credentialStorage,
   );
 }
 
-Future<PersistentJsonStore> _createAppStateStore(
+/// Returns the app-state store and the content-cache store as a pair. The
+/// cache (whole channel/VOD/series catalog) is a sibling `cache.json` so a
+/// small single-key write to `app_state.json` - e.g. the resume tracker every
+/// ~10s during playback - never has to re-serialize the catalog.
+Future<(PersistentJsonStore, PersistentJsonStore)> _createAppStateStores(
   String operatingSystem,
 ) async {
   if (operatingSystem == 'tvos') {
@@ -122,13 +141,22 @@ Future<PersistentJsonStore> _createAppStateStore(
     // before any image widget builds, lets the manager use a writable
     // directory instead.
     MediaImageCacheManager.tvosCacheDirectory = dir;
-    return PersistentJsonStore(file: File('${dir.path}/app_state.json'));
+    return (
+      PersistentJsonStore(file: File('${dir.path}/app_state.json')),
+      PersistentJsonStore(file: File('${dir.path}/cache.json')),
+    );
   }
   if (operatingSystem == 'android' || operatingSystem == 'ios') {
     final dir = await getApplicationDocumentsDirectory();
-    return PersistentJsonStore(file: File('${dir.path}/app_state.json'));
+    return (
+      PersistentJsonStore(file: File('${dir.path}/app_state.json')),
+      PersistentJsonStore(file: File('${dir.path}/cache.json')),
+    );
   }
-  return PersistentJsonStore();
+  return (
+    PersistentJsonStore(),
+    PersistentJsonStore(fileName: 'cache.json'),
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -137,11 +165,13 @@ class MyApp extends StatefulWidget {
     this.nativeTelevisionHint = false,
     this.appState,
     this.systemUiPolicy,
+    this.initialLocation = RouteNames.home,
   });
 
   final bool nativeTelevisionHint;
   final AppStateController? appState;
   final SystemUiPolicy? systemUiPolicy;
+  final String initialLocation;
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -152,6 +182,7 @@ class _MyAppState extends State<MyApp> {
     appState: widget.appState ?? AppStateController(),
     nativeTelevisionHint: widget.nativeTelevisionHint,
     systemUiPolicy: widget.systemUiPolicy,
+    initialLocation: widget.initialLocation,
   );
 
   @override
@@ -211,6 +242,21 @@ class _MyAppState extends State<MyApp> {
                 borderRadius: BorderRadius.all(Radius.circular(8)),
               ),
             ],
+            // The package default (220ms animateTo) drives a Ticker that
+            // calls ScrollPosition.forcePixels() every animation frame.
+            // DpadFocusable's autoScroll, the directional-traversal
+            // fallback, and Dpad.ensureVisible() all funnel through this
+            // same animated path, including when Dpad's restoreFocus
+            // (see below) re-focuses a nearby widget after a fast-scrolled
+            // item's FocusNode is disposed by a lazy list — landing that
+            // reentrant animateTo() squarely inside the list's own
+            // semantics pass and throwing
+            // '!attached || !owner!._debugDoingSemantics' on every tick
+            // until the animation finishes (see feedback_scroll_sync_
+            // jumpto memory). Duration.zero makes every one of those calls
+            // a single non-repeating jumpTo() instead, so there's no
+            // ticker left to keep re-triggering the assertion.
+            scrollDuration: Duration.zero,
           ),
           // restoreFocus keeps focus alive on TV/desktop (needed for D-pad).
           // On phone/tablet it actively harms scroll: when focus drifts to a
@@ -285,6 +331,30 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
+/// The extra scale factor [_TvZoom] applies on top of the real screen's
+/// devicePixelRatio. Image cache-dimension widgets (`CachedBackdropImage`,
+/// `CachedMediaThumbnail`, `ResilientMediaImage`) multiply
+/// `MediaQuery.devicePixelRatioOf(context)` by this when sizing their
+/// `ResizeImage`, since they compute cache dimensions from local widget
+/// size/constraints in the shrunk virtual canvas -- unlike code that reads
+/// devicePixelRatio together with `localToGlobal()`, which already lands in
+/// real-space coordinates via the FittedBox's paint transform and needs no
+/// correction. Defaults to 1 outside the TV zoom (non-TV devices, or any
+/// context above `_TvZoom` in the tree).
+class TvZoomScale extends InheritedWidget {
+  const TvZoomScale({required this.scale, required super.child, super.key});
+
+  final double scale;
+
+  static double of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<TvZoomScale>()?.scale ??
+        1;
+  }
+
+  @override
+  bool updateShouldNotify(TvZoomScale oldWidget) => scale != oldWidget.scale;
+}
+
 /// Renders the app on a smaller virtual canvas and stretches it to fill the
 /// real screen, so text/icons/nav read clearly from a couch-length distance.
 /// TV-only: on the couch, physical viewing distance is far larger than a
@@ -292,7 +362,7 @@ class _MyAppState extends State<MyApp> {
 class _TvZoom extends StatelessWidget {
   const _TvZoom({required this.deviceType, required this.child});
 
-  static const double _scale = 1.6;
+  static const double _scale = 1.4;
 
   final DeviceType deviceType;
   final Widget child;
@@ -312,8 +382,27 @@ class _TvZoom extends StatelessWidget {
         child: SizedBox.fromSize(
           size: virtualSize,
           child: MediaQuery(
-            data: mediaQuery.copyWith(size: virtualSize),
-            child: child,
+            // padding/viewPadding/viewInsets/systemGestureInsets are all
+            // calibrated for the real screen -- FittedBox stretches the
+            // virtual canvas back up by _scale, so anything computed from
+            // these in the virtual coordinate space (SafeArea, manual
+            // Positioned offsets) must divide by _scale too, or it consumes
+            // a _scale-times-too-large share of the smaller virtual canvas.
+            data: mediaQuery.copyWith(
+              size: virtualSize,
+              // devicePixelRatio is deliberately left as the real screen's
+              // value, not divided/multiplied by _scale: code that reads it
+              // together with localToGlobal() (e.g. native_video_surface.dart)
+              // already gets real-space coordinates for free, because
+              // localToGlobal composes the FittedBox's paint transform. Image
+              // cache-dimension widgets instead read TvZoomScale.of(context)
+              // (below) to correct for the extra stretch on top of this.
+              padding: mediaQuery.padding / _scale,
+              viewPadding: mediaQuery.viewPadding / _scale,
+              viewInsets: mediaQuery.viewInsets / _scale,
+              systemGestureInsets: mediaQuery.systemGestureInsets / _scale,
+            ),
+            child: TvZoomScale(scale: _scale, child: child),
           ),
         ),
       ),

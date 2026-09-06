@@ -895,6 +895,7 @@ void main() {
             );
           },
         );
+        addTearDown(controller.dispose);
 
         await tester.pumpWidget(_TestApp(controller: controller));
         await _pumpAppState(tester);
@@ -1032,6 +1033,12 @@ void main() {
         expect(restarted.progressList.single.streamId, 201);
         expect(restarted.progressList.single.positionSeconds, 91);
         expect(restarted.error, isNot(contains('fixture-password')));
+
+        // Both controllers arm a debounced EPG-guide persist on their first
+        // successful batch; dispose within the test body so no long-lived
+        // timer outlives it.
+        controller.dispose();
+        restarted.dispose();
       },
     );
 
@@ -1112,6 +1119,148 @@ void main() {
             'liveStreams',
           ))?.data.single.name,
           'BBC One',
+        );
+      },
+    );
+
+    test(
+      'content cache migrates into its own file for pre-split installs',
+      () async {
+        final directory = await io.Directory.systemTemp.createTemp(
+          'm3u-tv-split-',
+        );
+        addTearDown(() => _deleteDirectoryRetrying(directory));
+        final stateFile = io.File('${directory.path}/app_state.json');
+        final cacheFile = io.File('${directory.path}/cache.json');
+
+        // Pre-split install: one store, so the whole catalog lands in
+        // app_state.json alongside credentials and resume progress.
+        final legacy = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        expect(
+          await legacy.connectXtream(
+            const UserCredentials(
+              server: 'https://fixture.example',
+              username: 'fixture-user',
+              password: 'fixture-password',
+            ),
+          ),
+          isTrue,
+        );
+        final stateBefore = await PersistentJsonStore(
+          file: stateFile,
+        ).snapshot();
+        expect(
+          stateBefore.keys.any((key) => key.startsWith('m3ue_cache_')),
+          isTrue,
+        );
+        expect(cacheFile.existsSync(), isFalse);
+
+        // Next launch has the split wired up: boot() moves the cache keys
+        // into cache.json and the hydrate still succeeds off the new file.
+        final migrated = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          cacheStore: PersistentJsonStore(file: cacheFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        await migrated.boot();
+        await _waitForXtreamRefresh(migrated);
+
+        expect(migrated.sourceType, AppSourceType.xtream);
+        expect(migrated.channels.single.name, 'BBC One');
+
+        final stateAfter = await PersistentJsonStore(
+          file: stateFile,
+        ).snapshot();
+        final cacheAfter = await PersistentJsonStore(
+          file: cacheFile,
+        ).snapshot();
+        expect(
+          stateAfter.keys.any((key) => key.startsWith('m3ue_cache_')),
+          isFalse,
+        );
+        expect(
+          cacheAfter.keys.any((key) => key.startsWith('m3ue_cache_')),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'boot sweeps cache keys still left in app_state.json after a '
+      'half-finished earlier migration',
+      () async {
+        final directory = await io.Directory.systemTemp.createTemp(
+          'm3u-tv-split-leftover-',
+        );
+        addTearDown(() => _deleteDirectoryRetrying(directory));
+        final stateFile = io.File('${directory.path}/app_state.json');
+        final cacheFile = io.File('${directory.path}/cache.json');
+
+        final legacy = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        expect(
+          await legacy.connectXtream(
+            const UserCredentials(
+              server: 'https://fixture.example',
+              username: 'fixture-user',
+              password: 'fixture-password',
+            ),
+          ),
+          isTrue,
+        );
+
+        // Simulate a crash between adoptKeysFrom's two writes: cache.json
+        // already has the keys, but app_state.json was never cleared.
+        final stateSnapshot = await PersistentJsonStore(
+          file: stateFile,
+        ).snapshot();
+        final seededCache = PersistentJsonStore(file: cacheFile);
+        for (final entry in stateSnapshot.entries) {
+          if (entry.key.startsWith('m3ue_cache_')) {
+            await seededCache.write(entry.key, entry.value);
+          }
+        }
+        expect(
+          (await PersistentJsonStore(file: stateFile).snapshot()).keys.any(
+            (key) => key.startsWith('m3ue_cache_'),
+          ),
+          isTrue,
+        );
+
+        final migrated = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          cacheStore: PersistentJsonStore(file: cacheFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        await migrated.boot();
+        await _waitForXtreamRefresh(migrated);
+
+        expect(migrated.sourceType, AppSourceType.xtream);
+        expect(migrated.channels.single.name, 'BBC One');
+        expect(
+          (await PersistentJsonStore(file: stateFile).snapshot()).keys.any(
+            (key) => key.startsWith('m3ue_cache_'),
+          ),
+          isFalse,
+        );
+        expect(
+          (await PersistentJsonStore(file: cacheFile).snapshot()).keys.any(
+            (key) => key.startsWith('m3ue_cache_'),
+          ),
+          isTrue,
         );
       },
     );
@@ -1739,6 +1888,225 @@ void main() {
     });
   });
 
+  group('EPG background sweep', () {
+    const credentials = UserCredentials(
+      server: 'https://fixture.example',
+      username: 'fixture-user',
+      password: 'fixture-password',
+    );
+
+    List<Map<String, Object?>> manyLiveStreams(int count) =>
+        <Map<String, Object?>>[
+          for (var i = 1; i <= count; i += 1)
+            <String, Object?>{
+              'stream_id': i,
+              'name': 'Channel $i',
+              'category_id': '10',
+              'epg_channel_id': 'chan.$i',
+            },
+        ];
+
+    test('pulls the whole guide in the background after the prime', () async {
+      var noDateBatches = 0;
+      final base = _FakeXtreamTransport.success().withResponse(
+        'get_live_streams',
+        manyLiveStreams(210),
+      );
+      Future<Object?> transport(XtreamRequest request) async {
+        if (request.action == 'get_epg_batch' &&
+            request.params['date'] == null) {
+          noDateBatches += 1;
+        }
+        return base.call(request);
+      }
+
+      final controller = _controller(
+        storage: InMemorySecureStorage(),
+        transport: transport,
+      );
+      addTearDown(controller.dispose);
+
+      expect(await controller.connectXtream(credentials), isTrue);
+
+      // Prime is one batch; the remaining 120 channels sweep in two more.
+      final swept = await _pollUntil(
+        () => noDateBatches >= 3,
+        timeout: const Duration(seconds: 8),
+      );
+      expect(swept, isTrue, reason: 'background sweep never covered the tail');
+
+      final tailChannel = controller.channels[200];
+      expect(
+        controller.epgService.hasFreshDataForChannel(tailChannel),
+        isTrue,
+      );
+    });
+
+    test('stops sweeping when the controller is disposed', () async {
+      var noDateBatches = 0;
+      final base = _FakeXtreamTransport.success().withResponse(
+        'get_live_streams',
+        manyLiveStreams(210),
+      );
+      Future<Object?> transport(XtreamRequest request) async {
+        if (request.action == 'get_epg_batch' &&
+            request.params['date'] == null) {
+          noDateBatches += 1;
+        }
+        return base.call(request);
+      }
+
+      final controller = _controller(
+        storage: InMemorySecureStorage(),
+        transport: transport,
+      );
+
+      expect(await controller.connectXtream(credentials), isTrue);
+      controller.dispose();
+
+      await Future<void>.delayed(const Duration(seconds: 3));
+      // Only the prime batch may have gone out; the sweep must not run.
+      expect(noDateBatches, lessThanOrEqualTo(1));
+    });
+  });
+
+  group('offline EPG guide cache', () {
+    test(
+      'cold boot paints the persisted guide before the refresh lands',
+      () async {
+        final storage = InMemorySecureStorage();
+        await storage.write(
+          'm3ue_tv_credentials',
+          jsonEncode(<String, String>{
+            'server': 'https://fixture.example',
+            'username': 'fixture-user',
+            'password': 'fixture-password',
+          }),
+        );
+        await storage.write(
+          'm3ue_tv_source',
+          jsonEncode(<String, String>{'type': 'xtream'}),
+        );
+
+        final now = DateTime.utc(2026, 7, 30, 12);
+        final cacheMemory = <String, Object?>{};
+        final seed = CacheService(memory: cacheMemory);
+        await seed.set('sourceType', 'xtream');
+        await seed.set<List<Category>>('liveCategories', const [
+          Category(id: '10', name: 'News'),
+        ]);
+        await seed.set<List<Channel>>('liveStreams', const [
+          Channel(
+            id: 101,
+            name: 'BBC One',
+            streamUrl: 'https://fixture.example/live/101',
+            epgChannelId: 'bbc.one',
+          ),
+        ]);
+        await seed.set<List<EpgProgram>>('epgGuide', [
+          EpgProgram(
+            channelId: 'bbc.one',
+            title: 'Cached Now',
+            description: '',
+            start: now.subtract(const Duration(minutes: 20)),
+            end: now.add(const Duration(minutes: 20)),
+          ),
+          EpgProgram(
+            channelId: 'bbc.one',
+            title: 'Cached Next',
+            description: '',
+            start: now.add(const Duration(minutes: 20)),
+            end: now.add(const Duration(minutes: 80)),
+          ),
+        ]);
+
+        final base = _FakeXtreamTransport.success();
+        final epgGate = Completer<Object?>();
+        Future<Object?> transport(XtreamRequest request) {
+          if (request.action == 'get_epg_batch') return epgGate.future;
+          return base.call(request);
+        }
+
+        final controller = _controller(
+          storage: storage,
+          cacheMemory: cacheMemory,
+          epgService: EpgService(clock: () => now),
+          transport: transport,
+        );
+        addTearDown(controller.dispose);
+
+        await controller.boot();
+
+        // The live network guide is still gated, so this can only come from
+        // the persisted cache merged during hydrate.
+        final lookup = controller.epgService.lookup('bbc.one');
+        expect(lookup?.current.title, 'Cached Now');
+        expect(lookup?.next?.title, 'Cached Next');
+      },
+    );
+
+    test('a stale persisted guide (all programmes ended) is ignored', () async {
+      final storage = InMemorySecureStorage();
+      await storage.write(
+        'm3ue_tv_credentials',
+        jsonEncode(<String, String>{
+          'server': 'https://fixture.example',
+          'username': 'fixture-user',
+          'password': 'fixture-password',
+        }),
+      );
+      await storage.write(
+        'm3ue_tv_source',
+        jsonEncode(<String, String>{'type': 'xtream'}),
+      );
+
+      final now = DateTime.utc(2026, 7, 30, 12);
+      final cacheMemory = <String, Object?>{};
+      final seed = CacheService(memory: cacheMemory);
+      await seed.set('sourceType', 'xtream');
+      await seed.set<List<Channel>>('liveStreams', const [
+        Channel(
+          id: 101,
+          name: 'BBC One',
+          streamUrl: 'https://fixture.example/live/101',
+          epgChannelId: 'bbc.one',
+        ),
+      ]);
+      await seed.set<List<EpgProgram>>('epgGuide', [
+        EpgProgram(
+          channelId: 'bbc.one',
+          title: 'Yesterday',
+          description: '',
+          start: now.subtract(const Duration(days: 1, hours: 2)),
+          end: now.subtract(const Duration(days: 1)),
+        ),
+      ]);
+
+      final base = _FakeXtreamTransport.success();
+      final epgGate = Completer<Object?>();
+      Future<Object?> transport(XtreamRequest request) {
+        if (request.action == 'get_epg_batch') return epgGate.future;
+        return base.call(request);
+      }
+
+      final controller = _controller(
+        storage: storage,
+        cacheMemory: cacheMemory,
+        epgService: EpgService(clock: () => now),
+        transport: transport,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.boot();
+
+      expect(controller.epgService.lookup('bbc.one'), isNull);
+      expect(
+        controller.epgService.programsForChannel(controller.channels.single),
+        isEmpty,
+      );
+    });
+  });
+
   group('DVR storage refresh', () {
     const credentials = UserCredentials(
       server: 'https://fixture.example',
@@ -1898,6 +2266,20 @@ Future<void> _pumpAppState(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 250));
   await tester.pump();
+}
+
+/// Polls [condition] every 50ms until it is true or [timeout] elapses,
+/// returning whether it became true.
+Future<bool> _pollUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (condition()) return true;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  return condition();
 }
 
 Future<void> _waitForXtreamRefresh(

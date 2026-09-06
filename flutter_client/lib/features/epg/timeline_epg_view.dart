@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:intl/intl.dart';
 
 import 'package:m3u_tv/features/epg/epg_recording_state.dart';
@@ -8,10 +10,13 @@ import 'package:m3u_tv/features/epg/program_recording_indicator.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
-import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/services/view_settings_service.dart'
+    show ChannelColumnLayout, EpgStartView;
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/catchup_badge.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/epg_icon_pill.dart';
+import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/recording_dot.dart';
 
 typedef CatchupProgramSelect =
@@ -28,6 +33,18 @@ const double _kTimeHeaderH = 28;
 const double _kRowH = 60;
 const double _kPxPerMin = 5; // 300 px per hour
 
+// When a row builds, also request EPG for this many channels past it so a
+// downward scroll lands on already-loaded data instead of waiting on a lazy
+// fetch. [onEnsureEpg] is debounced and de-duped, so the widened slice just
+// coalesces into one batched request.
+const int _kEpgPrefetchAhead = 12;
+
+// Build (and therefore prefetch) roughly this many rows beyond the viewport in
+// each direction.
+const ScrollCacheExtent _kEpgCacheExtent = ScrollCacheExtent.pixels(
+  _kRowH * 10,
+);
+
 /// Horizontal TV-guide style EPG with channels on Y and time on X.
 ///
 /// Programs appear as proportionally-sized blocks that can be scrolled left/right
@@ -39,21 +56,52 @@ class TimelineEpgView extends StatefulWidget {
     required this.channels,
     required this.epgService,
     required this.onChannelSelect,
+    required this.channelColumnFocusNode,
+    required this.onChannelColumnEdge,
+    required this.dayControlsFocusNode,
+    required this.onDayControlsEdge,
     this.onCatchupProgramSelect,
     this.onEnsureEpg,
     this.onChannelLongPress,
+    this.onChannelColumnLongPress,
     this.recordingChannelIds = const <int>{},
     this.recordingStateFor = _noRecordingState,
     this.windowHours = 24,
     this.futureDays = 7,
     this.clock = DateTime.now,
     this.epgStartView = EpgStartView.currentTime,
+    this.useSidebarLayout = false,
+    this.channelColumnLayout = ChannelColumnLayout.logoOnly,
+    this.onFallbackFocusGrid,
   });
 
   final List<Channel> channels;
   final EpgService epgService;
   final void Function(Channel) onChannelSelect;
   final CatchupProgramSelect? onCatchupProgramSelect;
+
+  /// The channel column's own focus scope, so the caller (`LiveTvScreen`)
+  /// can move focus there directly (e.g. from the Back key) instead of only
+  /// via spatial traversal from the program grid.
+  final FocusScopeNode channelColumnFocusNode;
+
+  /// Fired when d-pad navigation hits the channel column's own edge —
+  /// mirrors the program grid's `onEdge` (left activates the nav
+  /// strip/sidebar, right returns focus to the program grid, up moves to
+  /// the day-nav header).
+  final ValueChanged<TraversalDirection> onChannelColumnEdge;
+
+  /// The day-nav header's (previous/date/now/next) own focus scope, so the
+  /// caller can move focus there directly from the Channels column (up) the
+  /// same way [channelColumnFocusNode] is targeted from the Back key —
+  /// plain spatial traversal can't cross into a sibling [FocusScopeNode]
+  /// automatically, so this needs to be reachable programmatically.
+  final FocusScopeNode dayControlsFocusNode;
+
+  /// Fired when d-pad navigation hits the day-nav header's own edge — left
+  /// activates the nav strip/sidebar, right returns focus to the program
+  /// grid, down moves to the Channels column.
+  final ValueChanged<TraversalDirection> onDayControlsEdge;
 
   /// Requests EPG data for a channel be fetched (lazily, debounced) if not
   /// already fresh. Called per-row as the visible timeline builds.
@@ -64,6 +112,10 @@ class TimelineEpgView extends StatefulWidget {
   /// parity. The program passed is whichever block was pressed (past,
   /// current, or future); the caller decides whether it's still schedulable.
   final CatchupProgramSelect? onChannelLongPress;
+
+  /// Same context menu as [onChannelLongPress], but for long-pressing the
+  /// channel column itself, which has no associated program block.
+  final ValueChanged<Channel>? onChannelColumnLongPress;
 
   final Set<int> recordingChannelIds;
 
@@ -91,11 +143,27 @@ class TimelineEpgView extends StatefulWidget {
   final Clock clock;
   final EpgStartView epgStartView;
 
+  /// Whether the caller is using the sidebar (TV/desktop) layout rather than
+  /// the mobile stacked one — mirrors `MediaCategoryNav.useSidebarLayout`.
+  /// Rounds the Channels column's corner cell to match the sidebar strip's
+  /// search input radius; left off (square corner) on mobile.
+  final bool useSidebarLayout;
+
+  /// What each row of the fixed Channels column shows for a channel.
+  final ChannelColumnLayout channelColumnLayout;
+
+  /// Called by [TimelineEpgViewState.focusProgramGrid] when the target
+  /// channel row's "now" program block isn't available to focus directly
+  /// (e.g. no live program data for that row yet) — falls back to whatever
+  /// the caller considers a reasonable default (typically the program
+  /// grid's own region focus-history).
+  final VoidCallback? onFallbackFocusGrid;
+
   @override
-  State<TimelineEpgView> createState() => _TimelineEpgViewState();
+  State<TimelineEpgView> createState() => TimelineEpgViewState();
 }
 
-class _TimelineEpgViewState extends State<TimelineEpgView> {
+class TimelineEpgViewState extends State<TimelineEpgView> {
   late final ScrollController _leftVCtrl;
   late final ScrollController _rightVCtrl;
   late final ScrollController _headerHCtrl;
@@ -108,6 +176,20 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
   late double _totalW;
   late double _nowOffset;
 
+  // Tracks whichever channel row last held focus, in either the Channels
+  // column or the program grid, so the two can hand focus back and forth on
+  // that same row instead of relying on Flutter's/dpad's own separate
+  // per-scope focus-history (which has no notion of "row" and drifts out of
+  // sync with whichever row the user is actually looking at - see
+  // LiveTvScreen's _handleBackFromEpg / _handleChannelColumnEdge callers of
+  // focusChannelColumn / focusProgramGrid).
+  int _focusedChannelIndex = 0;
+  late List<FocusNode> _channelFocusNodes;
+  // One per channel row, attached to that row's currently-airing program
+  // block (if any) so `focusProgramGrid` can land there directly instead of
+  // the day's first block.
+  late List<FocusNode> _nowFocusNodes;
+
   @override
   void initState() {
     super.initState();
@@ -117,9 +199,52 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
     _rightVCtrl = ScrollController();
     _headerHCtrl = ScrollController(initialScrollOffset: _nowOffset);
     _rowHCtrls = _makeRowCtrls(widget.channels.length);
+    _channelFocusNodes = _makeFocusNodes(widget.channels.length);
+    _nowFocusNodes = _makeFocusNodes(widget.channels.length);
     _leftVCtrl.addListener(_onLeftV);
     _rightVCtrl.addListener(_onRightV);
     WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
+  }
+
+  List<FocusNode> _makeFocusNodes(int count) =>
+      List.generate(count, (_) => FocusNode());
+
+  void _setFocusedChannelIndex(int index) {
+    if (_focusedChannelIndex == index) return;
+    // Not setState: this only feeds the next focusChannelColumn/
+    // focusProgramGrid call, nothing in build() reads it.
+    _focusedChannelIndex = index;
+  }
+
+  FocusNode? _attachedFocusNode(List<FocusNode> nodes, int index) {
+    if (index < 0 || index >= nodes.length) return null;
+    final node = nodes[index];
+    return node.context != null ? node : null;
+  }
+
+  /// Moves focus to the Channels column, landing on the row last associated
+  /// with [_focusedChannelIndex] (whichever row most recently held focus in
+  /// either the Channels column or the program grid) rather than wherever
+  /// Flutter's own focus-history for the column happens to point.
+  void focusChannelColumn() {
+    final node = _attachedFocusNode(_channelFocusNodes, _focusedChannelIndex);
+    if (node != null) {
+      node.requestFocus();
+    } else {
+      widget.channelColumnFocusNode.requestFocus();
+    }
+  }
+
+  /// Moves focus into the program grid, landing on the currently-airing
+  /// program for the row last associated with [_focusedChannelIndex] rather
+  /// than the day's first program block or a stale remembered cell.
+  void focusProgramGrid() {
+    final node = _attachedFocusNode(_nowFocusNodes, _focusedChannelIndex);
+    if (node != null) {
+      node.requestFocus();
+    } else {
+      widget.onFallbackFocusGrid?.call();
+    }
   }
 
   void _initWindow() {
@@ -207,28 +332,70 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
     WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
   }
 
+  // Both sync paths below defer their actual jumpTo() calls to a
+  // post-frame callback instead of firing them synchronously from within
+  // the triggering ScrollController listener/notification. jumpTo()
+  // internally calls goIdle()/beginActivity(), which toggles
+  // RenderIgnorePointer.ignoring and calls markNeedsSemanticsUpdate() on
+  // the *other* scrollable. During a fast fling, ListView.builder is
+  // itself mid-way through attaching/detaching rows and running its own
+  // semantics pass; a reentrant jumpTo() fired from inside that pass hits
+  // Flutter's `!attached || !owner!._debugDoingSemantics` assertion and
+  // throws, aborting the sync call and leaving the two scrollables
+  // permanently desynced. Deferring to addPostFrameCallback runs the jump
+  // after the current frame's build/layout/semantics have fully settled,
+  // which is always safe. The `_vSyncScheduled`/`_hSyncScheduled` flags
+  // coalesce a burst of notifications (many pixels-per-frame during a
+  // fling) into a single deferred jump using the latest offset.
+  bool _vSyncScheduled = false;
+  bool _pendingSyncFromLeft = false;
+
   void _onLeftV() {
-    if (_vSyncing || !_rightVCtrl.hasClients) return;
-    _vSyncing = true;
-    _rightVCtrl.jumpTo(_leftVCtrl.offset);
-    _vSyncing = false;
+    if (_vSyncing) return;
+    _pendingSyncFromLeft = true;
+    _scheduleVSync();
   }
 
   void _onRightV() {
-    if (_vSyncing || !_leftVCtrl.hasClients) return;
-    _vSyncing = true;
-    _leftVCtrl.jumpTo(_rightVCtrl.offset);
-    _vSyncing = false;
+    if (_vSyncing) return;
+    _pendingSyncFromLeft = false;
+    _scheduleVSync();
   }
+
+  void _scheduleVSync() {
+    if (_vSyncScheduled) return;
+    _vSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _vSyncScheduled = false;
+      if (!mounted) return;
+      _vSyncing = true;
+      if (_pendingSyncFromLeft) {
+        _jump(_rightVCtrl, _leftVCtrl.hasClients ? _leftVCtrl.offset : 0);
+      } else {
+        _jump(_leftVCtrl, _rightVCtrl.hasClients ? _rightVCtrl.offset : 0);
+      }
+      _vSyncing = false;
+    });
+  }
+
+  bool _hSyncScheduled = false;
+  double _pendingHOffset = 0;
 
   void _syncH(double offset) {
     if (_hSyncing) return;
-    _hSyncing = true;
-    _jump(_headerHCtrl, offset);
-    for (final c in _rowHCtrls) {
-      _jump(c, offset);
-    }
-    _hSyncing = false;
+    _pendingHOffset = offset;
+    if (_hSyncScheduled) return;
+    _hSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hSyncScheduled = false;
+      if (!mounted) return;
+      _hSyncing = true;
+      _jump(_headerHCtrl, _pendingHOffset);
+      for (final c in _rowHCtrls) {
+        _jump(c, _pendingHOffset);
+      }
+      _hSyncing = false;
+    });
   }
 
   void _jump(ScrollController ctrl, double offset) {
@@ -238,15 +405,26 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
   }
 
   @override
-  void didUpdateWidget(TimelineEpgView old) {
-    super.didUpdateWidget(old);
-    if (widget.channels.length != old.channels.length) {
+  void didUpdateWidget(TimelineEpgView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.channels.length != oldWidget.channels.length) {
       for (final c in _rowHCtrls) {
         c.dispose();
       }
       _rowHCtrls = _makeRowCtrls(widget.channels.length);
+      for (final n in _channelFocusNodes) {
+        n.dispose();
+      }
+      _channelFocusNodes = _makeFocusNodes(widget.channels.length);
+      for (final n in _nowFocusNodes) {
+        n.dispose();
+      }
+      _nowFocusNodes = _makeFocusNodes(widget.channels.length);
+      if (_focusedChannelIndex >= widget.channels.length) {
+        _focusedChannelIndex = math.max(0, widget.channels.length - 1);
+      }
     }
-    if (widget.epgStartView != old.epgStartView) {
+    if (widget.epgStartView != oldWidget.epgStartView) {
       _initWindow();
       WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
     }
@@ -266,6 +444,12 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
     _leftVCtrl.dispose();
     _rightVCtrl.dispose();
     _headerHCtrl.dispose();
+    for (final n in _channelFocusNodes) {
+      n.dispose();
+    }
+    for (final n in _nowFocusNodes) {
+      n.dispose();
+    }
     for (final c in _rowHCtrls) {
       c.dispose();
     }
@@ -279,17 +463,31 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
 
     return Column(
       children: [
-        _DayControls(
-          selectedDate: _selectedDate,
-          canGoPrevious: _selectedDate.isAfter(
-            _offsetDate(now, -_maxCatchupDays),
+        // Its own FocusScope (like the Channels column) so LiveTvScreen can
+        // jump straight here from the Channels column's up-edge — a plain
+        // FocusScopeNode boundary blocks Flutter's normal directional
+        // search from crossing into a sibling scope on its own, so both
+        // hops (here and the Channels column) need to be explicit.
+        FocusScope(
+          node: widget.dayControlsFocusNode,
+          child: DpadRegion(
+            memoryKey: 'live-tv/epg-daycontrols',
+            horizontalEdge: DpadEdgeBehavior.stop,
+            verticalEdge: DpadEdgeBehavior.stop,
+            onEdge: widget.onDayControlsEdge,
+            child: _DayControls(
+              selectedDate: _selectedDate,
+              canGoPrevious: _selectedDate.isAfter(
+                _offsetDate(now, -_maxCatchupDays),
+              ),
+              canGoNext: _selectedDate.isBefore(
+                _offsetDate(now, widget.futureDays),
+              ),
+              onPrevious: () => _selectDate(_offsetDate(_selectedDate, -1)),
+              onNow: () => _selectDate(_dateOnly(widget.clock())),
+              onNext: () => _selectDate(_offsetDate(_selectedDate, 1)),
+            ),
           ),
-          canGoNext: _selectedDate.isBefore(
-            _offsetDate(now, widget.futureDays),
-          ),
-          onPrevious: () => _selectDate(_offsetDate(_selectedDate, -1)),
-          onNow: () => _selectDate(_dateOnly(widget.clock())),
-          onNext: () => _selectDate(_offsetDate(_selectedDate, 1)),
         ),
         Expanded(
           child: Row(
@@ -302,7 +500,16 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                     // Corner cell
                     Container(
                       height: _kTimeHeaderH,
-                      color: colorScheme.surfaceContainerHighest,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest,
+                        borderRadius: widget.useSidebarLayout
+                            ? const BorderRadius.only(
+                                topLeft: Radius.circular(
+                                  MediaBrowsingMetrics.cardRadius,
+                                ),
+                              )
+                            : null,
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -315,14 +522,56 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                     ),
                     // Channel name/logo list (synced vertically with program rows)
                     Expanded(
-                      child: ListView.builder(
-                        controller: _leftVCtrl,
-                        itemCount: widget.channels.length,
-                        itemExtent: _kRowH,
-                        itemBuilder: (_, i) => _ChannelCell(
-                          channel: widget.channels[i],
-                          isRecording: widget.recordingChannelIds.contains(
-                            widget.channels[i].id,
+                      // DpadRegion must be the OUTER widget here, not the
+                      // FocusScope: `DpadRegion.ofNode` resolves a node's
+                      // region from that node's own BuildContext, walking
+                      // upward. With FocusScope outside, its FocusScopeNode
+                      // (which defaults to canRequestFocus: true, unlike the
+                      // package's own region markers) would resolve to
+                      // whatever DpadRegion encloses this whole EPG view
+                      // (live-tv/epg) rather than this nested one — making
+                      // it a spurious spatial-navigation candidate that can
+                      // steal focus from unrelated controls elsewhere in
+                      // that outer region (e.g. the day-navigation header).
+                      // Nesting FocusScope inside DpadRegion instead makes
+                      // the scope node belong to *this* region, where it's
+                      // correctly excluded from being its own candidate.
+                      child: DpadRegion(
+                        memoryKey: 'live-tv/epg-channels',
+                        horizontalEdge: DpadEdgeBehavior.stop,
+                        verticalEdge: DpadEdgeBehavior.stop,
+                        onEdge: widget.onChannelColumnEdge,
+                        child: FocusScope(
+                          node: widget.channelColumnFocusNode,
+                          child: ListView.builder(
+                            controller: _leftVCtrl,
+                            itemCount: widget.channels.length,
+                            itemExtent: _kRowH,
+                            itemBuilder: (_, i) => _ChannelCell(
+                              channel: widget.channels[i],
+                              columnLayout: widget.channelColumnLayout,
+                              isRecording: widget.recordingChannelIds.contains(
+                                widget.channels[i].id,
+                              ),
+                              // The Channels column is the default landing
+                              // spot for the EPG view (not the day-nav
+                              // header or a program block), so it's the
+                              // only autofocus target in this widget.
+                              autofocus: i == 0,
+                              focusNode: i < _channelFocusNodes.length
+                                  ? _channelFocusNodes[i]
+                                  : null,
+                              onFocusChange: (focused) {
+                                if (focused) _setFocusedChannelIndex(i);
+                              },
+                              onTap: () =>
+                                  widget.onChannelSelect(widget.channels[i]),
+                              onLongTap: widget.onChannelColumnLongPress == null
+                                  ? null
+                                  : () => widget.onChannelColumnLongPress!(
+                                      widget.channels[i],
+                                    ),
+                            ),
                           ),
                         ),
                       ),
@@ -391,6 +640,7 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                             controller: _rightVCtrl,
                             itemCount: widget.channels.length,
                             itemExtent: _kRowH,
+                            scrollCacheExtent: _kEpgCacheExtent,
                             itemBuilder: (_, i) {
                               final channel = widget.channels[i];
                               final catchupRetentionDays =
@@ -398,8 +648,15 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     channel.catchupSupported,
                                     channel.catchupDays,
                                   );
+                              // Request this row plus a look-ahead window so a
+                              // downward scroll hits loaded EPG. The call is
+                              // debounced and de-duped downstream.
+                              final prefetchEnd = math.min(
+                                widget.channels.length,
+                                i + 1 + _kEpgPrefetchAhead,
+                              );
                               widget.onEnsureEpg?.call(
-                                [channel],
+                                widget.channels.sublist(i, prefetchEnd),
                                 startDate: _selectedDate,
                                 endDate: _selectedDate,
                               );
@@ -431,6 +688,11 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     rowHeight: _kRowH,
                                     catchupRetentionDays: catchupRetentionDays,
                                     now: now,
+                                    nowFocusNode: i < _nowFocusNodes.length
+                                        ? _nowFocusNodes[i]
+                                        : null,
+                                    onAnyBlockFocus: () =>
+                                        _setFocusedChannelIndex(i),
                                     // Curry the row's channel in: _ProgramsRow
                                     // only sees programmes, but resolving a
                                     // recording needs the channel's database
@@ -438,18 +700,34 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     recordingStateFor: (program) => widget
                                         .recordingStateFor(channel, program),
                                     onTap: (program) {
+                                      final tapNow = widget.clock();
                                       final canReplay = EpgService.canReplay(
                                         catchupRetentionDays,
                                         program,
-                                        widget.clock(),
+                                        tapNow,
                                       );
-                                      if (canReplay &&
-                                          widget.onCatchupProgramSelect !=
-                                              null) {
-                                        widget.onCatchupProgramSelect!(
+                                      if (canReplay) {
+                                        widget.onCatchupProgramSelect?.call(
                                           channel,
                                           program,
                                         );
+                                        return;
+                                      }
+                                      if (program.start.isAfter(tapNow)) {
+                                        // Future programme: offer the
+                                        // context menu (record, etc.)
+                                        // instead of starting playback.
+                                        widget.onChannelLongPress?.call(
+                                          channel,
+                                          program,
+                                        );
+                                        return;
+                                      }
+                                      if (program.end.isBefore(tapNow) ||
+                                          program.end.isAtSameMomentAs(
+                                            tapNow,
+                                          )) {
+                                        // Past, non-catchup programme: no-op.
                                         return;
                                       }
                                       widget.onChannelSelect(channel);
@@ -538,38 +816,60 @@ class _DayControls extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return Container(
       height: 42,
-      color: colorScheme.surfaceContainerHigh,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      // Left-aligned (Row's default) so this cluster sits directly above
+      // the Channels column (matching its horizontal position) instead of
+      // floating centered across the whole EPG width.
+      //
+      // crossAxisAlignment.stretch gives every child (icon buttons, the
+      // "now" pill, the date text) the exact same focus-node rect height.
+      // Without it, the "now" pill's naturally-shorter text-driven height
+      // sits entirely inside the taller icon buttons' rect on the vertical
+      // axis, which the dpad package's edge-based "is this candidate below
+      // me" check (see DpadTraversalPolicy._isCandidate) reads as still
+      // being a same-row neighbor even after Down should have left the
+      // row — so pressing Down from "now" would land on "previous"/"next"
+      // instead of dropping to the Channels column.
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DpadInkWell(
             key: const ValueKey('timeline-previous-day'),
             onTap: canGoPrevious ? onPrevious : null,
+            // Not the visible landing focus (the Channels column autofocus,
+            // built after this, wins that) — this just seeds the
+            // day-controls/program-grid region's own focus history, so
+            // returning here from the Channels column (see
+            // LiveTvScreen._handleChannelColumnEdge) has a real fallback
+            // target instead of parking on an empty scope.
             autofocus: canGoPrevious,
             enabled: canGoPrevious,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.all(5),
-              child: Icon(
-                Icons.chevron_left,
-                size: 20,
-                color: canGoPrevious
-                    ? colorScheme.onSurface
-                    : colorScheme.onSurface.withValues(alpha: 0.35),
-                semanticLabel: l10n.epgPreviousDay,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              child: Center(
+                child: Icon(
+                  Icons.chevron_left,
+                  size: 20,
+                  color: canGoPrevious
+                      ? colorScheme.onSurface
+                      : colorScheme.onSurface.withValues(alpha: 0.35),
+                  semanticLabel: l10n.epgPreviousDay,
+                ),
               ),
             ),
           ),
           const SizedBox(width: 6),
           SizedBox(
             width: 116,
-            child: Text(
-              DateFormat.yMMMd(
-                Localizations.localeOf(context).toLanguageTag(),
-              ).format(selectedDate),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelMedium,
+            child: Center(
+              child: Text(
+                DateFormat.yMMMd(
+                  Localizations.localeOf(context).toLanguageTag(),
+                ).format(selectedDate),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -580,12 +880,14 @@ class _DayControls extends StatelessWidget {
             borderRadius: BorderRadius.circular(50),
             color: colorScheme.primaryContainer,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              child: Text(
-                l10n.epgNow,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(
+                child: Text(
+                  l10n.epgNow,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -597,14 +899,16 @@ class _DayControls extends StatelessWidget {
             enabled: canGoNext,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.all(5),
-              child: Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: canGoNext
-                    ? colorScheme.onSurface
-                    : colorScheme.onSurface.withValues(alpha: 0.35),
-                semanticLabel: l10n.epgNextDay,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              child: Center(
+                child: Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: canGoNext
+                      ? colorScheme.onSurface
+                      : colorScheme.onSurface.withValues(alpha: 0.35),
+                  semanticLabel: l10n.epgNextDay,
+                ),
               ),
             ),
           ),
@@ -615,53 +919,156 @@ class _DayControls extends StatelessWidget {
 }
 
 class _ChannelCell extends StatelessWidget {
-  const _ChannelCell({required this.channel, this.isRecording = false});
+  const _ChannelCell({
+    required this.channel,
+    this.isRecording = false,
+    this.onTap,
+    this.onLongTap,
+    this.autofocus = false,
+    this.columnLayout = ChannelColumnLayout.logoOnly,
+    this.focusNode,
+    this.onFocusChange,
+  });
   final Channel channel;
   final bool isRecording;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongTap;
+  final bool autofocus;
+  final ChannelColumnLayout columnLayout;
+  final FocusNode? focusNode;
+  final ValueChanged<bool>? onFocusChange;
+
+  Widget _logo({required double size}) {
+    if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty) {
+      return CachedMediaThumbnail(
+        url: channel.logoUrl!,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        fallback: Icon(Icons.tv, size: size - 4),
+      );
+    }
+    return Icon(Icons.tv, size: size - 4);
+  }
+
+  /// Logo with the recording dot pinned to its top-right corner — used by
+  /// every layout that renders a logo, so recording status stays visible
+  /// even when [ChannelColumnLayout.logoOnly] hides the title.
+  Widget _logoWithRecordingBadge(
+    ColorScheme colorScheme, {
+    required double size,
+  }) {
+    if (!isRecording) return _logo(size: size);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _logo(size: size),
+          Positioned(
+            top: -2,
+            right: -2,
+            child: RecordingDot(color: colorScheme.error),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      height: _kRowH,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
+    return DpadInkWell(
+      onTap: onTap,
+      onLongTap: onLongTap,
+      autofocus: autofocus,
+      focusNode: focusNode,
+      onFocusChange: onFocusChange,
+      borderRadius: BorderRadius.zero,
+      child: Container(
+        height: _kRowH,
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          border: Border(
+            bottom: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
+          ),
+        ),
+        // A Stack rather than a plain padded child so the catchup badge can
+        // float in a fixed corner of the cell (see below) without being laid
+        // out as part of the logo/title content — keeping it out of that
+        // flow is what keeps its position identical across every
+        // [ChannelColumnLayout] and stops it from fighting the column/row
+        // for space (and overflowing) the way an inline badge did.
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+                child: switch (columnLayout) {
+                  ChannelColumnLayout.logoAndTitle => _buildLogoAndTitle(
+                    context,
+                    colorScheme,
+                  ),
+                  ChannelColumnLayout.logoOnly => Center(
+                    child: _logoWithRecordingBadge(colorScheme, size: 44),
+                  ),
+                  ChannelColumnLayout.titleOnly => _buildTitleOnly(
+                    context,
+                    colorScheme,
+                  ),
+                },
+              ),
+            ),
+            if (channel.catchupSupported)
+              Positioned(
+                top: 2,
+                right: 4,
+                child: CatchupBadge(days: channel.catchupDays, compact: true),
+              ),
+          ],
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty)
-            Image.network(
-              channel.logoUrl!,
-              width: 32,
-              height: 32,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => const Icon(Icons.tv, size: 28),
-            )
-          else
-            const Icon(Icons.tv, size: 28),
-          const SizedBox(width: 6),
-          if (isRecording) ...[
-            RecordingDot(color: colorScheme.error),
-            const SizedBox(width: 4),
-          ],
-          Expanded(
-            child: Text(
-              channel.name,
-              style: Theme.of(context).textTheme.labelSmall,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (channel.catchupSupported) ...[
-            const SizedBox(width: 4),
-            CatchupBadge(days: channel.catchupDays),
-          ],
+    );
+  }
+
+  Widget _buildLogoAndTitle(BuildContext context, ColorScheme colorScheme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _logoWithRecordingBadge(colorScheme, size: 26),
+        const SizedBox(height: 3),
+        Text(
+          channel.name,
+          style: Theme.of(context).textTheme.labelSmall,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTitleOnly(BuildContext context, ColorScheme colorScheme) {
+    return Row(
+      children: [
+        if (isRecording) ...[
+          RecordingDot(color: colorScheme.error),
+          const SizedBox(width: 4),
         ],
-      ),
+        Expanded(
+          child: Text(
+            channel.name,
+            style: Theme.of(context).textTheme.labelSmall,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -756,6 +1163,8 @@ class _ProgramsRow extends StatelessWidget {
     required this.now,
     this.onLongPress,
     this.recordingStateFor = _noRecordingState,
+    this.nowFocusNode,
+    this.onAnyBlockFocus,
   });
 
   final List<EpgProgram> programs;
@@ -770,6 +1179,15 @@ class _ProgramsRow extends StatelessWidget {
 
   /// Opens the favorite/record context menu for the pressed block.
   final void Function(EpgProgram program)? onLongPress;
+
+  /// Attached to this row's currently-airing block (if any), so the caller
+  /// can `requestFocus()` directly onto "now" instead of the day's first
+  /// block.
+  final FocusNode? nowFocusNode;
+
+  /// Called whenever any block in this row gains focus, so the caller can
+  /// track which channel row currently holds grid focus.
+  final VoidCallback? onAnyBlockFocus;
 
   /// Resolves the per-programme recording indicator for a block. Defaults
   /// to [EpgRecordingState.none], which renders no badge and is visually
@@ -829,6 +1247,12 @@ class _ProgramsRow extends StatelessWidget {
             ),
             onTap: () => onTap(p),
             onLongTap: onLongPress == null ? null : () => onLongPress!(p),
+            focusNode: isCurrent ? nowFocusNode : null,
+            onFocusChange: onAnyBlockFocus == null
+                ? null
+                : (focused) {
+                    if (focused) onAnyBlockFocus!();
+                  },
             borderRadius: BorderRadius.circular(6),
             child: Container(
               decoration: BoxDecoration(
