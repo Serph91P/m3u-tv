@@ -1209,8 +1209,11 @@ final class DvrChannelScopeUnchanged extends DvrChannelScopeUpdate {
 }
 
 final class DvrChannelScopeSet extends DvrChannelScopeUpdate {
-  const DvrChannelScopeSet(this.channelId)
-    : assert(channelId > 0, 'channelId must be positive');
+  DvrChannelScopeSet(this.channelId) {
+    if (channelId <= 0) {
+      throw ArgumentError.value(channelId, 'channelId', 'must be positive');
+    }
+  }
 
   final int channelId;
 }

@@ -2,6 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 
 void main() {
+  group('DvrChannelScopeSet runtime validation', () {
+    for (final id in [0, -1]) {
+      test('rejects $id with ArgumentError, not a debug-only assertion', () {
+        expect(() => DvrChannelScopeSet(id), throwsArgumentError);
+      });
+    }
+    test('accepts a positive channel ID', () {
+      expect(DvrChannelScopeSet(8).channelId, 8);
+    });
+  });
+
   group('UserCredentials.normalized scheme handling', () {
     UserCredentials creds(String server) => const UserCredentials(
       server: '',

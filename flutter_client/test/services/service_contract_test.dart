@@ -788,7 +788,7 @@ void main() {
 
         await service.updateDvrSeriesRule(
           ruleId: 37,
-          channelUpdate: const DvrChannelScopeSet(72),
+          channelUpdate: DvrChannelScopeSet(72),
           keepLast: 5,
           priority: 80,
         );

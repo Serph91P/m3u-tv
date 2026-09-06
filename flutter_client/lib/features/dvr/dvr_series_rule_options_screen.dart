@@ -42,10 +42,9 @@ const String _anyChannelTabId = '__any__';
 /// the default channel selection.
 ///
 /// When [initialRule] is provided the screen pre-fills every field from the
-/// existing rule (edit mode). The channel picker is driven by [show]; for
-/// the DVR screen's edit path callers construct a minimal [EpgShow] from the
-/// rule (channelCount 1 / no recent episodes) so the picker stays hidden and
-/// the rule's channel is preserved unless the caller intends otherwise.
+/// existing rule (edit mode). The channel picker remains available even
+/// without search candidates, so the user can explicitly choose Any Channel.
+/// The stored channel is retained as an option if absent from [show].
 Future<DvrSeriesRuleOptions?> openDvrSeriesRuleOptions(
   BuildContext context, {
   required EpgShow show,
@@ -205,6 +204,21 @@ class _DvrSeriesRuleOptionsScreenState
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final show = widget.show;
+    final rule = widget.initialRule;
+    final channels = <int, EpgShowChannel>{
+      for (final channel in show.channels)
+        if (channel.channelId > 0) channel.channelId: channel,
+    };
+    final storedChannelId = rule?.channelId;
+    if (storedChannelId != null && storedChannelId > 0) {
+      channels.putIfAbsent(
+        storedChannelId,
+        () => EpgShowChannel(
+          channelId: storedChannelId,
+          channelName: rule?.channelName,
+        ),
+      );
+    }
 
     return Scaffold(
       resizeToAvoidBottomInset: !_isRemoteDrivenEnvironment(context),
@@ -225,7 +239,7 @@ class _DvrSeriesRuleOptionsScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Channel picker ──────────────────────────────────────
-            if (show.channelCount > 1) ...[
+            if (rule != null || show.channelCount > 1) ...[
               _SectionLabel(label: l10n.dvrSeriesChannel),
               const SizedBox(height: 8),
               // Zero horizontal padding here (vs. the bar's own default
@@ -240,7 +254,7 @@ class _DvrSeriesRuleOptionsScreenState
                     id: _anyChannelTabId,
                     name: l10n.dvrSeriesAnyChannel,
                   ),
-                  for (final channel in show.channels)
+                  for (final channel in channels.values)
                     CategoryTabData(
                       id: channel.channelId.toString(),
                       name: channel.channelName ?? 'Ch ${channel.channelId}',
