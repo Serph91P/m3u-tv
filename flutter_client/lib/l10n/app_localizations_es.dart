@@ -1471,6 +1471,13 @@ class AppLocalizationsEs extends AppLocalizations {
       'Cambia el monitor a la frecuencia de fotogramas del vídeo al iniciar la reproducción. Puede dejar la pantalla en negro un instante. Solo Windows.';
 
   @override
+  String get settingsNavigationSound => 'Sonido de navegación';
+
+  @override
+  String get settingsNavigationSoundHint =>
+      'Reproduce un sonido de clic al mover el foco con el control remoto o el teclado.';
+
+  @override
   String get settingsToggleOn => 'Activado';
 
   @override

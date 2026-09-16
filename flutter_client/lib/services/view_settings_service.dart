@@ -159,6 +159,7 @@ class ViewSettingsService extends ChangeNotifier {
   static const windowBoundsKey = 'm3ue_tv_window_bounds';
   static const optimizeForKey = 'm3ue_tv_optimize_for';
   static const fontSizeKey = 'm3ue_tv_font_size';
+  static const navigationSoundEnabledKey = 'm3ue_tv_navigation_sound_enabled';
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? store;
@@ -376,6 +377,26 @@ class ViewSettingsService extends ChangeNotifier {
 
   Future<void> setFontSize(AppFontSize value) async {
     await _write(fontSizeKey, value.value);
+    notifyListeners();
+  }
+
+  /// Whether the D-pad navigation "click" sound plays on TV/desktop focus
+  /// changes. Defaults on, matching the always-on behavior before this
+  /// setting existed. Ignored on touch devices, which never play it.
+  Future<bool> navigationSoundEnabled() async {
+    final raw = await _read(navigationSoundEnabledKey);
+    return raw as bool? ?? true;
+  }
+
+  /// Synchronous access to the in-memory cached navigation sound setting.
+  bool get navigationSoundEnabledSync =>
+      (_memory[navigationSoundEnabledKey] as bool?) ?? true;
+
+  Future<void> setNavigationSoundEnabled(
+    // ignore: avoid_positional_boolean_parameters
+    bool enabled,
+  ) async {
+    await _write(navigationSoundEnabledKey, enabled);
     notifyListeners();
   }
 

@@ -2182,6 +2182,7 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   DefaultStartPage _defaultStartPage = DefaultStartPage.home;
   bool _hdrEnabled = true;
   bool _matchRefreshRate = false;
+  bool _navigationSoundEnabled = true;
   OptimizeFor _optimizeFor = OptimizeFor.quality;
   AppFontSize _fontSize = AppFontSize.normal;
 
@@ -2189,6 +2190,12 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   // only; refresh-rate matching is Windows-only (see DisplayModeManager).
   static final bool _showHdrToggle = Platform.isWindows || Platform.isLinux;
   static final bool _showRefreshRateToggle = Platform.isWindows;
+
+  // The navigation click sound only ever plays on TV/desktop (see main.dart);
+  // hide the toggle where it would have no effect.
+  bool get _showNavigationSoundToggle =>
+      widget.deviceType == DeviceType.tv ||
+      widget.deviceType == DeviceType.desktop;
 
   @override
   void initState() {
@@ -2211,6 +2218,8 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
     final defaultStartPage = await widget.service.defaultStartPage();
     final hdrEnabled = await widget.service.hdrEnabled();
     final matchRefreshRate = await widget.service.matchRefreshRate();
+    final navigationSoundEnabled = await widget.service
+        .navigationSoundEnabled();
     final optimizeFor = await widget.service.optimizeFor();
     final storedFontSize = await widget.service.fontSizeOrNull();
     final fontSize = AppFontSize.resolveDefault(
@@ -2226,6 +2235,7 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
       _defaultStartPage = defaultStartPage;
       _hdrEnabled = hdrEnabled;
       _matchRefreshRate = matchRefreshRate;
+      _navigationSoundEnabled = navigationSoundEnabled;
       _optimizeFor = optimizeFor;
       _fontSize = fontSize;
     });
@@ -2360,6 +2370,15 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
                 hint: l.settingsMatchRefreshRateHint,
                 value: _matchRefreshRate,
                 onChanged: widget.service.setMatchRefreshRate,
+              ),
+            ],
+            if (_showNavigationSoundToggle) ...[
+              const SizedBox(height: 16),
+              _BooleanSetting(
+                label: l.settingsNavigationSound,
+                hint: l.settingsNavigationSoundHint,
+                value: _navigationSoundEnabled,
+                onChanged: widget.service.setNavigationSoundEnabled,
               ),
             ],
             const SizedBox(height: 16),

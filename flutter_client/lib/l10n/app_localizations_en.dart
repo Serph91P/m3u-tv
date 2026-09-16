@@ -1460,6 +1460,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.';
 
   @override
+  String get settingsNavigationSound => 'Navigation sound';
+
+  @override
+  String get settingsNavigationSoundHint =>
+      'Play a click sound when moving focus with the remote or keyboard.';
+
+  @override
   String get settingsToggleOn => 'On';
 
   @override

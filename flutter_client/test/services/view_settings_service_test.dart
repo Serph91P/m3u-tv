@@ -135,6 +135,19 @@ void main() {
         expect(await service.epgStartView(), EpgStartView.currentTime);
       },
     );
+    test(
+      'persists and restores navigationSoundEnabled, defaulting to true',
+      () async {
+        expect(await service.navigationSoundEnabled(), isTrue);
+        expect(service.navigationSoundEnabledSync, isTrue);
+        await service.setNavigationSoundEnabled(false);
+        expect(await service.navigationSoundEnabled(), isFalse);
+        expect(service.navigationSoundEnabledSync, isFalse);
+        await service.setNavigationSoundEnabled(true);
+        expect(await service.navigationSoundEnabled(), isTrue);
+      },
+    );
+
     test('synchronous getters reflect in-memory cache', () async {
       await service.setLiveTvLayout(LiveTvLayout.timeline);
       await service.setEpgStartView(EpgStartView.primeTime);

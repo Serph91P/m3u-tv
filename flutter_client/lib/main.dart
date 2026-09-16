@@ -448,7 +448,8 @@ class _MyAppState extends State<MyApp> {
           // Click sound is D-pad navigation feedback, not wanted on touch.
           onFocusChange: isTvOrDesktop
               ? (node) {
-                  if (node != null) {
+                  if (node != null &&
+                      (viewSettings?.navigationSoundEnabledSync ?? true)) {
                     unawaited(SystemSound.play(SystemSoundType.click));
                   }
                 }

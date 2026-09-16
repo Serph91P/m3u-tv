@@ -822,6 +822,8 @@
   "settingsHdrModeHint": "Let HDR videos switch the display into HDR mode. Windows and Linux only.",
   "settingsMatchRefreshRate": "Match display refresh rate",
   "settingsMatchRefreshRateHint": "Switch the monitor to the video's frame rate when playback starts. Can briefly blank the screen. Windows only.",
+  "settingsNavigationSound": "Navigation sound",
+  "settingsNavigationSoundHint": "Play a click sound when moving focus with the remote or keyboard.",
   "settingsToggleOn": "On",
   "settingsToggleOff": "Off",
   "settingsOptimizeFor": "Optimize for",

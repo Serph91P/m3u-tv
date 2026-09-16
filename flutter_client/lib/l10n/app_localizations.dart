@@ -2618,6 +2618,18 @@ abstract class AppLocalizations {
   /// **'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.'**
   String get settingsMatchRefreshRateHint;
 
+  /// No description provided for @settingsNavigationSound.
+  ///
+  /// In en, this message translates to:
+  /// **'Navigation sound'**
+  String get settingsNavigationSound;
+
+  /// No description provided for @settingsNavigationSoundHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Play a click sound when moving focus with the remote or keyboard.'**
+  String get settingsNavigationSoundHint;
+
   /// No description provided for @settingsToggleOn.
   ///
   /// In en, this message translates to:

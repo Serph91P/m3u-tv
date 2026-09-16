@@ -1469,6 +1469,13 @@ class AppLocalizationsDe extends AppLocalizations {
       'Schaltet den Monitor beim Start der Wiedergabe auf die Bildrate des Videos. Kann den Bildschirm kurz schwarz werden lassen. Nur Windows.';
 
   @override
+  String get settingsNavigationSound => 'Navigationston';
+
+  @override
+  String get settingsNavigationSoundHint =>
+      'Beim Bewegen des Fokus mit Fernbedienung oder Tastatur einen Klickton abspielen.';
+
+  @override
   String get settingsToggleOn => 'Ein';
 
   @override

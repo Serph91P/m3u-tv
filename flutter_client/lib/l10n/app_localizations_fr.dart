@@ -1475,6 +1475,13 @@ class AppLocalizationsFr extends AppLocalizations {
       'Bascule le moniteur sur la fréquence d\'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l\'écran noir. Windows uniquement.';
 
   @override
+  String get settingsNavigationSound => 'Son de navigation';
+
+  @override
+  String get settingsNavigationSoundHint =>
+      'Joue un son de clic lors du déplacement du focus avec la télécommande ou le clavier.';
+
+  @override
   String get settingsToggleOn => 'Activé';
 
   @override

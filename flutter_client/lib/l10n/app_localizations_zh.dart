@@ -1420,6 +1420,12 @@ class AppLocalizationsZh extends AppLocalizations {
       '播放开始时将显示器切换为视频的帧率。可能会使屏幕短暂黑屏。仅限 Windows。';
 
   @override
+  String get settingsNavigationSound => '导航音效';
+
+  @override
+  String get settingsNavigationSoundHint => '使用遥控器或键盘移动焦点时播放点击音效。';
+
+  @override
   String get settingsToggleOn => '开';
 
   @override
