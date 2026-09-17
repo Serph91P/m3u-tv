@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -14,7 +12,7 @@ import 'package:m3u_tv/shared/item_detail_scaffold.dart'
 import 'package:m3u_tv/shared/item_meta_info.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/series_detail_widgets.dart'
-    show CastRow, RelatedRow, RowScrollRegion;
+    show CastRow, RelatedRow, RowScrollRegion, RowScrollRegionState;
 
 /// Shared layout scaffold for a movie-style detail page - poster + meta +
 /// cast strip over a colour-matched BackdropDetailHero. Used by both the
@@ -100,6 +98,14 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
   /// SeriesDetailBody's `_SeriesScrollHost`.
   final ScrollController _scrollController = ScrollController();
 
+  /// Routes the top-of-page scroll through the region itself so it goes
+  /// through [RowScrollRegionState.scrollToTop] and invalidates any row's
+  /// still in-flight [RowScrollRegionState.reveal] correction pass - see that
+  /// method's doc. Without this, hopping up several rows in one traversal
+  /// (e.g. related -> cast -> exit-top) could leave a stale reveal() pass
+  /// queued that pulls the offset back down right after scrolling to top.
+  final GlobalKey<RowScrollRegionState> _regionKey = GlobalKey();
+
   @override
   void dispose() {
     _primaryFocusNode.dispose();
@@ -110,16 +116,7 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
   /// The poster/title/meta block is always the very top of the page, so any
   /// focus landing anywhere inside it (including the Play button) means
   /// "show the top of the page" - matches SeriesDetailBody's `_scrollToTop`.
-  void _scrollToTop() {
-    if (!_scrollController.hasClients) return;
-    unawaited(
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      ),
-    );
-  }
+  void _scrollToTop() => _regionKey.currentState?.scrollToTop();
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +176,7 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
         horizontal: MediaBrowsingMetrics.pagePadding,
       ),
       child: RowScrollRegion(
+        key: _regionKey,
         controller: _scrollController,
         onExitTop: _primaryFocusNode.requestFocus,
         child: Column(

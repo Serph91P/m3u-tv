@@ -221,6 +221,10 @@ class SeasonPicker extends StatelessWidget {
       onLongPress: canMarkWatched && current != null
           ? () => unawaited(_showMarkSeasonSheet(context, current))
           : null,
+      // Shares the Play/Start-over row at the top of the detail page's own
+      // RowScrollRegion, which already scrolls to the top on focus - see
+      // AppButton.autoScroll's doc.
+      autoScroll: false,
     );
   }
 

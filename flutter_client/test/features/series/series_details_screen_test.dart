@@ -925,5 +925,86 @@ void main() {
         expect(focusLabel(), 'episodeStrip');
       },
     );
+
+    testWidgets(
+      'wide layout: hopping down to the related row and back up through '
+      'cast/episode scrolls all the way back to the top',
+      (tester) async {
+        tester.view.physicalSize = const Size(1000, 420);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                richCast: List.generate(
+                  12,
+                  (i) =>
+                      CastMember(name: 'Cast Member $i', character: 'Role $i'),
+                ),
+                related: List.generate(
+                  6,
+                  (i) => RelatedItem(
+                    id: '$i',
+                    type: 'series',
+                    title: 'Related $i',
+                  ),
+                ),
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1), _ep(1, 2), _ep(1, 3)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
+        final scrollView = find.byType(SingleChildScrollView);
+        expect(scrollView, findsOneWidget);
+        double offset() =>
+            tester.widget<SingleChildScrollView>(scrollView).controller!.offset;
+
+        expect(focusLabel(), 'seriesPlayButton');
+        expect(offset(), 0);
+
+        // Down through episode -> cast -> related.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'episodeStrip');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'castStrip');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'relatedStrip');
+        expect(
+          offset(),
+          greaterThan(0),
+          reason: 'region should have scrolled down to reveal the related row',
+        );
+
+        // Back up through cast -> episode -> exit-top (Play).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'castStrip');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'episodeStrip');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'seriesPlayButton');
+        expect(
+          offset(),
+          0,
+          reason: 'reaching the Play button must scroll all the way back up',
+        );
+      },
+    );
   });
 }

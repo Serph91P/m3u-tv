@@ -98,6 +98,12 @@ class ItemMetaInfo extends StatelessWidget {
       label: buttonLabel,
       onPressed: isLoading ? null : onPlay,
       inlineProgressValue: progressValue,
+      // This row is always the very top of the detail page's own
+      // RowScrollRegion, which already scrolls to the top on focus (see
+      // RowScrollRegionState.scrollToTop) - DpadFocusable's own
+      // auto-scroll-into-view would otherwise race that animation and can
+      // leave the page short of the top (see AppButton.autoScroll doc).
+      autoScroll: false,
     );
     final startOverCallback = onStartOver;
     final startOverButton = startOverCallback == null
@@ -106,6 +112,7 @@ class ItemMetaInfo extends StatelessWidget {
             icon: Icons.replay,
             label: AppLocalizations.of(context).playerStartFromBeginning,
             onPressed: isLoading ? null : startOverCallback,
+            autoScroll: false,
           );
     final sizedButton = fullWidthButton
         ? SizedBox(width: double.infinity, child: button)

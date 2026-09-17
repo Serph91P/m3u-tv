@@ -673,6 +673,9 @@ class _SeriesDetailsBody extends StatelessWidget {
           icon: Icons.play_arrow,
           label: l.seriesPlayEpisode(1, 1),
           onPressed: null,
+          // Always the top of the page's own RowScrollRegion, which already
+          // owns scroll-to-top on focus - see the autoScroll: false below.
+          autoScroll: false,
         ),
       ];
     }
@@ -697,12 +700,15 @@ class _SeriesDetailsBody extends StatelessWidget {
           target.episode,
           startPosition: progress?.positionSeconds.toDouble(),
         ),
+        // See the "target == null" branch above - same reasoning.
+        autoScroll: false,
       ),
       if (progressValue != null)
         AppButton(
           icon: Icons.replay,
           label: l.playerStartFromBeginning,
           onPressed: () => onEpisodeSelected(target.episode, startPosition: 0),
+          autoScroll: false,
         ),
     ];
   }
