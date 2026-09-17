@@ -160,6 +160,7 @@ class ViewSettingsService extends ChangeNotifier {
   static const optimizeForKey = 'm3ue_tv_optimize_for';
   static const fontSizeKey = 'm3ue_tv_font_size';
   static const navigationSoundEnabledKey = 'm3ue_tv_navigation_sound_enabled';
+  static const volumeKey = 'm3ue_tv_volume';
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? store;
@@ -397,6 +398,22 @@ class ViewSettingsService extends ChangeNotifier {
     bool enabled,
   ) async {
     await _write(navigationSoundEnabledKey, enabled);
+    notifyListeners();
+  }
+
+  /// Desktop-only app playback volume (independent of system volume),
+  /// applied as the default for every new stream and on launch. Defaults to
+  /// full volume, matching today's behavior before this setting existed.
+  Future<double> volume() async {
+    final raw = await _read(volumeKey);
+    return (raw as num?)?.toDouble() ?? 1.0;
+  }
+
+  /// Synchronous access to the in-memory cached volume setting.
+  double get volumeSync => (_memory[volumeKey] as num?)?.toDouble() ?? 1.0;
+
+  Future<void> setVolume(double value) async {
+    await _write(volumeKey, value.clamp(0.0, 1.0));
     notifyListeners();
   }
 

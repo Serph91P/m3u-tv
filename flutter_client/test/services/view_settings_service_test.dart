@@ -148,6 +148,24 @@ void main() {
       },
     );
 
+    test(
+      'persists and restores volume, defaulting to full volume',
+      () async {
+        expect(await service.volume(), 1.0);
+        expect(service.volumeSync, 1.0);
+        await service.setVolume(0.4);
+        expect(await service.volume(), 0.4);
+        expect(service.volumeSync, 0.4);
+      },
+    );
+
+    test('clamps volume to the 0.0-1.0 range', () async {
+      await service.setVolume(1.5);
+      expect(await service.volume(), 1.0);
+      await service.setVolume(-0.5);
+      expect(await service.volume(), 0.0);
+    });
+
     test('synchronous getters reflect in-memory cache', () async {
       await service.setLiveTvLayout(LiveTvLayout.timeline);
       await service.setEpgStartView(EpgStartView.primeTime);

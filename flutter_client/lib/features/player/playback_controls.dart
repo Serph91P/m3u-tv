@@ -65,6 +65,8 @@ class PlaybackControls extends StatelessWidget {
     this.supportsHdrToggle = false,
     this.hdrEnabled = true,
     this.onHdrEnabledChanged,
+    this.volume = 1.0,
+    this.onVolumeChanged,
     this.fallbackReason,
     this.playPauseFocusNode,
     this.onNextChannel,
@@ -96,6 +98,13 @@ class PlaybackControls extends StatelessWidget {
   final bool supportsHdrToggle;
   final bool hdrEnabled;
   final ValueChanged<bool>? onHdrEnabledChanged;
+
+  /// App playback volume (0.0-1.0), independent of system volume. The
+  /// slider only renders when [onVolumeChanged] is non-null -- the parent
+  /// only supplies it on desktop, where the app volume is meaningful; TV/
+  /// mobile have their own hardware volume controls.
+  final double volume;
+  final ValueChanged<double>? onVolumeChanged;
   final String? fallbackReason;
   final FocusNode? playPauseFocusNode;
   final VoidCallback? onNextChannel;
@@ -237,6 +246,60 @@ class PlaybackControls extends StatelessWidget {
     );
   }
 
+  Widget _buildVolumeControl(BuildContext context) {
+    final scale = FontSizeScope.scaleOf(context);
+    final icon = volume <= 0
+        ? Icons.volume_off
+        : (volume < 0.5 ? Icons.volume_down : Icons.volume_up);
+    return SizedBox(
+      height: TrackSelector.buttonHeight * scale,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIconButton(
+            icon: icon,
+            onPressed: () => onVolumeChanged?.call(volume > 0 ? 0 : 1.0),
+          ),
+          SizedBox(
+            width: 110 * scale,
+            child: DpadFocusable(
+              onDirection: (direction) {
+                final delta = switch (direction) {
+                  TraversalDirection.left => -0.1,
+                  TraversalDirection.right => 0.1,
+                  _ => null,
+                };
+                if (delta == null) return false;
+                onVolumeChanged?.call((volume + delta).clamp(0.0, 1.0));
+                return true;
+              },
+              effects: const [
+                GradientBorderEffect(
+                  borderRadius: BorderRadius.all(Radius.circular(50)),
+                ),
+              ],
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 3,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 12,
+                  ),
+                ),
+                child: Slider(
+                  value: volume.clamp(0.0, 1.0),
+                  onChanged: onVolumeChanged,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildControlsBar(
     BuildContext context,
     ColorScheme colorScheme, {
@@ -266,6 +329,8 @@ class PlaybackControls extends StatelessWidget {
   bool get _hasTrackControls =>
       audioTracks.isNotEmpty || subtitleTracks.isNotEmpty || supportsHdrToggle;
 
+  bool get _showVolumeControl => onVolumeChanged != null;
+
   Widget _buildTrackControls() {
     return TrackSelector(
       audioTracks: audioTracks,
@@ -282,6 +347,11 @@ class PlaybackControls extends StatelessWidget {
       onHdrEnabledChanged: onHdrEnabledChanged,
     );
   }
+
+  /// Safe upper bound for [_buildVolumeControl]'s width (mute button +
+  /// slider), mirroring [TrackSelector.controlsWidth]'s role as a reservation
+  /// for [_buildControlRow]'s layout math rather than an exact measurement.
+  static const double _volumeControlWidth = 180;
 
   Widget _buildProgressBar(ColorScheme colorScheme) {
     return _SeekBar(
@@ -330,6 +400,7 @@ class PlaybackControls extends StatelessWidget {
           spacing: 16,
           runSpacing: 8,
           children: [
+            if (_showVolumeControl) _buildVolumeControl(context),
             transportControls,
             if (_hasTrackControls) _buildTrackControls(),
           ],
@@ -343,21 +414,37 @@ class PlaybackControls extends StatelessWidget {
         final trackControlsWidth = _hasTrackControls
             ? TrackSelector.controlsWidth * scale
             : 0.0;
+        final volumeControlWidth = _showVolumeControl
+            ? _volumeControlWidth * scale
+            : 0.0;
         final transportWidth =
             (isLive
                 ? (_hasChannelControls ? _liveButtonCount * 56.0 : 56.0)
                 : 168.0) *
             scale;
         final hasRoomForCenteredTransport =
-            constraints.maxWidth >= transportWidth + (trackControlsWidth * 2);
+            constraints.maxWidth >=
+            transportWidth + trackControlsWidth + volumeControlWidth;
+        final hasSideControls = _hasTrackControls || _showVolumeControl;
 
-        if (_hasTrackControls && !hasRoomForCenteredTransport) {
+        if (hasSideControls && !hasRoomForCenteredTransport) {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Center(child: transportControls),
               const SizedBox(height: 12),
-              Center(child: _buildTrackControls()),
+              Center(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 16,
+                  runSpacing: 8,
+                  children: [
+                    if (_showVolumeControl) _buildVolumeControl(context),
+                    if (_hasTrackControls) _buildTrackControls(),
+                  ],
+                ),
+              ),
             ],
           );
         }
@@ -366,6 +453,14 @@ class PlaybackControls extends StatelessWidget {
           alignment: Alignment.center,
           children: [
             Center(child: transportControls),
+            if (_showVolumeControl)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: volumeControlWidth,
+                  child: _buildVolumeControl(context),
+                ),
+              ),
             if (_hasTrackControls)
               Align(
                 alignment: Alignment.centerRight,

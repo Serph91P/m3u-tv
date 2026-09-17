@@ -200,6 +200,12 @@ class PlaybackOrchestrator {
     return adapter! as HdrToggleProvider;
   }
 
+  MultiviewBackend? get activeVolumeProvider {
+    final adapter = _activeAdapter;
+    if (adapter is! MultiviewBackend) return null;
+    return adapter;
+  }
+
   List<String> get diagnostics => List<String>.unmodifiable(_diagnostics);
 
   Future<void> open(PlaybackSource source) async {

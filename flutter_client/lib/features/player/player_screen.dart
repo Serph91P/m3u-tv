@@ -34,6 +34,12 @@ const bool _showPlaybackDiagnostics = bool.fromEnvironment(
   'M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS',
 );
 
+/// App-level playback volume only applies on desktop -- TV/mobile have their
+/// own hardware/system volume controls and should always play at full
+/// volume through this app.
+bool get _isDesktop =>
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+
 /// Which TheIntroDB segment a skip prompt refers to.
 enum _IntroDbSegmentKind { intro, credits }
 
@@ -132,6 +138,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isAudioTrackSelectionKnown = false;
   bool _isSubtitleTrackSelectionKnown = false;
   late bool _hdrEnabled = widget.viewSettingsService?.hdrEnabledSync ?? true;
+  late double _volume = widget.viewSettingsService?.volumeSync ?? 1.0;
 
   EpgCurrentNext? _epgData;
 
@@ -996,6 +1003,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
           widget.orchestrator.activeHdrToggleProvider?.setHdrEnabled(false),
         );
       }
+      if (_isDesktop) {
+        unawaited(widget.orchestrator.activeVolumeProvider?.setVolume(_volume));
+      }
       if (_disposed || !mounted || source.isLive) return;
       // A non-recoverable load failure lets open() return normally (the
       // failure is reported asynchronously via onError/_handleError instead
@@ -1384,6 +1394,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  void _handleVolumeChanged(double volume) {
+    setState(() => _volume = volume);
+    unawaited(widget.viewSettingsService?.setVolume(volume));
+    unawaited(widget.orchestrator.activeVolumeProvider?.setVolume(volume));
+  }
+
   void _showOverlay() {
     // No extra intro-db handling needed here — `_introDbPromptVisible` is
     // derived from `_overlayVisible`, so this setState alone re-shows the
@@ -1732,6 +1748,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             supportsHdrToggle: _supportsHdrToggle,
                             hdrEnabled: _hdrEnabled,
                             onHdrEnabledChanged: _handleHdrEnabledChanged,
+                            volume: _volume,
+                            onVolumeChanged: _isDesktop
+                                ? _handleVolumeChanged
+                                : null,
                             onTrackDialogVisibilityChanged:
                                 _handleTrackDialogVisibilityChanged,
                             fallbackReason: _showPlaybackDiagnostics
