@@ -56,17 +56,24 @@ Future<void> main() async {
   }
   // Pre-load persisted view settings into the in-memory cache so the
   // synchronous getters (fontSizeSync, optimizeForSync, rememberMediaSortSync,
-  // vodSortOptionSync, seriesSortOptionSync) return the correct values on the
-  // very first build - without this, fontSizeSync defaults to
-  // AppFontSize.normal and the user's saved choice is ignored until the
-  // settings screen opens and triggers an async refresh. VodScreen/
-  // SeriesScreen rely on the sort ones specifically to seed their initial
-  // sort in a single pass instead of reconfiguring their windowed grid twice.
+  // vodSortOptionSync, seriesSortOptionSync, navigationSoundEnabledSync,
+  // volumeSync) return the correct values on the very first build - without
+  // this, fontSizeSync defaults to AppFontSize.normal and the user's saved
+  // choice is ignored until the settings screen opens and triggers an async
+  // refresh. VodScreen/SeriesScreen rely on the sort ones specifically to
+  // seed their initial sort in a single pass instead of reconfiguring their
+  // windowed grid twice. navigationSoundEnabledSync defaults to true, so
+  // without this a disabled click sound would still play on every D-pad
+  // focus change until Settings was opened once; volumeSync defaults to
+  // full volume, so a custom desktop volume would similarly be ignored by
+  // the very first stream opened in a session.
   await appState.viewSettingsService.fontSize();
   await Future.wait([
     appState.viewSettingsService.rememberMediaSort(),
     appState.viewSettingsService.vodSortOption(),
     appState.viewSettingsService.seriesSortOption(),
+    appState.viewSettingsService.navigationSoundEnabled(),
+    appState.viewSettingsService.volume(),
   ]);
   // Resolve the user's preferred start page before the router is built so a
   // cold launch opens there instead of always on Home.
