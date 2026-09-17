@@ -302,11 +302,16 @@ class SeasonPicker extends StatelessWidget {
 
     final viewportHeight = MediaQuery.sizeOf(context).height;
 
+    // Picked season (if any) is applied only once the route's own dismiss
+    // Future completes - i.e. after its closing transition has fully played
+    // out - so the episode strip's season-change fade/slide starts clean
+    // instead of racing the sheet/dialog's own fade while it's still
+    // visually closing.
     if (compact) {
       // Phone: a bottom sheet reads more naturally than a centered dialog and
       // keeps the tap targets in thumb reach.
       unawaited(
-        showModalBottomSheet<void>(
+        showModalBottomSheet<int>(
           context: context,
           showDragHandle: true,
           isScrollControlled: true,
@@ -317,13 +322,15 @@ class SeasonPicker extends StatelessWidget {
               maxListHeight: viewportHeight * 0.7,
             ),
           ),
-        ),
+        ).then((season) {
+          if (season != null) onSeasonSelected(season);
+        }),
       );
       return;
     }
 
     unawaited(
-      showDialog<void>(
+      showDialog<int>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           clipBehavior: Clip.antiAlias,
@@ -338,7 +345,9 @@ class SeasonPicker extends StatelessWidget {
             ),
           ),
         ),
-      ),
+      ).then((season) {
+        if (season != null) onSeasonSelected(season);
+      }),
     );
   }
 
@@ -361,10 +370,12 @@ class SeasonPicker extends StatelessWidget {
         autofocus: autofocus,
         borderRadius: BorderRadius.circular(8),
         clipBehavior: Clip.antiAlias,
-        onTap: () {
-          onSeasonSelected(season.number);
-          Navigator.of(context).pop();
-        },
+        // Pop with the picked season as the route result rather than calling
+        // onSeasonSelected here - the caller applies it only after the
+        // sheet/dialog's own dismiss Future completes (see _showPicker),
+        // so the season-change fade/slide isn't racing the modal's own
+        // closing animation.
+        onTap: () => Navigator.of(context).pop(season.number),
         // Poster + text laid out by hand (not a ListTile) so nothing gets
         // crushed to fit a short two-line row.
         child: Padding(
@@ -1257,6 +1268,15 @@ class RowScrollRegionState extends State<RowScrollRegion> {
   /// (the episode strip builds before the cast strip).
   final List<LockedRow> _rows = [];
 
+  /// Bumped by [reveal] and [scrollToTop] so a stale call's delayed
+  /// post-frame correction pass can tell it has been superseded and skip
+  /// itself. Without this, hopping up several rows in succession (e.g.
+  /// related -> cast -> episode -> exit-top) can leave an intermediate row's
+  /// own `reveal()` still queued for its second corrective frame when
+  /// `scrollToTop()` already ran - that stale pass then yanks the offset back
+  /// down right after it was set to 0.
+  int _scrollOpGeneration = 0;
+
   void registerRow(LockedRow row) {
     if (!_rows.contains(row)) _rows.add(row);
   }
@@ -1286,8 +1306,10 @@ class RowScrollRegionState extends State<RowScrollRegion> {
   /// first pass. Geometry comes from this region's own render box and
   /// [_controller] - never an ambiguous ancestor-viewport lookup.
   void reveal(BuildContext target, {double pad = 16}) {
+    final generation = ++_scrollOpGeneration;
     void pass() {
       if (!mounted || !_controller.hasClients) return;
+      if (generation != _scrollOpGeneration) return; // superseded
       final box = target.findRenderObject();
       final regionBox = context.findRenderObject();
       if (box is! RenderBox || !box.attached || !box.hasSize) return;
@@ -1328,6 +1350,23 @@ class RowScrollRegionState extends State<RowScrollRegion> {
       pass();
       WidgetsBinding.instance.addPostFrameCallback((_) => pass());
     });
+  }
+
+  /// Snap straight to the very top of the page - used when focus lands on
+  /// the poster/title/Play block, which always means "show the top" (see
+  /// callers). Bumps [_scrollOpGeneration] first so any row's still-pending
+  /// [reveal] correction pass (queued from a hop earlier in the same up
+  /// traversal) can't fire afterwards and pull the offset back down.
+  void scrollToTop() {
+    ++_scrollOpGeneration;
+    if (!_controller.hasClients) return;
+    unawaited(
+      _controller.animateTo(
+        0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      ),
+    );
   }
 
   @override
@@ -1932,6 +1971,15 @@ class _SeriesScrollHostState extends State<_SeriesScrollHost> {
       widget.scrollController ?? ScrollController();
   bool get _ownsController => widget.scrollController == null;
 
+  /// Routes the top-of-page scroll through the region itself (rather than
+  /// animating [_controller] directly) so it goes through
+  /// [RowScrollRegionState.scrollToTop] and invalidates any row's still
+  /// in-flight [RowScrollRegionState.reveal] correction pass - see that
+  /// method's doc for why a bare `_controller.animateTo(0)` here could get
+  /// pulled back down by a stale reveal from a row passed through on the way
+  /// up.
+  final GlobalKey<RowScrollRegionState> _regionKey = GlobalKey();
+
   @override
   void dispose() {
     if (_ownsController) _controller.dispose();
@@ -1943,16 +1991,7 @@ class _SeriesScrollHostState extends State<_SeriesScrollHost> {
   /// of the page," not just whichever widget happens to hold focus - a
   /// partial reveal would otherwise leave the poster/title still clipped
   /// above the viewport even once the play button is visible.
-  void _scrollToTop() {
-    if (!_controller.hasClients) return;
-    unawaited(
-      _controller.animateTo(
-        0,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      ),
-    );
-  }
+  void _scrollToTop() => _regionKey.currentState?.scrollToTop();
 
   @override
   Widget build(BuildContext context) {
@@ -1975,6 +2014,7 @@ class _SeriesScrollHostState extends State<_SeriesScrollHost> {
           horizontal: MediaBrowsingMetrics.pagePadding,
         ),
         child: RowScrollRegion(
+          key: _regionKey,
           controller: _controller,
           onExitTop: widget.onExitTop,
           child: Column(
