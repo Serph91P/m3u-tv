@@ -832,5 +832,12 @@
   "settingsFontSize": "Taille d'affichage",
   "settingsFontSizeNormal": "Normal",
   "settingsFontSizeLarge": "Grand",
-  "settingsFontSizeVeryLarge": "Très grand"
+  "settingsFontSizeVeryLarge": "Très grand",
+  "personDetailsFilmography": "Filmographie",
+  "personDetailsBioUnavailable": "Aucune biographie disponible.",
+  "personDetailsEmpty": "Aucune filmographie disponible.",
+  "personDetailsError": "Impossible de charger la filmographie de cet acteur.",
+  "personDetailsFilterAll": "Tout",
+  "personDetailsFilterInLibrary": "Dans la bibliothèque",
+  "personDetailsNoLibraryMatches": "Aucun élément de la filmographie de cet acteur n'est dans votre bibliothèque."
 }

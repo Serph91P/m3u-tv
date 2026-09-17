@@ -20,6 +20,7 @@ class VodDetailsScreen extends StatefulWidget {
     this.onPlay,
     this.onSidebarActivate,
     this.onOpenRelated,
+    this.onTapMember,
   });
 
   final VodItem item;
@@ -31,6 +32,10 @@ class VodDetailsScreen extends StatefulWidget {
   /// Opens a related item's own detail screen. Null hides the row's actions
   /// (the row itself still renders informationally when this is null).
   final ValueChanged<RelatedItem>? onOpenRelated;
+
+  /// Opens a cast member's filmography screen. Null leaves cast
+  /// non-interactive.
+  final ValueChanged<CastMember>? onTapMember;
 
   @override
   State<VodDetailsScreen> createState() => _VodDetailsScreenState();
@@ -91,6 +96,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
               progressList: widget.progressList,
               onPlay: widget.onPlay,
               onOpenRelated: widget.onOpenRelated,
+              onTapMember: widget.onTapMember,
               dominantColor: _dominantColor,
               colorMatchReady: _colorMatchResolved,
             )
@@ -104,6 +110,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
                   progressList: widget.progressList,
                   onPlay: widget.onPlay,
                   onOpenRelated: widget.onOpenRelated,
+                  onTapMember: widget.onTapMember,
                   dominantColor: _dominantColor,
                   // A failed info fetch means no backdrop and no palette step
                   // will run - reveal the (surface) hero rather than holding.
@@ -123,6 +130,7 @@ class _VodDetailsBody extends StatelessWidget {
     this.progressList = const [],
     this.onPlay,
     this.onOpenRelated,
+    this.onTapMember,
     this.dominantColor,
     this.colorMatchReady = false,
   });
@@ -133,6 +141,7 @@ class _VodDetailsBody extends StatelessWidget {
   final List<Progress> progressList;
   final void Function(PlayerArgs)? onPlay;
   final ValueChanged<RelatedItem>? onOpenRelated;
+  final ValueChanged<CastMember>? onTapMember;
 
   /// Passed straight to the shared body's colour-match reveal - true once the
   /// palette extraction has resolved.
@@ -177,6 +186,7 @@ class _VodDetailsBody extends StatelessWidget {
       castSemanticLabel: l.vodCast,
       richRelated: details.related,
       onRelatedTap: onOpenRelated,
+      onTapMember: onTapMember,
       primaryButtonLabel: buttonLabel,
       onPrimary: () =>
           _play(details, startPosition: progress?.positionSeconds.toDouble()),

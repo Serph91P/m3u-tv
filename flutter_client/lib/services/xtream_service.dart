@@ -579,6 +579,21 @@ class XtreamService {
     return VodInfo.fromXtream(_asMap(response));
   }
 
+  /// Fetches an actor's TMDB details and filmography, annotated with which
+  /// credits already exist in the current playlist's library. Prefer
+  /// [personId] when known (from `CastMember.id`); [name] is a fallback the
+  /// server resolves via a TMDB person search.
+  Future<ActorFilmography> fetchActorFilmography({
+    int? personId,
+    String? name,
+  }) async {
+    final response = await _request(
+      'get_actor_filmography',
+      params: {'person_id': ?personId?.toString(), 'name': ?name},
+    );
+    return ActorFilmography.fromXtream(_asMap(response))!;
+  }
+
   Future<List<Series>> getSeries({String? categoryId}) async {
     final response = await _request(
       'get_series',

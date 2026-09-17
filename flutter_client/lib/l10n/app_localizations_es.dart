@@ -1511,4 +1511,27 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get settingsFontSizeVeryLarge => 'Muy grande';
+
+  @override
+  String get personDetailsFilmography => 'Filmografía';
+
+  @override
+  String get personDetailsBioUnavailable => 'No hay biografía disponible.';
+
+  @override
+  String get personDetailsEmpty => 'No hay filmografía disponible.';
+
+  @override
+  String get personDetailsError =>
+      'No se pudo cargar la filmografía de este actor.';
+
+  @override
+  String get personDetailsFilterAll => 'Todo';
+
+  @override
+  String get personDetailsFilterInLibrary => 'En la biblioteca';
+
+  @override
+  String get personDetailsNoLibraryMatches =>
+      'Nada de la filmografía de este actor está en tu biblioteca.';
 }

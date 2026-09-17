@@ -29,8 +29,9 @@ import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 /// capped at [_maxMembers] (15). D-pad traversal is native: left/right
 /// moves focus between cards; the row stops at its edges so focus
 /// doesn't escape into the surrounding column. Focused cards get the
-/// canonical project-wide [GradientBorderEffect] glow. Member cards
-/// have no tap action - cast is informational on wide layouts.
+/// canonical project-wide [GradientBorderEffect] glow. Member cards fire
+/// [onTapMember] when set, opening that actor's filmography; otherwise
+/// cast stays informational on wide layouts.
 ///
 /// **Compact mode** (`compact = true`, phone breakpoint): a pill-shaped
 /// picker button mirroring the season picker's chrome - the localized
@@ -48,6 +49,7 @@ class CastMemberRow extends StatelessWidget {
     this.compact = false,
     this.onShowAll,
     this.allCastSemanticLabel,
+    this.onTapMember,
   });
 
   final List<CastMember>? members;
@@ -74,6 +76,11 @@ class CastMemberRow extends StatelessWidget {
   /// Accessibility / visible label for the sheet when the picker is
   /// tapped (e.g. "Show all cast"). Localized at the call site.
   final String? allCastSemanticLabel;
+
+  /// Opens a cast member's filmography screen. Null leaves cast
+  /// non-interactive (wide-layout cards render without a tap affordance,
+  /// and rows in the "show all" sheet stay non-tappable).
+  final ValueChanged<CastMember>? onTapMember;
 
   static const double _cardWidth = 144;
   static const double _avatarSize = 72;
@@ -146,7 +153,12 @@ class CastMemberRow extends StatelessWidget {
                     SizedBox(
                       width: _cardWidth,
                       height: _cardHeight,
-                      child: _CastMemberCard(member: shown[i]),
+                      child: _CastMemberCard(
+                        member: shown[i],
+                        onTap: onTapMember == null
+                            ? null
+                            : () => onTapMember!(shown[i]),
+                      ),
                     ),
                   ],
                   if (overflows) ...[
@@ -280,9 +292,10 @@ class _ShowAllCastCard extends StatelessWidget {
 }
 
 class _CastMemberCard extends StatelessWidget {
-  const _CastMemberCard({required this.member});
+  const _CastMemberCard({required this.member, this.onTap});
 
   final CastMember member;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -296,7 +309,7 @@ class _CastMemberCard extends StatelessWidget {
           ? '$name as $character'
           : name,
       child: DpadInkWell(
-        // No tap action - cast is informational in v1.
+        onTap: onTap,
         borderRadius: const BorderRadius.all(Radius.circular(8)),
         effects: const [
           GradientBorderEffect(
@@ -364,6 +377,7 @@ void showAllCast(
   BuildContext context,
   List<CastMember> cast, {
   bool asDialog = false,
+  ValueChanged<CastMember>? onTapMember,
 }) {
   final l = AppLocalizations.of(context);
   unawaited(
@@ -373,7 +387,8 @@ void showAllCast(
       cancelLabel: l.cancel,
       asDialog: asDialog,
       children: [
-        for (final member in cast) CastSheetRow(member: member),
+        for (final member in cast)
+          CastSheetRow(member: member, onTapMember: onTapMember),
       ],
     ),
   );
@@ -381,20 +396,21 @@ void showAllCast(
 
 /// Single row inside the "Show all cast" picker: a 48px circular avatar,
 /// a bold name and a muted character line, both ellipsized to one line.
-/// Rendered as a plain [Padding] - the enclosing [ListPickerSheet] owns
-/// the D-pad region, focus and scrolling, so a per-row [DpadInkWell]
-/// would only compete with that focus model.
+/// Tappable (via [DpadInkWell], matching the season picker's `_seasonTile`
+/// pattern) only when [onTapMember] is set - it pops the sheet after firing
+/// the callback, the same way `_seasonTile` pops with its selection.
 class CastSheetRow extends StatelessWidget {
-  const CastSheetRow({super.key, required this.member});
+  const CastSheetRow({super.key, required this.member, this.onTapMember});
 
   final CastMember member;
+  final ValueChanged<CastMember>? onTapMember;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final character = member.character;
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       child: Row(
         children: [
@@ -439,6 +455,17 @@ class CastSheetRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (onTapMember == null) return content;
+
+    return DpadInkWell(
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
+      onTap: () {
+        onTapMember!(member);
+        Navigator.of(context).pop();
+      },
+      child: content,
     );
   }
 }

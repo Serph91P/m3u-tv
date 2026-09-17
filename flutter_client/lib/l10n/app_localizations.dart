@@ -2695,6 +2695,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Very Large'**
   String get settingsFontSizeVeryLarge;
+
+  /// No description provided for @personDetailsFilmography.
+  ///
+  /// In en, this message translates to:
+  /// **'Filmography'**
+  String get personDetailsFilmography;
+
+  /// No description provided for @personDetailsBioUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'No biography available.'**
+  String get personDetailsBioUnavailable;
+
+  /// No description provided for @personDetailsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No filmography available.'**
+  String get personDetailsEmpty;
+
+  /// No description provided for @personDetailsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load this actor\'s filmography.'**
+  String get personDetailsError;
+
+  /// No description provided for @personDetailsFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get personDetailsFilterAll;
+
+  /// No description provided for @personDetailsFilterInLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'In Library'**
+  String get personDetailsFilterInLibrary;
+
+  /// No description provided for @personDetailsNoLibraryMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'None of this actor\'s filmography is in your library.'**
+  String get personDetailsNoLibraryMatches;
 }
 
 class _AppLocalizationsDelegate

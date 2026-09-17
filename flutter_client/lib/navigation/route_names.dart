@@ -28,6 +28,7 @@ class RouteNames {
   static const String details = '/details';
   static const String seriesDetails = '/series-details';
   static const String viewerSelection = '/viewer-selection';
+  static const String personDetails = '/person-details';
 
   /// All main tab/sidebar destinations, in display order. The TV/desktop
   /// sidebar shows all of these flat (plenty of vertical room). The mobile
@@ -87,6 +88,39 @@ class RouteNames {
     String type,
     String externalId,
   ) => '/requests/details/$integrationId/$type/$externalId';
+
+  /// Builds a path to an actor's filmography screen. At least one of
+  /// [personId] (the TMDB person id, when known from `CastMember.id`) or
+  /// [name] (the server's TMDB-person-search fallback) must be given -
+  /// mirrors m3u-editor's own `ActorFilmography` query-param mount shape.
+  ///
+  /// [includeLibraryFilter] controls the All/In Library filter toggle above
+  /// the filmography grid - pass `false` from AIOStreams call sites, where
+  /// `FilmographyCredit.inLibrary` (resolved against the Xtream playlist's
+  /// Series/VOD library) doesn't reflect AIOStreams content.
+  ///
+  /// [aiostreamsIntegrationId], when set, tells the filmography screen every
+  /// credit is reachable via AIOStreams's own `tmdb:{id}` meta form (see
+  /// `AIOStreamsService::buildMetaFromTmdb` in m3u-editor) rather than
+  /// gating tap/opacity on `inLibrary`/`localId` - AIOStreams is on-demand,
+  /// not library-driven, so every credit is always navigable.
+  static String personDetailsFor({
+    int? personId,
+    String? name,
+    bool includeLibraryFilter = true,
+    int? aiostreamsIntegrationId,
+  }) {
+    return Uri(
+      path: personDetails,
+      queryParameters: {
+        if (personId != null) 'personId': '$personId',
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (!includeLibraryFilter) 'includeLibraryFilter': 'false',
+        if (aiostreamsIntegrationId != null)
+          'aiostreamsIntegrationId': '$aiostreamsIntegrationId',
+      },
+    ).toString();
+  }
 
   /// Human-readable labels for main routes.
   static const Map<String, String> routeLabels = {

@@ -38,6 +38,7 @@ class MovieDetailBody extends StatefulWidget {
     this.clearLogoUrl,
     this.plot,
     this.richCast,
+    this.onTapMember,
     this.richRelated,
     this.onRelatedTap,
     this.onStartOver,
@@ -55,6 +56,10 @@ class MovieDetailBody extends StatefulWidget {
   final List<MetaCreditLine> credits;
   final List<CastMember>? richCast;
   final String castSemanticLabel;
+
+  /// Opens a cast member's filmography screen. Null leaves cast
+  /// non-interactive.
+  final ValueChanged<CastMember>? onTapMember;
 
   /// TMDB recommendations already in the user's library, shown as the
   /// "Related" row directly below the cast row. Null/empty renders nothing.
@@ -212,7 +217,10 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
                                   label: widget.castSemanticLabel,
                                 ),
                                 const SizedBox(height: 8),
-                                CastRow(members: richCast),
+                                CastRow(
+                                  members: richCast,
+                                  onTapMember: widget.onTapMember,
+                                ),
                               ],
                             ),
                           ),
@@ -340,7 +348,11 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
                     members: richCast,
                     semanticLabel: widget.castSemanticLabel,
                     compact: true,
-                    onShowAll: () => showAllCast(context, richCast),
+                    onShowAll: () => showAllCast(
+                      context,
+                      richCast,
+                      onTapMember: widget.onTapMember,
+                    ),
                     allCastSemanticLabel: l.castShowAll,
                   ),
           ),

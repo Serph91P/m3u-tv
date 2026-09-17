@@ -398,6 +398,106 @@ List<RelatedItem>? _parseRelatedList(Object? raw) {
   return parsed.isEmpty ? null : parsed;
 }
 
+/// The `person` object in m3u-editor's `get_actor_filmography` response:
+/// `{name, photo?, bio?}`.
+class PersonDetails {
+  const PersonDetails({required this.name, this.photo, this.bio});
+
+  final String name;
+  final String? photo;
+  final String? bio;
+
+  static PersonDetails? fromXtream(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    final name = _asNullableString(map['name'])?.trim();
+    if (name == null || name.isEmpty) return null;
+    return PersonDetails(
+      name: name,
+      photo: _asNullableString(map['photo']),
+      bio: _asNullableString(map['bio']),
+    );
+  }
+}
+
+/// A single entry in an actor's filmography, from m3u-editor's
+/// `get_actor_filmography` `credits` list: `{tmdb_id, title, media_type,
+/// character?, year?, poster_url?, in_library, local_id?}`.
+///
+/// `inLibrary`/`localId` tell the client whether this credit already exists
+/// as a VOD/Series item in the current playlist - when true, `localId` is
+/// that item's id and can be navigated to directly without another lookup.
+class FilmographyCredit {
+  const FilmographyCredit({
+    required this.tmdbId,
+    required this.title,
+    required this.mediaType,
+    this.character,
+    this.year,
+    this.posterUrl,
+    this.inLibrary = false,
+    this.localId,
+  });
+
+  final int tmdbId;
+  final String title;
+
+  /// `"movie"` or `"tv"`.
+  final String mediaType;
+  final String? character;
+  final String? year;
+  final String? posterUrl;
+  final bool inLibrary;
+  final int? localId;
+
+  bool get isSeries => mediaType == 'tv';
+
+  static FilmographyCredit? fromXtream(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    final tmdbId = _asIntOrNull(map['tmdb_id']);
+    final title = _asNullableString(map['title'])?.trim();
+    if (tmdbId == null || title == null || title.isEmpty) return null;
+    return FilmographyCredit(
+      tmdbId: tmdbId,
+      title: title,
+      mediaType: _asNullableString(map['media_type']) ?? 'movie',
+      character: _asNullableString(map['character']),
+      year: _asNullableString(map['year']),
+      posterUrl: _asNullableString(map['poster_url']),
+      inLibrary: map['in_library'] == true,
+      localId: _asIntOrNull(map['local_id']),
+    );
+  }
+}
+
+List<FilmographyCredit> _parseFilmographyCreditList(Object? raw) {
+  if (raw is! List) return const [];
+  return raw
+      .whereType<Map<Object?, Object?>>()
+      .map(FilmographyCredit.fromXtream)
+      .whereType<FilmographyCredit>()
+      .toList(growable: false);
+}
+
+/// m3u-editor's `get_actor_filmography` response: the actor's TMDB details
+/// plus their filmography credits, annotated with local-library presence.
+class ActorFilmography {
+  const ActorFilmography({required this.credits, this.person});
+
+  final PersonDetails? person;
+  final List<FilmographyCredit> credits;
+
+  static ActorFilmography? fromXtream(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    return ActorFilmography(
+      person: PersonDetails.fromXtream(map['person']),
+      credits: _parseFilmographyCreditList(map['credits']),
+    );
+  }
+}
+
 class Series {
   const Series({
     required this.id,

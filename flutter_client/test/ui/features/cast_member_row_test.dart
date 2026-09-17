@@ -20,6 +20,7 @@ Widget _harness({
   VoidCallback? onShowAll,
   String? allCastSemanticLabel,
   double? width,
+  ValueChanged<CastMember>? onTapMember,
 }) {
   final row = CastMemberRow(
     members: members,
@@ -27,6 +28,7 @@ Widget _harness({
     compact: compact,
     onShowAll: onShowAll,
     allCastSemanticLabel: allCastSemanticLabel,
+    onTapMember: onTapMember,
   );
   return MaterialApp(
     home: Scaffold(
@@ -314,6 +316,40 @@ void main() {
           expect(find.text('+2'), findsNothing);
         },
       );
+    });
+
+    group('onTapMember (wide layout)', () {
+      testWidgets('tapping a card fires onTapMember with that member', (
+        tester,
+      ) async {
+        CastMember? tapped;
+        final leo = _m(name: 'Leonardo DiCaprio', character: 'Cobb', id: 6193);
+        await tester.pumpWidget(
+          _harness(
+            members: [
+              leo,
+              _m(name: 'Tom Hardy', character: 'Eames'),
+            ],
+            onTapMember: (member) => tapped = member,
+          ),
+        );
+
+        await tester.tap(find.text('Leonardo DiCaprio'));
+        await tester.pump();
+        expect(tapped, leo);
+      });
+
+      testWidgets('cards are not tappable when onTapMember is null', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _harness(members: [_m(name: 'Leonardo DiCaprio')]),
+        );
+
+        // No exception from tapping a card with no tap handler wired.
+        await tester.tap(find.text('Leonardo DiCaprio'));
+        await tester.pump();
+      });
     });
 
     group('compact mode', () {

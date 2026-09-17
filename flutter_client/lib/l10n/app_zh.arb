@@ -832,5 +832,12 @@
   "settingsFontSize": "显示大小",
   "settingsFontSizeNormal": "标准",
   "settingsFontSizeLarge": "大",
-  "settingsFontSizeVeryLarge": "特大"
+  "settingsFontSizeVeryLarge": "特大",
+  "personDetailsFilmography": "作品年表",
+  "personDetailsBioUnavailable": "暂无简介。",
+  "personDetailsEmpty": "暂无作品年表。",
+  "personDetailsError": "无法加载该演员的作品年表。",
+  "personDetailsFilterAll": "全部",
+  "personDetailsFilterInLibrary": "库中已有",
+  "personDetailsNoLibraryMatches": "该演员的作品年表中没有你库中已有的内容。"
 }

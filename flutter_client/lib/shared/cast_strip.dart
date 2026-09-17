@@ -27,8 +27,9 @@ const double _kCardGap = 12;
 /// directional traversal policy (the pattern Plezy uses, and the only one that
 /// behaved on tvOS). Left/right move an internal index and scroll this row's
 /// own controller; up/down are handed to [onNavigateUp] / [onNavigateDown]
-/// (each always consumed, so focus never escapes the row). Cast is
-/// informational - there is no per-card tap action.
+/// (each always consumed, so focus never escapes the row). Select/Enter (or
+/// a tap) on the focused card fires [onTapMember], when set - otherwise cast
+/// stays informational with no tap affordance.
 ///
 /// Shared by the Series and VOD/movie detail screens. The compact (phone)
 /// affordance stays the `CastMemberRow` picker chip + bottom sheet; this is the
@@ -40,6 +41,7 @@ class CastStrip extends StatefulWidget {
     this.onNavigateUp,
     this.onNavigateDown,
     this.onReveal,
+    this.onTapMember,
     this.autofocus = false,
     this.maxMembers = 20,
     this.debugLabel = 'castStrip',
@@ -52,6 +54,10 @@ class CastStrip extends StatefulWidget {
 
   /// Down pressed while the row holds focus. Always consumed regardless.
   final VoidCallback? onNavigateDown;
+
+  /// Select/Enter pressed (or a mouse/touch tap) on the focused card. Null
+  /// keeps cast informational - no tap affordance is rendered.
+  final ValueChanged<CastMember>? onTapMember;
 
   /// Called with this strip's [BuildContext] whenever it gains focus, so a
   /// host scroll region can bring it into view. Null when the row is always
@@ -137,6 +143,15 @@ class CastStripState extends State<CastStrip> {
       if (isDown) widget.onNavigateDown!();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.gameButtonA) {
+      if (widget.onTapMember == null) return KeyEventResult.ignored;
+      if (isDown && _members.isNotEmpty) {
+        widget.onTapMember!(_members[_focusedIndex]);
+      }
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
@@ -215,6 +230,9 @@ class CastStripState extends State<CastStrip> {
               child: _CastStripCard(
                 member: members[index],
                 focused: _hasFocus && index == _focusedIndex,
+                onTap: widget.onTapMember == null
+                    ? null
+                    : () => widget.onTapMember!(members[index]),
               ),
             ),
           ),
@@ -225,10 +243,15 @@ class CastStripState extends State<CastStrip> {
 }
 
 class _CastStripCard extends StatelessWidget {
-  const _CastStripCard({required this.member, required this.focused});
+  const _CastStripCard({
+    required this.member,
+    required this.focused,
+    this.onTap,
+  });
 
   final CastMember member;
   final bool focused;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -280,11 +303,12 @@ class _CastStripCard extends StatelessWidget {
         ],
       ),
     );
-    return SizedBox(
+    final card = SizedBox(
       width: _kCardWidth * scale,
       child: GradientBorderEffect(
         borderRadius: BorderRadius.circular(8),
       ).build(context, DpadFocusState(focused: focused, pressed: false), body),
     );
+    return onTap == null ? card : GestureDetector(onTap: onTap, child: card);
   }
 }

@@ -1454,9 +1454,10 @@ class SelectHold {
 /// [LockedRow] so the episode strip can hop down into it (and it can hop back
 /// up), and routes the strip's reveal through the region.
 class CastRow extends StatefulWidget {
-  const CastRow({super.key, required this.members});
+  const CastRow({super.key, required this.members, this.onTapMember});
 
   final List<CastMember> members;
+  final ValueChanged<CastMember>? onTapMember;
 
   @override
   State<CastRow> createState() => _CastRowState();
@@ -1495,6 +1496,7 @@ class _CastRowState extends State<CastRow> implements LockedRow {
       // Consume down so focus never escapes below the cast row.
       onNavigateDown: () => _region?.navigateVertical(this, up: false),
       onReveal: (ctx) => _region?.reveal(ctx),
+      onTapMember: widget.onTapMember,
     );
   }
 }
@@ -1616,6 +1618,7 @@ class SeriesDetailBody extends StatelessWidget {
     required this.primaryActions,
     required this.richCast,
     required this.castSemanticLabel,
+    this.onTapMember,
     this.richRelated,
     this.onRelatedTap,
     required this.progressList,
@@ -1665,6 +1668,10 @@ class SeriesDetailBody extends StatelessWidget {
 
   final List<CastMember>? richCast;
   final String castSemanticLabel;
+
+  /// Opens a cast member's filmography screen. Null leaves cast
+  /// non-interactive.
+  final ValueChanged<CastMember>? onTapMember;
 
   /// TMDB recommendations already in the user's library, shown as the
   /// "Related" row directly below the cast row. Null/empty renders nothing.
@@ -1800,7 +1807,11 @@ class SeriesDetailBody extends StatelessWidget {
                 members: richCast,
                 semanticLabel: l.seriesCast,
                 compact: true,
-                onShowAll: () => showAllCast(context, richCast!),
+                onShowAll: () => showAllCast(
+                  context,
+                  richCast!,
+                  onTapMember: onTapMember,
+                ),
                 allCastSemanticLabel: l.castShowAll,
               ),
           ],
@@ -1896,7 +1907,7 @@ class SeriesDetailBody extends StatelessWidget {
             children: [
               DetailRowHeader(icon: Icons.people, label: l.seriesCast),
               const SizedBox(height: 8),
-              CastRow(members: richCastList),
+              CastRow(members: richCastList, onTapMember: onTapMember),
             ],
           )
         : null;

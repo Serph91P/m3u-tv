@@ -1457,4 +1457,25 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsFontSizeVeryLarge => '特大';
+
+  @override
+  String get personDetailsFilmography => '作品年表';
+
+  @override
+  String get personDetailsBioUnavailable => '暂无简介。';
+
+  @override
+  String get personDetailsEmpty => '暂无作品年表。';
+
+  @override
+  String get personDetailsError => '无法加载该演员的作品年表。';
+
+  @override
+  String get personDetailsFilterAll => '全部';
+
+  @override
+  String get personDetailsFilterInLibrary => '库中已有';
+
+  @override
+  String get personDetailsNoLibraryMatches => '该演员的作品年表中没有你库中已有的内容。';
 }

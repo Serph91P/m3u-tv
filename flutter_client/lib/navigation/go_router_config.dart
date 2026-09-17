@@ -12,6 +12,7 @@ import 'package:m3u_tv/app/system_ui_policy.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_detail_screen.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_search_screen.dart';
 import 'package:m3u_tv/features/continue_watching/continue_watching_screen.dart';
+import 'package:m3u_tv/features/person/person_detail_screen.dart';
 import 'package:m3u_tv/features/requests/request_detail_screen.dart';
 import 'package:m3u_tv/features/series/series_details_screen.dart';
 import 'package:m3u_tv/features/shows/show_detail_screen.dart';
@@ -174,6 +175,67 @@ Future<void> _openRelated(AppShellActions actions, RelatedItem related) async {
   }
 }
 
+/// Opens a filmography credit already known to exist in the caller's
+/// playlist library (`FilmographyCredit.inLibrary`/`localId`, resolved
+/// server-side by `get_actor_filmography` - no tmdb-id lookup needed here,
+/// unlike [_openRelated]). Pops the person-detail route first so the item's
+/// own detail screen replaces it rather than stacking on top, matching how a
+/// related-item tap behaves.
+Future<void> _openFilmographyCredit(
+  BuildContext context,
+  AppShellActions actions,
+  FilmographyCredit credit,
+) async {
+  final localId = credit.localId;
+  if (!credit.inLibrary || localId == null) return;
+  if (credit.isSeries) {
+    final series = await actions.appState.catalogRepository
+        .activeItemById<Series>(kind: kCatalogKindSeries, id: localId);
+    if (series != null) {
+      actions.onSeriesSelect(series);
+    } else {
+      debugPrint(
+        '_openFilmographyCredit: series #$localId not found in library',
+      );
+    }
+  } else {
+    final vod = await actions.appState.catalogRepository
+        .activeItemById<VodItem>(kind: kCatalogKindVod, id: localId);
+    if (vod != null) {
+      actions.onVodSelect(vod);
+    } else {
+      debugPrint('_openFilmographyCredit: VOD #$localId not found in library');
+    }
+  }
+}
+
+/// AIOStreams counterpart to [_openFilmographyCredit]. AIOStreams is
+/// on-demand (not library-driven), so unlike the Xtream path there is no
+/// `inLibrary`/`localId` gate - every credit navigates, using the `tmdb:{id}`
+/// meta form AIOStreamsService already builds meta from directly (the same
+/// form "related" cards use, see `AIOStreamsService::buildMetaFromTmdb` in
+/// m3u-editor). Pushes (not go) so a normal one-level pop on Back matches
+/// every other AIOStreams related-item tap.
+void _openAIOStreamsFilmographyCredit(
+  BuildContext context,
+  int integrationId,
+  FilmographyCredit credit,
+) {
+  final type = credit.isSeries ? 'series' : 'movie';
+  final id = 'tmdb:${credit.tmdbId}';
+  unawaited(
+    context.push(
+      RouteNames.aiostreamsDetailsFor(integrationId, type, id),
+      extra: AIOStreamsItem(
+        id: id,
+        type: type,
+        name: credit.title,
+        poster: credit.posterUrl,
+      ),
+    ),
+  );
+}
+
 /// Resolves a VOD detail route's `:vodId` against the SQLite catalog when the
 /// caller didn't already have the [VodItem] in hand (`state.extra` null - a
 /// deep link, push notification, or restored route). Every in-app tap already
@@ -221,6 +283,12 @@ class _AsyncVodDetails extends StatelessWidget {
               onPlay: _playOnTopLevelRoute(context, actions),
               progressList: actions.progressList,
               onOpenRelated: (related) => _openRelated(actions, related),
+              onTapMember: (member) => context.push(
+                RouteNames.personDetailsFor(
+                  personId: member.id,
+                  name: member.name,
+                ),
+              ),
             ),
           );
         },
@@ -277,6 +345,12 @@ class _AsyncSeriesDetails extends StatelessWidget {
               progressList: actions.progressList,
               onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
               onOpenRelated: (related) => _openRelated(actions, related),
+              onTapMember: (member) => context.push(
+                RouteNames.personDetailsFor(
+                  personId: member.id,
+                  name: member.name,
+                ),
+              ),
             ),
           );
         },
@@ -579,6 +653,12 @@ GoRouter createGoRouter({
                     onPlay: _playOnTopLevelRoute(context, actions),
                     progressList: actions.progressList,
                     onOpenRelated: (related) => _openRelated(actions, related),
+                    onTapMember: (member) => context.push(
+                      RouteNames.personDetailsFor(
+                        personId: member.id,
+                        name: member.name,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -643,6 +723,14 @@ GoRouter createGoRouter({
                     poster: related.posterUrl,
                   ),
                 ),
+                onTapMember: (member) => context.push(
+                  RouteNames.personDetailsFor(
+                    personId: member.id,
+                    name: member.name,
+                    includeLibraryFilter: false,
+                    aiostreamsIntegrationId: integrationId,
+                  ),
+                ),
               ),
             ),
           );
@@ -670,6 +758,12 @@ GoRouter createGoRouter({
                     progressList: actions.progressList,
                     onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
                     onOpenRelated: (related) => _openRelated(actions, related),
+                    onTapMember: (member) => context.push(
+                      RouteNames.personDetailsFor(
+                        personId: member.id,
+                        name: member.name,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -717,6 +811,48 @@ GoRouter createGoRouter({
                 onHandleTopLevelBack: () =>
                     appShellKey.currentState?.handleBackFromTopLevelRoute() ??
                     false,
+              ),
+            ),
+          );
+        },
+      ),
+      // Top-level for the same reason as VOD/Series/AIOStreams above - a
+      // person can be reached from any of those three detail screens (they
+      // all share the same cast widgets), so this needs its own route rather
+      // than nesting under one of them. `personId`/`name` are query params
+      // (not a path segment) - mirrors m3u-editor's own `ActorFilmography`
+      // Filament page, which reads the same two params off the query string.
+      GoRoute(
+        path: RouteNames.personDetails,
+        pageBuilder: (context, state) {
+          final actions = _topLevelActions(appShellKey, appState);
+          final personIdParam = state.uri.queryParameters['personId'];
+          final name = state.uri.queryParameters['name'] ?? '';
+          final includeLibraryFilter =
+              state.uri.queryParameters['includeLibraryFilter'] != 'false';
+          final aiostreamsIntegrationIdParam =
+              state.uri.queryParameters['aiostreamsIntegrationId'];
+          final aiostreamsIntegrationId = aiostreamsIntegrationIdParam == null
+              ? null
+              : int.tryParse(aiostreamsIntegrationIdParam);
+          return _slidePage(
+            _withTopLevelBackHandling(
+              appShellKey,
+              PersonDetailScreen(
+                name: name,
+                personId: personIdParam == null
+                    ? null
+                    : int.tryParse(personIdParam),
+                xtreamService: actions.xtreamService,
+                includeLibraryFilter: includeLibraryFilter,
+                onOpenCredit: aiostreamsIntegrationId == null
+                    ? (credit) =>
+                          _openFilmographyCredit(context, actions, credit)
+                    : (credit) => _openAIOStreamsFilmographyCredit(
+                        context,
+                        aiostreamsIntegrationId,
+                        credit,
+                      ),
               ),
             ),
           );

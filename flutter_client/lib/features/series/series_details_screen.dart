@@ -45,6 +45,7 @@ class SeriesDetailsScreen extends StatefulWidget {
     this.onMarkEpisodeWatched,
     this.onSidebarActivate,
     this.onOpenRelated,
+    this.onTapMember,
   });
 
   final int seriesId;
@@ -68,6 +69,10 @@ class SeriesDetailsScreen extends StatefulWidget {
   /// Opens a related item's own detail screen. Null hides the row's actions
   /// (the row itself still renders informationally when this is null).
   final ValueChanged<RelatedItem>? onOpenRelated;
+
+  /// Opens a cast member's filmography screen. Null leaves cast
+  /// non-interactive.
+  final ValueChanged<CastMember>? onTapMember;
 
   @override
   State<SeriesDetailsScreen> createState() => _SeriesDetailsScreenState();
@@ -221,6 +226,7 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
             onMarkEpisode: _markEpisode,
             onMarkSeason: _markSeason,
             onOpenRelated: widget.onOpenRelated,
+            onTapMember: widget.onTapMember,
           );
         },
       ),
@@ -333,6 +339,7 @@ class _SeriesDetailsBody extends StatelessWidget {
     required this.onMarkEpisode,
     required this.onMarkSeason,
     this.onOpenRelated,
+    this.onTapMember,
     this.scrollController,
   });
 
@@ -360,6 +367,7 @@ class _SeriesDetailsBody extends StatelessWidget {
   final void Function(List<Episode> episodes, {required bool watched})
   onMarkSeason;
   final ValueChanged<RelatedItem>? onOpenRelated;
+  final ValueChanged<CastMember>? onTapMember;
 
   List<int> get _seasonNumbers {
     final numbers = <int>{
@@ -610,6 +618,7 @@ class _SeriesDetailsBody extends StatelessWidget {
       castSemanticLabel: AppLocalizations.of(context).seriesCast,
       richRelated: info.series.related,
       onRelatedTap: onOpenRelated,
+      onTapMember: onTapMember,
       progressList: progressList,
       canMarkWatched: canMarkWatched,
       emptyEpisodesLabel: 'No episodes available',
