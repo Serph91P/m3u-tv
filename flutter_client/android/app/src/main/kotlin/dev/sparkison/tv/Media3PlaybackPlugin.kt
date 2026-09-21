@@ -20,11 +20,13 @@ import androidx.media3.exoplayer.source.UnrecognizedInputFormatException
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
+import androidx.media3.ui.SubtitleView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -68,6 +70,7 @@ class Media3PlaybackPlugin(
     private var events: EventChannel.EventSink? = null
     private val states = mutableMapOf<String, PlayerState>()
     private val surfaceViews = mutableMapOf<String, SurfaceView>()
+    private val subtitleViews = mutableMapOf<String, SubtitleView>()
 
     init {
         methodChannel.setMethodCallHandler(this)
@@ -93,6 +96,39 @@ class Media3PlaybackPlugin(
         if (surfaceViews[playerId] === surfaceView) {
             surfaceViews.remove(playerId)
         }
+    }
+
+    /**
+     * Creates (or returns the existing) `SubtitleView` for [playerId], mirroring
+     * [attachSurfaceView]'s lifecycle. ExoPlayer never renders cue text itself --
+     * it only delivers [Player.Listener.onCues] callbacks -- so without this,
+     * text tracks appear selectable in the menu but nothing draws on screen
+     * (matches Plezy's `ExoPlayerCore`, which pairs its video `SurfaceView` with
+     * a `SubtitleView` added directly above it for the same reason).
+     */
+    fun attachSubtitleView(playerId: String, viewContext: Context): SubtitleView {
+        val subtitleView = SubtitleView(viewContext)
+        subtitleViews[playerId] = subtitleView
+        pushCurrentCues(playerId, subtitleView)
+        return subtitleView
+    }
+
+    fun detachSubtitleView(playerId: String, subtitleView: SubtitleView) {
+        if (subtitleViews[playerId] === subtitleView) {
+            subtitleViews.remove(playerId)
+        }
+    }
+
+    /**
+     * Pushes whatever cues are already current when a `SubtitleView` attaches
+     * (view recreated under a live player, e.g. a Multiview tile relayout) so
+     * an in-flight cue doesn't stay blank until the next `onCues` update --
+     * mirrors `PlayerView`'s own attach behavior.
+     */
+    private fun pushCurrentCues(playerId: String, subtitleView: SubtitleView) {
+        val player = states[playerId]?.player ?: return
+        if (!player.isCommandAvailable(Player.COMMAND_GET_TEXT)) return
+        subtitleView.setCues(player.currentCues.cues)
     }
 
     private fun waitForSurfaceView(playerId: String, attemptsRemaining: Int, completion: (SurfaceView?) -> Unit) {
@@ -276,6 +312,7 @@ class Media3PlaybackPlugin(
         // must stay on the main thread rather than move off it).
         state.player.clearVideoSurfaceView(surfaceViews[playerId])
         state.player.release()
+        subtitleViews[playerId]?.setCues(null)
         emit(playerId, "disposed")
     }
 
@@ -491,6 +528,10 @@ class Media3PlaybackPlugin(
         override fun onTracksChanged(tracks: Tracks) {
             val player = states[playerId]?.player ?: return
             emitTrackSnapshot(playerId, player)
+        }
+
+        override fun onCues(cueGroup: CueGroup) {
+            subtitleViews[playerId]?.setCues(cueGroup.cues)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {

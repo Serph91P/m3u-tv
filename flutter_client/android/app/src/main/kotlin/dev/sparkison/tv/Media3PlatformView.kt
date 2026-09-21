@@ -38,10 +38,20 @@ class Media3PlatformView(context: Context, private val playerId: String, private
     PlatformView {
     private val container = FrameLayout(context)
     private val surfaceView = plugin.attachSurfaceView(playerId, context)
+    private val subtitleView = plugin.attachSubtitleView(playerId, context)
 
     init {
         container.addView(
             surfaceView,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+        )
+        // Added above the SurfaceView, same layer ordering as Plezy's
+        // PlayerSurfaceHost/ExoPlayerCore (see this file's header comment):
+        // under hybrid composition, native views composite in add order, so
+        // cue text draws over the video without any z-order/transparency
+        // hacks.
+        container.addView(
+            subtitleView,
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
         )
     }
@@ -52,9 +62,10 @@ class Media3PlatformView(context: Context, private val playerId: String, private
     // Media3PlaybackPlugin.onMethodCall), which -- like the mpv/Apple
     // platform views -- must finish before Flutter unmounts this view
     // (PlaybackOrchestrator awaits PlatformViewProvider.releaseNativeView()
-    // first). Only detach the surface reference here so a later `load` for
-    // this playerId doesn't race against a torn-down view.
+    // first). Only detach the surface/subtitle references here so a later
+    // `load` for this playerId doesn't race against a torn-down view.
     override fun dispose() {
         plugin.detachSurfaceView(playerId, surfaceView)
+        plugin.detachSubtitleView(playerId, subtitleView)
     }
 }
