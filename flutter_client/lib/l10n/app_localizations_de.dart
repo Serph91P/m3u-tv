@@ -1452,6 +1452,21 @@ class AppLocalizationsDe extends AppLocalizations {
   String get mediaSortReleaseDateOldest => 'Älteste zuerst';
 
   @override
+  String get liveTvSortDialogTitle => 'Sender sortieren nach';
+
+  @override
+  String get channelSortPlaylistOrder => 'Playlist-Reihenfolge';
+
+  @override
+  String get channelSortChannelNumber => 'Kanalnummer';
+
+  @override
+  String get channelSortAlphabeticalAsc => 'Alphabetisch (A-Z)';
+
+  @override
+  String get channelSortAlphabeticalDesc => 'Alphabetisch (Z-A)';
+
+  @override
   String get settingsDefaultStartPage => 'Standardstartseite';
 
   @override

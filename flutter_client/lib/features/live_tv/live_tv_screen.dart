@@ -18,6 +18,8 @@ import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
+import 'package:m3u_tv/shared/channel_sort.dart';
+import 'package:m3u_tv/shared/channel_sort_dialog.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/epg_show_search_controller.dart';
@@ -167,6 +169,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
   Set<int> _favoriteIds = {};
   final Map<int, EpgCurrentNext?> _epgMap = {};
   _ViewMode _viewMode = _ViewMode.list;
+  ChannelSortOption _sortOption = ChannelSortOption.playlistOrder;
   EpgStartView _epgStartView = EpgStartView.currentTime;
   ChannelColumnLayout _channelColumnLayout = ChannelColumnLayout.logoOnly;
   int _viewSettingsGeneration = 0;
@@ -231,6 +234,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
     super.initState();
     widget.favoritesService.addListener(_onFavoritesChanged);
     _attachViewSettingsListener();
+    _sortOption = _initialSortOption();
     unawaited(_initCategory());
     widget.onBackHandlerReady?.call(_handleBackFromEpg);
     _showSearchController.addListener(_onShowSearchChanged);
@@ -238,6 +242,21 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
 
   void _onShowSearchChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// The sort to open with: the persisted Live TV sort when the user has
+  /// opted in via Settings -> View -> Filter Persistence, otherwise
+  /// [ChannelSortOption.playlistOrder]. Mirrors VOD/Series'
+  /// `_initialSortOption` - reads the sync getter rather than awaiting the
+  /// async one so the very first build already uses the right sort;
+  /// `main.dart` preloads it into the service's in-memory cache during
+  /// bootstrap, so by the time this screen mounts it's warm.
+  ChannelSortOption _initialSortOption() {
+    final service = widget.viewSettingsService;
+    if (service == null || !service.rememberMediaSortSync) {
+      return ChannelSortOption.playlistOrder;
+    }
+    return service.liveTvSortOptionSync;
   }
 
   bool _handleBackFromEpg() {
@@ -695,7 +714,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       );
     }
 
-    final filtered = _filteredChannels(channels);
+    final filtered = sortChannels(_filteredChannels(channels), _sortOption);
     final channelsById = {for (final c in channels) c.id: c};
     _loadEpgForChannels(filtered, epgService);
     final l = AppLocalizations.of(context);
@@ -722,6 +741,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       filterScreenTitle: l.mediaCategoryFilterScreenTitle,
       leading: _buildViewModeToggle(),
       trailing: _buildMultiviewButton(),
+      extraActions: [_buildSortButton(context)],
       onSidebarActivate: widget.onSidebarActivate,
       // The strip's right edge hands focus to whichever of these actually
       // has live focusable descendants - _gridFocusNode is empty while
@@ -939,6 +959,35 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
         }
       },
     );
+  }
+
+  /// The label doubles as a status indicator - see [channelSortButtonLabel].
+  Widget _buildSortButton(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return AppButton(
+      icon: Icons.sort,
+      label: channelSortButtonLabel(l, _sortOption),
+      onPressed: () => unawaited(_showSortMenu(context)),
+    );
+  }
+
+  /// Opens the shared Live TV "Sort By" modal. Mirrors VOD/Series'
+  /// `_showSortMenu`: always updates the local [_sortOption]; only writes
+  /// back to the service when persistence is currently on.
+  Future<void> _showSortMenu(BuildContext context) async {
+    final service = widget.viewSettingsService;
+    var remember = false;
+    if (service != null) remember = await service.rememberMediaSort();
+    if (!mounted || !context.mounted) return;
+
+    final selected = await showChannelSortDialog(
+      context,
+      current: _sortOption,
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _sortOption = selected);
+    if (!remember) return;
+    unawaited(service!.setLiveTvSortOption(selected));
   }
 
   Widget _buildListView(List<Channel> channels, Set<int> recordingChannelIds) {

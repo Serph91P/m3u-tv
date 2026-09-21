@@ -1403,6 +1403,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaSortReleaseDateOldest => '最早优先';
 
   @override
+  String get liveTvSortDialogTitle => '频道排序方式';
+
+  @override
+  String get channelSortPlaylistOrder => '播放列表顺序';
+
+  @override
+  String get channelSortChannelNumber => '频道编号';
+
+  @override
+  String get channelSortAlphabeticalAsc => '字母顺序 (A-Z)';
+
+  @override
+  String get channelSortAlphabeticalDesc => '字母顺序 (Z-A)';
+
+  @override
   String get settingsDefaultStartPage => '默认启动页面';
 
   @override

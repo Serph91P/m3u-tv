@@ -92,6 +92,29 @@ enum MediaSortOption {
       );
 }
 
+/// Sort order for the Live TV channel list/grid. A separate enum from
+/// [MediaSortOption] rather than appended values on it - VOD/Series sort by
+/// rating/release date via a windowed SQL query, while channels have neither
+/// field and are sorted in memory instead (see `sortChannels` in
+/// `shared/channel_sort.dart`), so the two option sets share no cases and
+/// would only strain `catalogSortFor`'s exhaustive switch to pretend
+/// otherwise.
+enum ChannelSortOption {
+  playlistOrder('playlistOrder'),
+  channelNumber('channelNumber'),
+  alphabeticalAsc('alphabeticalAsc'),
+  alphabeticalDesc('alphabeticalDesc');
+
+  const ChannelSortOption(this.value);
+  final String value;
+
+  static ChannelSortOption fromValue(String? value) =>
+      ChannelSortOption.values.firstWhere(
+        (option) => option.value == value,
+        orElse: () => ChannelSortOption.playlistOrder,
+      );
+}
+
 /// Whether to optimize image rendering for visual quality or performance.
 enum OptimizeFor {
   quality('quality'),
@@ -154,6 +177,7 @@ class ViewSettingsService extends ChangeNotifier {
   static const rememberMediaSortKey = 'm3ue_tv_remember_vod_sort';
   static const vodSortOptionKey = 'm3ue_tv_vod_sort_option';
   static const seriesSortOptionKey = 'm3ue_tv_series_sort_option';
+  static const liveTvSortOptionKey = 'm3ue_tv_live_tv_sort_option';
   static const matchRefreshRateKey = 'm3ue_tv_match_refresh_rate';
   static const defaultStartPageKey = 'm3ue_tv_default_start_page';
   static const windowBoundsKey = 'm3ue_tv_window_bounds';
@@ -248,12 +272,13 @@ class ViewSettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Whether the user's chosen media sort order (VOD, Series) survives
-  /// across launches. Defaults to `false` so existing users keep today's
-  /// session-only behavior (resets to server order on each fresh boot of the
-  /// app). Shared across every sortable screen - persisted as its own key so
-  /// toggling this off doesn't clear the separately-stored [vodSortOption]/
-  /// [seriesSortOption], which are simply ignored until re-enabled.
+  /// Whether the user's chosen media sort order (VOD, Series, Live TV)
+  /// survives across launches. Defaults to `false` so existing users keep
+  /// today's session-only behavior (resets to server order on each fresh
+  /// boot of the app). Shared across every sortable screen - persisted as
+  /// its own key so toggling this off doesn't clear the separately-stored
+  /// [vodSortOption]/[seriesSortOption]/[liveTvSortOption], which are simply
+  /// ignored until re-enabled.
   Future<bool> rememberMediaSort() async {
     final raw = await _read(rememberMediaSortKey);
     return raw as bool? ?? false;
@@ -296,6 +321,20 @@ class ViewSettingsService extends ChangeNotifier {
 
   Future<void> setSeriesSortOption(MediaSortOption option) async {
     await _write(seriesSortOptionKey, option.value);
+    notifyListeners();
+  }
+
+  Future<ChannelSortOption> liveTvSortOption() async {
+    final raw = await _read(liveTvSortOptionKey);
+    return ChannelSortOption.fromValue(raw as String?);
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  ChannelSortOption get liveTvSortOptionSync =>
+      ChannelSortOption.fromValue(_memory[liveTvSortOptionKey] as String?);
+
+  Future<void> setLiveTvSortOption(ChannelSortOption option) async {
+    await _write(liveTvSortOptionKey, option.value);
     notifyListeners();
   }
 

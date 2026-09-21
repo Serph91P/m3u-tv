@@ -40,6 +40,7 @@ class MediaCategoryNav extends StatefulWidget {
     this.categoryCounts,
     this.leading,
     this.trailing,
+    this.extraActions = const [],
     this.onSidebarActivate,
     this.gridFocusScopeNode,
     this.onGridEdgeEnter,
@@ -73,6 +74,13 @@ class MediaCategoryNav extends StatefulWidget {
 
   /// e.g. Live TV's Multiview pill button.
   final Widget? trailing;
+
+  /// Further full-width buttons rendered below [leading]/[trailing] on
+  /// TV/desktop, and appended alongside them in the mobile action row - e.g.
+  /// Live TV's sort button. Kept separate from [leading]/[trailing] rather
+  /// than folded into one of them via a `Row` so each stays free to grow to
+  /// its full label width without cramping into a shared half-strip.
+  final List<Widget> extraActions;
 
   /// TV/desktop only: the strip's own left edge activates the sidebar.
   final VoidCallback? onSidebarActivate;
@@ -196,6 +204,10 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
                   const SizedBox(height: MediaBrowsingMetrics.chipGap),
                   widget.trailing!,
                 ],
+                for (final action in widget.extraActions) ...[
+                  const SizedBox(height: MediaBrowsingMetrics.chipGap),
+                  action,
+                ],
                 if (widget.tabs.isNotEmpty) ...[
                   const SizedBox(height: MediaBrowsingMetrics.itemGap),
                   Expanded(
@@ -224,6 +236,7 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
           onPressed: () => _openFilterScreen(context),
         ),
       if (widget.trailing != null) widget.trailing!,
+      ...widget.extraActions,
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -251,8 +264,8 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
     );
   }
 
-  /// Two buttons keep the equal-width, full-bleed look. Three+ (currently
-  /// only Live TV's view toggle + Filter + Multiview) no longer fit at equal
+  /// Two buttons keep the equal-width, full-bleed look. Three+ (e.g. Live
+  /// TV's view toggle + Filter + Multiview + Sort) no longer fit at equal
   /// width without wrapping button labels onto two lines, so they fall back
   /// to natural-width buttons in a horizontally scrollable row instead of
   /// shrinking further.

@@ -72,6 +72,7 @@ Future<void> main() async {
     appState.viewSettingsService.rememberMediaSort(),
     appState.viewSettingsService.vodSortOption(),
     appState.viewSettingsService.seriesSortOption(),
+    appState.viewSettingsService.liveTvSortOption(),
     appState.viewSettingsService.navigationSoundEnabled(),
     appState.viewSettingsService.volume(),
   ]);

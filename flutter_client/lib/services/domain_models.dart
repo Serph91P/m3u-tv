@@ -77,6 +77,7 @@ class Channel {
     this.catchupSupported = false,
     this.catchupDays,
     this.catchupSource,
+    this.channelNumber,
   });
 
   final int id;
@@ -91,6 +92,12 @@ class Channel {
   final bool catchupSupported;
   final int? catchupDays;
   final String? catchupSource;
+
+  /// The provider's channel number (Xtream `num`), e.g. for remote-control
+  /// direct entry or a "Channel Number" sort. Distinct from [id]
+  /// (`stream_id`) - providers commonly renumber channels independently of
+  /// their internal stream id, and can leave this unset or `0` entirely.
+  final int? channelNumber;
 
   factory Channel.fromXtream(Map<String, Object?> json, String streamUrl) {
     final catchupSource = _asNullableString(json['catchup_source']);
@@ -113,6 +120,7 @@ class Channel {
       catchupSupported: catchupSupported,
       catchupDays: catchupDays,
       catchupSource: catchupSource,
+      channelNumber: _asIntOrNull(json['num']),
     );
   }
 }

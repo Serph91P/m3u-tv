@@ -5,30 +5,39 @@ import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/sort_option_row.dart';
 
-/// Shows the "Sort By" modal shared by every sortable media grid (VOD,
-/// Series). Returns the newly selected [MediaSortOption], or null if the
-/// dialog was dismissed (Cancel, back, tap outside) without one.
-Future<MediaSortOption?> showMediaSortDialog(
+/// Shows the Live TV "Sort By" modal - the channel-list counterpart of
+/// `showMediaSortDialog`, kept separate because [ChannelSortOption]'s cases
+/// (playlist order / channel number / alphabetical) have nothing in common
+/// with VOD/Series' (rating / release date). Returns the newly selected
+/// [ChannelSortOption], or null if the dialog was dismissed without one.
+Future<ChannelSortOption?> showChannelSortDialog(
   BuildContext context, {
-  required String title,
-  required MediaSortOption current,
+  required ChannelSortOption current,
 }) {
   final l = AppLocalizations.of(context);
-  final options = <(IconData, String, MediaSortOption)>[
-    (Icons.list_alt, l.mediaSortDefault, MediaSortOption.defaultOrder),
-    (Icons.star_rate, l.mediaSortRating, MediaSortOption.ratingDesc),
+  final options = <(IconData, String, ChannelSortOption)>[
     (
-      Icons.south,
-      l.mediaSortReleaseDateNewest,
-      MediaSortOption.releaseDateDesc,
+      Icons.list_alt,
+      l.channelSortPlaylistOrder,
+      ChannelSortOption.playlistOrder,
     ),
     (
-      Icons.north,
-      l.mediaSortReleaseDateOldest,
-      MediaSortOption.releaseDateAsc,
+      Icons.tag,
+      l.channelSortChannelNumber,
+      ChannelSortOption.channelNumber,
+    ),
+    (
+      Icons.sort_by_alpha,
+      l.channelSortAlphabeticalAsc,
+      ChannelSortOption.alphabeticalAsc,
+    ),
+    (
+      Icons.sort_by_alpha,
+      l.channelSortAlphabeticalDesc,
+      ChannelSortOption.alphabeticalDesc,
     ),
   ];
-  return showDialog<MediaSortOption>(
+  return showDialog<ChannelSortOption>(
     context: context,
     builder: (dialogContext) {
       final scale = FontSizeScope.scaleOf(dialogContext);
@@ -37,7 +46,7 @@ Future<MediaSortOption?> showMediaSortDialog(
           children: [
             Icon(Icons.sort, size: 18 * scale),
             SizedBox(width: 8 * scale),
-            Expanded(child: Text(title)),
+            Expanded(child: Text(l.liveTvSortDialogTitle)),
           ],
         ),
         children: [

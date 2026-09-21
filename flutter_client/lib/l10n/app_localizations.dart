@@ -2588,6 +2588,36 @@ abstract class AppLocalizations {
   /// **'Oldest First'**
   String get mediaSortReleaseDateOldest;
 
+  /// No description provided for @liveTvSortDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort Channels By'**
+  String get liveTvSortDialogTitle;
+
+  /// No description provided for @channelSortPlaylistOrder.
+  ///
+  /// In en, this message translates to:
+  /// **'Playlist Order'**
+  String get channelSortPlaylistOrder;
+
+  /// No description provided for @channelSortChannelNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel Number'**
+  String get channelSortChannelNumber;
+
+  /// No description provided for @channelSortAlphabeticalAsc.
+  ///
+  /// In en, this message translates to:
+  /// **'Alphabetical (A-Z)'**
+  String get channelSortAlphabeticalAsc;
+
+  /// No description provided for @channelSortAlphabeticalDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Alphabetical (Z-A)'**
+  String get channelSortAlphabeticalDesc;
+
   /// No description provided for @settingsDefaultStartPage.
   ///
   /// In en, this message translates to:
