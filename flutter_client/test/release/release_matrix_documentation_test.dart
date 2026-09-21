@@ -46,7 +46,6 @@ void main() {
     for (final stepName in <String>[
       'Build APK',
       'Build iOS IPA (unsigned)',
-      'Bundle Flutter assets',
       'Stage tvOS Flutter artifacts',
       'Archive tvOS (unsigned)',
       'Build macOS app (unsigned)',
