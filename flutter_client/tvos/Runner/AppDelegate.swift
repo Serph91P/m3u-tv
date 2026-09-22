@@ -2,6 +2,25 @@ import AVFoundation
 import Flutter
 import UIKit
 
+// Opts the Siri Remote into raw indirect-touch reporting (delivered to Dart
+// over the `flutter/gamepadtouchevent` channel that AppleTvRemoteSwipeGovernor
+// listens on) instead of the system's own swipe-to-UIPress translation, which
+// has no app-level sensitivity control and is what made navigation feel
+// over-sensitive with no acceleration on a held swipe.
+class M3uTvFlutterViewController: FlutterViewController {
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        resignFirstResponder()
+        super.viewWillDisappear(animated)
+    }
+}
+
 @main
 class AppDelegate: FlutterAppDelegate {
     private var avKitPlugin: AvKitPlaybackPlugin?
@@ -11,7 +30,7 @@ class AppDelegate: FlutterAppDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        let flutterVC = FlutterViewController(project: nil, nibName: nil, bundle: nil)
+        let flutterVC = M3uTvFlutterViewController(project: nil, nibName: nil, bundle: nil)
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = flutterVC
         window.makeKeyAndVisible()
