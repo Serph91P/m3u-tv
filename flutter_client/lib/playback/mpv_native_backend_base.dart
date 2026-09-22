@@ -158,11 +158,20 @@ abstract class MpvNativeBackendBase implements PlayerAdapter {
   @override
   Future<void> play() async {
     await _invokeControl('play');
+    // mpv's own "pause" property change isn't observed/forwarded as an
+    // event (unlike PLAYBACK_RESTART etc. in _applyEvent below), so without
+    // this the controls overlay's play/pause icon stays stale until some
+    // unrelated event (e.g. a seek's PLAYBACK_RESTART) happens to carry a
+    // fresh snapshot. Emit optimistically here, matching how
+    // AndroidPlaybackAdapter's ExoPlayer path already does for the same
+    // reason.
+    _emit(_state.copyWith(status: PlaybackStatus.playing));
   }
 
   @override
   Future<void> pause() async {
     await _invokeControl('pause');
+    _emit(_state.copyWith(status: PlaybackStatus.paused));
   }
 
   @override

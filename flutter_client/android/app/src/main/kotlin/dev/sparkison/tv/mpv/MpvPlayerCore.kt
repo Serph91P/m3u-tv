@@ -3,6 +3,7 @@ package dev.sparkison.tv.mpv
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -10,6 +11,7 @@ import dev.sparkison.tv.libmpv.EndFileReason
 import dev.sparkison.tv.libmpv.MpvEvent
 import dev.sparkison.tv.libmpv.MpvException
 import dev.sparkison.tv.libmpv.MpvPlayer
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -98,7 +100,12 @@ class MpvPlayerCore(
         // a Flutter AndroidView (itself backed by a surface Flutter
         // composites), without this the video surface renders but is
         // entirely obscured by Flutter's own layer, showing as black.
-        surfaceView.setZOrderOnTop(true)
+        // setZOrderMediaOverlay (not setZOrderOnTop) keeps the elevation scoped
+        // to this view's own parent instead of the whole window, so Flutter
+        // overlays drawn above it in the widget tree (e.g. playback controls)
+        // still composite on top instead of being pinned underneath at the
+        // window level.
+        surfaceView.setZOrderMediaOverlay(true)
         surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 attachSurface(holder.surface)
@@ -169,6 +176,27 @@ class MpvPlayerCore(
                         // cost and, on a failed open, a yt-dlp spawn with the
                         // stream's access token in its argv.
                         setOption("ytdl", "no")
+                        // Unlike the macOS/Windows/Linux cores, this vendored
+                        // Android libmpv build has no font backend at all
+                        // (no fontconfig, and no CoreText/DirectWrite
+                        // equivalent to fall back to) -- confirmed both by
+                        // device logcat ("can't find selected font
+                        // provider") and by mpv-android/Plezy's own Android
+                        // sources, which hit the exact same gap and solve it
+                        // the same way: bundle a fallback font as an app
+                        // asset, extract it once to internal storage, and
+                        // point libass at it with sub-fonts-dir/sub-font.
+                        // Without this, an SRT/ASS track with no embedded
+                        // font attachment has literally nothing to draw
+                        // glyphs with, so subtitles render as nothing rather
+                        // than a fallback typeface. Only Latin/Cyrillic/Greek
+                        // are covered (Noto Sans, not the CJK/Hangul-capable
+                        // Noto variants) -- see extractSubtitleFontDir's doc
+                        // comment for the tradeoff.
+                        extractSubtitleFontDir(context.applicationContext)?.let { fontDir ->
+                            setOption("sub-fonts-dir", fontDir)
+                            setOption("sub-font", SUBTITLE_FONT_NAME)
+                        }
                     }
                     player = created
                     collectEvents(created)
@@ -488,6 +516,50 @@ class MpvPlayerCore(
                     "recoverable" to true,
                 ),
             )
+        }
+    }
+
+    companion object {
+        private const val TAG = "MpvPlayerCore"
+
+        // libass matches a subtitle's requested font against the name-table
+        // family of every file it finds in sub-fonts-dir -- this has to be
+        // the actual family name baked into NotoSans-Regular.ttf, not the
+        // asset's file name, or libass would look for a font called
+        // "sub-fonts-dir" and fall back to nothing again.
+        private const val SUBTITLE_FONT_NAME = "Noto Sans"
+        private const val SUBTITLE_FONT_ASSET = "fonts/NotoSans-Regular.ttf"
+        private const val SUBTITLE_FONT_FILE = "NotoSans-Regular.ttf"
+
+        // Noto Sans (SIL Open Font License 1.1, bundled OFL.txt alongside it
+        // in the asset) only covers Latin/Cyrillic/Greek -- CJK, Hangul, and
+        // Arabic subtitle tracks will still render as boxes/nothing on this
+        // backend, same as before this fix, since a single fallback font
+        // can't cover every script and libass has no system-font fallback to
+        // reach for beyond what's in this directory. That mirrors Plezy's
+        // own fix for this exact gap (github.com/edde746/plezy, GPL-3.0,
+        // issue #1932), which likewise ships bundled font files rather than
+        // relying on a font provider that doesn't exist on this platform.
+        //
+        // Returns the extracted font's parent directory (for sub-fonts-dir),
+        // or null if extraction failed -- callers should treat that as
+        // "subtitles keep working without a fallback font" rather than
+        // aborting mpv creation over it.
+        private fun extractSubtitleFontDir(context: Context): String? {
+            return try {
+                val fontDir = File(context.filesDir, "subtitle_fonts")
+                val fontFile = File(fontDir, SUBTITLE_FONT_FILE)
+                if (!fontFile.exists()) {
+                    fontDir.mkdirs()
+                    context.assets.open(SUBTITLE_FONT_ASSET).use { input ->
+                        fontFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+                fontDir.path
+            } catch (error: Exception) {
+                Log.w(TAG, "Failed to extract subtitle fallback font", error)
+                null
+            }
         }
     }
 }
