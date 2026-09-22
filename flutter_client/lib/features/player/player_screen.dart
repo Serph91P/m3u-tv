@@ -1562,7 +1562,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // otherwise stretch to within a few pixels of the right
                 // edge, exactly where the diagnostics panel sits.
                 final diagnosticsWidth = _showPlaybackDiagnostics
-                    ? (isCompact ? 200.0 : 300.0)
+                    ? (isCompact ? 200.0 : 300.0) * fontScale
                     : 0.0;
                 final overlayWidth = isCompact
                     ? mediaQuery.size.width -
@@ -1803,6 +1803,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: _PlaybackDiagnosticsPanel(
                           compact: isCompact,
                           width: diagnosticsWidth,
+                          fontScale: fontScale,
                           activeBackend: widget.orchestrator.activeBackend,
                           diagnostics: widget.orchestrator.diagnostics,
                         ),
@@ -1906,6 +1907,7 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
     required this.diagnostics,
     this.compact = false,
     this.width = 360,
+    this.fontScale = 1.0,
   });
 
   final PlaybackBackend? activeBackend;
@@ -1921,6 +1923,12 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
   /// screen each one gets instead of overlapping.
   final double width;
 
+  /// TV display-size scale (see `FontSizeScope`) so the label column and
+  /// text keep pace with `width`, which is already scaled by the caller --
+  /// without this, larger scale factors squeeze the same fixed label/font
+  /// sizes into a wider box and the text still wraps.
+  final double fontScale;
+
   @override
   Widget build(BuildContext context) {
     final snapshot = _PlaybackDiagnosticsSnapshot.from(
@@ -1932,37 +1940,42 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
         label: 'Backend',
         value: snapshot.backendLabel,
         compact: compact,
+        fontScale: fontScale,
       ),
       if (snapshot.fallbackReason != null)
         _DiagnosticsRow(
           label: 'Fallback',
           value: snapshot.fallbackReason!,
           compact: compact,
+          fontScale: fontScale,
         ),
       if (snapshot.codecDecision != null)
         _DiagnosticsRow(
           label: 'Codec',
           value: snapshot.codecDecision!,
           compact: compact,
+          fontScale: fontScale,
         ),
       if (snapshot.transcodeSession != null)
         _DiagnosticsRow(
           label: 'Transcode',
           value: snapshot.transcodeSession!,
           compact: compact,
+          fontScale: fontScale,
         ),
       if (snapshot.cleanupStatus != null)
         _DiagnosticsRow(
           label: 'Cleanup',
           value: snapshot.cleanupStatus!,
           compact: compact,
+          fontScale: fontScale,
         ),
     ];
 
     return IgnorePointer(
       child: Container(
         width: width,
-        padding: EdgeInsets.all(compact ? 8 : 14),
+        padding: EdgeInsets.all((compact ? 8 : 14) * fontScale),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.78),
           border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
@@ -1990,21 +2003,23 @@ class _DiagnosticsRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.compact = false,
+    this.fontScale = 1.0,
   });
 
   final String label;
   final String value;
   final bool compact;
+  final double fontScale;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: compact ? 2 : 3),
+      padding: EdgeInsets.symmetric(vertical: (compact ? 2 : 3) * fontScale),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: compact ? 72 : 118,
+            width: (compact ? 72 : 118) * fontScale,
             child: Text(
               label,
               style: TextStyle(

@@ -654,6 +654,7 @@ class _SeekBarState extends State<_SeekBar> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final scale = FontSizeScope.scaleOf(context);
     final displayPos = _displayPosition;
     final total = widget.duration;
     final isScrubbing = _scrubPosition != null;
@@ -685,7 +686,7 @@ class _SeekBarState extends State<_SeekBar> {
         child: Row(
           children: [
             SizedBox(
-              width: 60,
+              width: 60 * scale,
               child: Text(
                 formatTime(displayPos),
                 style: TextStyle(
@@ -778,7 +779,7 @@ class _SeekBarState extends State<_SeekBar> {
               ),
             ),
             SizedBox(
-              width: 60,
+              width: 60 * scale,
               child: Text(
                 formatTime(total),
                 style: TextStyle(
