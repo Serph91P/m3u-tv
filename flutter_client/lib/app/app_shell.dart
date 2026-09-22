@@ -73,6 +73,11 @@ enum DeviceType { tv, desktop, tablet, phone }
 bool shouldUseSidebar(DeviceType deviceType) =>
     deviceType == DeviceType.tv || deviceType == DeviceType.desktop;
 
+/// Whether a device type is touch-primary (phone/tablet), as opposed to
+/// D-pad (TV) or mouse (desktop) driven.
+bool isTouchDeviceType(DeviceType deviceType) =>
+    deviceType == DeviceType.phone || deviceType == DeviceType.tablet;
+
 String notificationRouteFor(
   TvNotificationDestination destination, {
   bool hasDvrFeature = false,
@@ -1747,6 +1752,7 @@ class AppShellState extends ConsumerState<AppShell>
       return NotificationToastOverlay(
         key: _toastKey,
         onNotificationTap: _onToastTap,
+        swipeToDismiss: isTouchDeviceType(widget.deviceType),
         child: backAwareShell,
       );
     }
@@ -1758,6 +1764,7 @@ class AppShellState extends ConsumerState<AppShell>
 
     return NotificationToastOverlay(
       key: _toastKey,
+      swipeToDismiss: isTouchDeviceType(widget.deviceType),
       child: Stack(
         children: [
           IgnorePointer(

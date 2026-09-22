@@ -21,10 +21,16 @@ class NotificationToastOverlay extends StatefulWidget {
     super.key,
     required this.child,
     this.onNotificationTap,
+    this.swipeToDismiss = false,
   });
 
   final Widget child;
   final void Function(TvNotificationItem item)? onNotificationTap;
+
+  /// Enables horizontal swipe-to-dismiss on the toast cards. Only meaningful
+  /// on touch (phone/tablet) form factors - TV/desktop stay D-pad/mouse
+  /// driven and skip the drag recognizer entirely.
+  final bool swipeToDismiss;
 
   @override
   State<NotificationToastOverlay> createState() =>
@@ -94,6 +100,7 @@ class NotificationToastOverlayState extends State<NotificationToastOverlay> {
                         onTap: widget.onNotificationTap != null
                             ? () => widget.onNotificationTap!(entry.item)
                             : null,
+                        swipeToDismiss: widget.swipeToDismiss,
                       ),
                     )
                     .toList(),
@@ -122,11 +129,13 @@ class _NotificationToast extends StatefulWidget {
     required this.item,
     required this.onDismiss,
     this.onTap,
+    this.swipeToDismiss = false,
   });
 
   final TvNotificationItem item;
   final VoidCallback onDismiss;
   final VoidCallback? onTap;
+  final bool swipeToDismiss;
 
   @override
   State<_NotificationToast> createState() => _NotificationToastState();
@@ -248,160 +257,171 @@ class _NotificationToastState extends State<_NotificationToast>
     unawaited(_dismissAnimated());
   }
 
+  void _onDragUpdate(DismissUpdateDetails details) {
+    if (details.progress > 0) {
+      _pause();
+    } else {
+      _resume();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final (accentColor, icon) = _statusAccent(widget.item.status);
     final scale = FontSizeScope.scaleOf(context);
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: 10 * scale),
-      child: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _slide,
-          child: Focus(
-            focusNode: _focusNode,
-            onKeyEvent: (node, event) {
-              if (event is KeyDownEvent &&
-                  (event.logicalKey == LogicalKeyboardKey.select ||
-                      event.logicalKey == LogicalKeyboardKey.enter)) {
-                _handleTap();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: MouseRegion(
-              onEnter: (_) => _pause(),
-              onExit: (_) => _resume(),
-              child: GestureDetector(
-                onTap: _handleTap,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xEE1C1C1E),
-                        borderRadius: BorderRadius.circular(14 * scale),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x60000000),
-                            blurRadius: 20,
-                            offset: Offset(0, 6),
+    Widget card = Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          _handleTap();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: MouseRegion(
+        onEnter: (_) => _pause(),
+        onExit: (_) => _resume(),
+        child: GestureDetector(
+          onTap: _handleTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xEE1C1C1E),
+                  borderRadius: BorderRadius.circular(14 * scale),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x60000000),
+                      blurRadius: 20,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.hardEdge,
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(width: 4 * scale, color: accentColor),
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            14 * scale,
+                            14 * scale,
+                            14 * scale,
+                            0,
                           ),
-                        ],
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Container(width: 4 * scale, color: accentColor),
-                            Expanded(
-                              child: Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                  14 * scale,
-                                  14 * scale,
-                                  14 * scale,
-                                  0,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    icon,
+                                    color: accentColor,
+                                    size: 18 * scale,
+                                  ),
+                                  SizedBox(width: 10 * scale),
+                                  Expanded(
+                                    child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Icon(
-                                          icon,
-                                          color: accentColor,
-                                          size: 18 * scale,
-                                        ),
-                                        SizedBox(width: 10 * scale),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                widget.item.title,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                  height: 1.3,
-                                                  decoration:
-                                                      TextDecoration.none,
-                                                ),
-                                              ),
-                                              if (widget.item.body != null &&
-                                                  widget
-                                                      .item
-                                                      .body!
-                                                      .isNotEmpty) ...[
-                                                SizedBox(height: 4 * scale),
-                                                Text(
-                                                  widget.item.body!,
-                                                  style: TextStyle(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.7),
-                                                    fontSize: 15,
-                                                    height: 1.4,
-                                                    decoration:
-                                                        TextDecoration.none,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
+                                        Text(
+                                          widget.item.title,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.3,
+                                            decoration: TextDecoration.none,
                                           ),
                                         ),
+                                        if (widget.item.body != null &&
+                                            widget.item.body!.isNotEmpty) ...[
+                                          SizedBox(height: 4 * scale),
+                                          Text(
+                                            widget.item.body!,
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.7,
+                                              ),
+                                              fontSize: 15,
+                                              height: 1.4,
+                                              decoration: TextDecoration.none,
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
-                                    SizedBox(height: 12 * scale),
-                                    _buildProgressBar(accentColor),
-                                    SizedBox(height: 10 * scale),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                            ),
+                              SizedBox(height: 12 * scale),
+                              _buildProgressBar(accentColor),
+                              SizedBox(height: 10 * scale),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // D-pad focus ring
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _focused ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: CustomPaint(
+                      painter: GradientBorderPainter(
+                        borderRadius: BorderRadius.all(
+                          Radius.circular(14 * scale),
+                        ),
+                        width: 2,
+                        gradient: LinearGradient(
+                          begin: Alignment.topRight,
+                          end: Alignment.bottomLeft,
+                          colors: [
+                            accentColor,
+                            accentColor.withValues(alpha: 0.4),
                           ],
                         ),
                       ),
                     ),
-                    // D-pad focus ring
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: AnimatedOpacity(
-                          opacity: _focused ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 150),
-                          child: CustomPaint(
-                            painter: GradientBorderPainter(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(14 * scale),
-                              ),
-                              width: 2,
-                              gradient: LinearGradient(
-                                begin: Alignment.topRight,
-                                end: Alignment.bottomLeft,
-                                colors: [
-                                  accentColor,
-                                  accentColor.withValues(alpha: 0.4),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+
+    if (widget.swipeToDismiss) {
+      card = Dismissible(
+        key: ValueKey(widget.item.id),
+        onUpdate: _onDragUpdate,
+        onDismissed: (_) => widget.onDismiss(),
+        child: card,
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10 * scale),
+      child: FadeTransition(
+        opacity: _opacity,
+        child: SlideTransition(position: _slide, child: card),
       ),
     );
   }
