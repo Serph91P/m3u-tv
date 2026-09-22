@@ -888,6 +888,7 @@ class AppShellState extends ConsumerState<AppShell>
           type: 'live',
           streamId: channel.id,
           epgChannelId: channel.epgChannelId ?? channel.tvgName ?? channel.name,
+          logoUrl: channel.logoUrl,
           headers: channel.headers,
         ),
       ),

@@ -29,6 +29,7 @@ import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
+import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 const bool _showPlaybackDiagnostics = bool.fromEnvironment(
   'M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS',
@@ -1616,12 +1617,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (widget.args.logoUrl != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 20),
+                                child: Container(
+                                  padding: EdgeInsets.all(12 * fontScale),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black38,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: ResilientMediaImage(
+                                    imageUrl: widget.args.logoUrl,
+                                    fallbackIcon: Icons.tv,
+                                    width: 96 * fontScale,
+                                    height: 96 * fontScale,
+                                    fit: BoxFit.contain,
+                                    oversample: 2,
+                                    backgroundColor: Colors.transparent,
+                                  ),
+                                ),
+                              ),
+                            Text(
+                              widget.args.title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 12),
                             const CircularProgressIndicator(
                               color: Colors.white,
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              _retryStatusMessage ?? 'Loading stream...',
+                              _retryStatusMessage ??
+                                  AppLocalizations.of(
+                                    context,
+                                  ).playerLoadingStream,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
@@ -1831,6 +1867,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             currentTitle: _epgData!.current.displayTitle,
                             currentProgress: _epgData!.progress,
                             nextTitle: _epgData?.next?.displayTitle,
+                            channelName: widget.args.title,
+                            logoUrl: widget.args.logoUrl,
                           ),
                         ),
                       ),

@@ -41,6 +41,7 @@ class PlayerArgs {
     this.seasonNumber,
     this.startPosition,
     this.epgChannelId,
+    this.logoUrl,
     this.videoCodec,
     this.audioCodec,
     this.userAgent,
@@ -56,6 +57,9 @@ class PlayerArgs {
   final int? seasonNumber;
   final double? startPosition;
   final String? epgChannelId;
+
+  /// Channel logo, for the live TV OSD. Null for VOD/series.
+  final String? logoUrl;
   final String? videoCodec;
   final String? audioCodec;
   final String? userAgent;
@@ -72,6 +76,7 @@ class PlayerArgs {
       seasonNumber: seasonNumber,
       startPosition: startPosition ?? this.startPosition,
       epgChannelId: epgChannelId,
+      logoUrl: logoUrl,
       videoCodec: videoCodec,
       audioCodec: audioCodec,
       userAgent: userAgent,
