@@ -7,6 +7,7 @@ import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import dev.sparkison.tv.FrameRateManager
 import dev.sparkison.tv.libmpv.EndFileReason
 import dev.sparkison.tv.libmpv.MpvEvent
 import dev.sparkison.tv.libmpv.MpvException
@@ -50,6 +51,7 @@ class MpvPlayerCore(
     private val viewId: Int,
     private val context: Context,
     private val delegate: MpvPlayerCoreDelegate,
+    private val frameRateManager: FrameRateManager,
 ) {
     interface MpvPlayerCoreDelegate {
         fun mpvPlayerCore(core: MpvPlayerCore, event: Map<String, Any?>)
@@ -91,6 +93,15 @@ class MpvPlayerCore(
     // diagnostic text (e.g. "No format found, try lowering probescore or
     // forcing the format") instead of a generic "mpv end-file error".
     private var lastLogText: String? = null
+
+    // Dedup so an unrelated VIDEO_RECONFIG (e.g. an audio-only track change)
+    // doesn't re-trigger a display-mode switch for the same fps.
+    private var lastAppliedFps: Double = 0.0
+
+    // Set fresh on every load() -- see [FrameRateManager]'s class doc; off
+    // by default (mirrors the open-source Plezy player's own opt-in
+    // Android toggle, `matchContentFrameRate`, default off).
+    private var matchDisplayRefreshRate: Boolean = false
 
     val surfaceView: SurfaceView = SurfaceView(context)
 
@@ -250,12 +261,18 @@ class MpvPlayerCore(
         userAgent: String?,
         headers: Map<String, String>?,
         externalSubtitles: List<Triple<String, String?, String?>>,
+        matchDisplayRefreshRate: Boolean = false,
     ) {
         scope.launch {
             mutex.withLock {
                 val current = player ?: return@withLock
                 readyEmitted = false
                 lastLogText = null
+                lastAppliedFps = 0.0
+                // Written here, not synchronously in load()'s caller-thread
+                // body, so it's only ever touched from this single-threaded
+                // scope -- same invariant [readyEmitted]/[lastLogText] rely on.
+                this@MpvPlayerCore.matchDisplayRefreshRate = matchDisplayRefreshRate
                 try {
                     if (!userAgent.isNullOrEmpty()) {
                         current.setProperty("user-agent", userAgent)
@@ -348,8 +365,16 @@ class MpvPlayerCore(
         }
     }
 
-    /** [onComplete] fires only once the native mpv handle has actually closed. */
-    fun dispose(onComplete: () -> Unit) {
+    /**
+     * [onComplete] fires only once the native mpv handle has actually closed.
+     *
+     * [preserveDisplayMode]: true when this teardown is a mid-playback
+     * backend handoff (e.g. the EAC3 ExoPlayer->mpv fallback) rather than a
+     * genuine stop -- skips restoring the Auto Frame Rate switch so the
+     * backend this hands off to doesn't immediately reapply it, avoiding a
+     * visible restore-then-reswitch flicker. See [FrameRateManager]'s class doc.
+     */
+    fun dispose(preserveDisplayMode: Boolean = false, onComplete: () -> Unit) {
         scope.launch {
             mutex.withLock {
                 if (disposed) {
@@ -359,6 +384,10 @@ class MpvPlayerCore(
                 disposed = true
                 val current = player
                 player = null
+                lastAppliedFps = 0.0
+                if (!preserveDisplayMode) {
+                    mainHandler.post { frameRateManager.restore() }
+                }
                 try {
                     current?.detachSurface()
                     // close() is a synchronous, blocking AutoCloseable
@@ -385,12 +414,16 @@ class MpvPlayerCore(
                     is MpvEvent.FileLoaded -> {
                         readyEmitted = true
                         emit("FILE_LOADED", snapshot(player, includeTracks = true))
+                        applyFrameRateFromContainer(player)
                     }
                     is MpvEvent.PlaybackRestart -> {
                         if (readyEmitted) emit("PLAYBACK_RESTART", snapshot(player, includeTracks = false))
                     }
                     is MpvEvent.VideoReconfig -> {
-                        if (readyEmitted) emit("VIDEO_RECONFIG", snapshot(player, includeTracks = false))
+                        if (readyEmitted) {
+                            emit("VIDEO_RECONFIG", snapshot(player, includeTracks = false))
+                            applyFrameRateFromContainer(player)
+                        }
                     }
                     is MpvEvent.AudioReconfig, is MpvEvent.Seek, is MpvEvent.QueueOverflow, is MpvEvent.Other -> {
                         // No Dart-side counterpart; the desktop/Apple cores
@@ -423,6 +456,20 @@ class MpvPlayerCore(
                 lastLogText = message.text.trim()
             }
         }
+    }
+
+    // Auto Frame Rate (issue #283): mpv's own `container-fps` is the same
+    // property the Windows backend reads for MaybeMatchRefreshRate and tvOS's
+    // core reads for its AVDisplayManager criteria -- reused here for
+    // consistency. Runs on this class's own IO-confined [scope]; the actual
+    // Window mutation in [FrameRateManager] must happen on the main thread,
+    // same as [emit]/[emitError] below.
+    private suspend fun applyFrameRateFromContainer(player: MpvPlayer) {
+        if (!matchDisplayRefreshRate) return
+        val fps = runCatching { player.getDouble("container-fps") }.getOrNull() ?: return
+        if (fps <= 0.0 || fps == lastAppliedFps) return
+        lastAppliedFps = fps
+        mainHandler.post { frameRateManager.applyForFrameRate(fps) }
     }
 
     private suspend fun snapshot(player: MpvPlayer, includeTracks: Boolean): Map<String, Any?> {

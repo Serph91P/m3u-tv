@@ -3,6 +3,7 @@ package dev.sparkison.tv.mpv
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import dev.sparkison.tv.FrameRateManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -28,8 +29,11 @@ import kotlinx.coroutines.sync.withLock
  * calls (e.g. rapid channel switching recreating the platform view) can't
  * interleave and violate that constraint.
  */
-class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
-    MethodChannel.MethodCallHandler, EventChannel.StreamHandler, MpvPlayerCore.MpvPlayerCoreDelegate {
+class MpvPlayerPlugin(
+    val context: Context,
+    flutterEngine: FlutterEngine,
+    private val frameRateManager: FrameRateManager,
+) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler, MpvPlayerCore.MpvPlayerCoreDelegate {
 
     private val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
@@ -56,7 +60,7 @@ class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
      * internal mutex until it's ready.
      */
     fun attachCore(viewId: Int, viewContext: Context): MpvPlayerCore {
-        val core = MpvPlayerCore(viewId, viewContext, this)
+        val core = MpvPlayerCore(viewId, viewContext, this, frameRateManager)
         scope.launch {
             mutex.withLock {
                 val stale = activeCore
@@ -71,8 +75,11 @@ class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
         return core
     }
 
-    private suspend fun disposeCoreAwait(core: MpvPlayerCore) = suspendCancellableCoroutine<Unit> { continuation ->
-        core.dispose { continuation.resume(Unit, onCancellation = null) }
+    private suspend fun disposeCoreAwait(
+        core: MpvPlayerCore,
+        preserveDisplayMode: Boolean = false,
+    ) = suspendCancellableCoroutine<Unit> { continuation ->
+        core.dispose(preserveDisplayMode) { continuation.resume(Unit, onCancellation = null) }
     }
 
     private suspend fun initializeCoreAwait(core: MpvPlayerCore) = suspendCancellableCoroutine<Boolean> { continuation ->
@@ -116,6 +123,7 @@ class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
                         userAgent = args["userAgent"] as? String,
                         headers = headers,
                         externalSubtitles = parseExternalSubtitles(args["externalSubtitles"]),
+                        matchDisplayRefreshRate = args["matchRefreshRate"] as? Boolean ?: false,
                     )
                     result.success(mapOf("ok" to true))
                 }
@@ -154,9 +162,10 @@ class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
                     result.success(null)
                     return
                 }
+                val preserveDisplayMode = args["preserveDisplayMode"] as? Boolean ?: false
                 scope.launch {
                     mutex.withLock {
-                        disposeCoreAwait(existing)
+                        disposeCoreAwait(existing, preserveDisplayMode)
                         if (activeViewId == viewId) {
                             activeCore = null
                             activeViewId = null

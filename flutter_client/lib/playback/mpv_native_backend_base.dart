@@ -91,6 +91,9 @@ abstract class MpvNativeBackendBase implements PlayerAdapter {
         'isLive': source.isLive,
         'userAgent': source.userAgent,
         'headers': source.headers,
+        // Read only by the Android mpv core (FrameRateManager) -- inert on
+        // iOS/macOS, whose mpv plugins don't read this key.
+        'matchRefreshRate': source.matchDisplayRefreshRate,
         'externalSubtitles': source.externalSubtitles
             .map(
               (subtitle) => <String, Object?>{
@@ -228,10 +231,17 @@ abstract class MpvNativeBackendBase implements PlayerAdapter {
   /// Tears down the native mpv core without closing [onState]/[onError], so
   /// this adapter is still safe to [load] again later. See
   /// `PlatformViewProvider.releaseNativeView`.
+  ///
+  /// `preserveDisplayMode: true` marks this as a mid-playback backend
+  /// handoff rather than a genuine stop, so the Android core keeps a native
+  /// Auto Frame Rate switch applied instead of restoring it only for the
+  /// backend this hands off to immediately reapply it. Every other platform
+  /// ignores the extra key (only the Android mpv core reads it).
   Future<void> releaseNativeView() async {
     if (_disposed) return;
     await _channel.invokeMethod<void>('dispose', <String, Object?>{
       'viewId': viewId,
+      'preserveDisplayMode': true,
     });
   }
 

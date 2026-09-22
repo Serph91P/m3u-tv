@@ -825,7 +825,7 @@
   "settingsHdrMode": "HDR-Modus",
   "settingsHdrModeHint": "HDR-Videos dürfen das Display in den HDR-Modus schalten. Nur Windows und Linux.",
   "settingsMatchRefreshRate": "Bildwiederholrate anpassen",
-  "settingsMatchRefreshRateHint": "Schaltet den Monitor beim Start der Wiedergabe auf die Bildrate des Videos. Kann den Bildschirm kurz schwarz werden lassen. Nur Windows.",
+  "settingsMatchRefreshRateHint": "Schaltet das Display beim Start der Wiedergabe auf die Bildrate des Videos. Der Bildschirm kann dabei kurz flackern oder schwarz werden.",
   "settingsNavigationSound": "Navigationston",
   "settingsNavigationSoundHint": "Beim Bewegen des Fokus mit Fernbedienung oder Tastatur einen Klickton abspielen.",
   "settingsToggleOn": "Ein",

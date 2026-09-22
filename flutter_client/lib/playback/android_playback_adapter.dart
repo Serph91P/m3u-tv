@@ -94,7 +94,7 @@ class AndroidPlaybackAdapter
   /// `PlatformViewProvider.releaseNativeView`.
   @override
   Future<void> releaseNativeView() async {
-    await _media3Host.dispose();
+    await _media3Host.dispose(preserveDisplayMode: true);
   }
 
   PlaybackState _state = const PlaybackState.idle(
@@ -382,7 +382,13 @@ abstract class AndroidMedia3Host {
   Future<void> setSubtitleTrack(String? trackId);
   Future<void> setPlaybackSpeed(double speed);
   Future<void> setVolume(double volume);
-  Future<void> dispose();
+
+  /// [preserveDisplayMode]: true when this teardown is a mid-playback
+  /// backend handoff (see `PlatformViewProvider.releaseNativeView`) rather
+  /// than a genuine stop, so a native Auto Frame Rate switch stays applied
+  /// instead of being restored-then-immediately-reapplied by the backend
+  /// this hands off to. See `FrameRateManager`'s class doc on Android.
+  Future<void> dispose({bool preserveDisplayMode = false});
 }
 
 // The plugin exposes exactly one method+event channel pair regardless of how
@@ -442,6 +448,7 @@ class MethodChannelAndroidMedia3Host implements AndroidMedia3Host {
         'userAgent': source.userAgent,
         'headers': source.headers,
         'metadata': source.metadata,
+        'matchDisplayRefreshRate': source.matchDisplayRefreshRate,
         'externalSubtitles': source.externalSubtitles
             .map(
               (subtitle) => <String, Object?>{
@@ -508,10 +515,11 @@ class MethodChannelAndroidMedia3Host implements AndroidMedia3Host {
       });
 
   @override
-  Future<void> dispose() async {
+  Future<void> dispose({bool preserveDisplayMode = false}) async {
     try {
       await _method.invokeMethod<void>('dispose', <String, Object?>{
         'playerId': playerId,
+        'preserveDisplayMode': preserveDisplayMode,
       });
     } on MissingPluginException {
       return;

@@ -2651,7 +2651,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsMatchRefreshRateHint.
   ///
   /// In en, this message translates to:
-  /// **'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.'**
+  /// **'Switch the display to the video\'s frame rate when playback starts. Can briefly flash or blank the screen.'**
   String get settingsMatchRefreshRateHint;
 
   /// No description provided for @settingsNavigationSound.

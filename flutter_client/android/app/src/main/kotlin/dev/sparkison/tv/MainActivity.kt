@@ -54,13 +54,16 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        val media3 = Media3PlaybackPlugin(this, flutterEngine)
+        // Shared across both playback plugins -- see FrameRateManager's class
+        // doc for why a single Window-scoped instance, not one per plugin.
+        val frameRateManager = FrameRateManager(this)
+        val media3 = Media3PlaybackPlugin(this, flutterEngine, frameRateManager)
         media3Plugin = media3
         flutterEngine.platformViewsController.registry.registerViewFactory(
             "m3u_tv/android_exo_view",
             Media3PlatformViewFactory(media3),
         )
-        val mpv = MpvPlayerPlugin(this, flutterEngine)
+        val mpv = MpvPlayerPlugin(this, flutterEngine, frameRateManager)
         mpvPlugin = mpv
         flutterEngine.platformViewsController.registry.registerViewFactory(
             "m3u_tv/android_mpv_view",

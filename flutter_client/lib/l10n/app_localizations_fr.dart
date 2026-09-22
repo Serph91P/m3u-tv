@@ -1490,7 +1490,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get settingsMatchRefreshRateHint =>
-      'Bascule le moniteur sur la fréquence d\'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l\'écran noir. Windows uniquement.';
+      'Bascule l\'écran sur la fréquence d\'images de la vidéo au démarrage de la lecture. L\'écran peut brièvement clignoter ou devenir noir.';
 
   @override
   String get settingsNavigationSound => 'Son de navigation';

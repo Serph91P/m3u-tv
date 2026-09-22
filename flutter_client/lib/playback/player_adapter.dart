@@ -230,10 +230,13 @@ class PlaybackSource {
   /// `ViewSettingsService.hdrEnabled` setting; every other backend ignores it.
   final bool hdrEnabled;
 
-  /// Whether the Windows desktop backend may switch the monitor to a refresh
+  /// Whether the Windows desktop backend and the Android backends (Media3
+  /// and mpv, via `FrameRateManager`) may switch the display to a refresh
   /// rate matching the source frame rate on load. Off by default because the
-  /// mode switch briefly blanks the whole display; every other backend
-  /// ignores it. Mirrors `ViewSettingsService.matchRefreshRate`.
+  /// mode switch briefly blanks/flashes the display; every other backend
+  /// ignores it (tvOS matches refresh rate unconditionally instead, with no
+  /// setting -- see `MpvPlayerCore.swift`). Mirrors
+  /// `ViewSettingsService.matchRefreshRate`.
   final bool matchDisplayRefreshRate;
 
   double? get videoAspectRatio => playbackAspectRatioFromMetadata(metadata);

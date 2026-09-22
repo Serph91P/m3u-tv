@@ -1484,7 +1484,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get settingsMatchRefreshRateHint =>
-      'Schaltet den Monitor beim Start der Wiedergabe auf die Bildrate des Videos. Kann den Bildschirm kurz schwarz werden lassen. Nur Windows.';
+      'Schaltet das Display beim Start der Wiedergabe auf die Bildrate des Videos. Der Bildschirm kann dabei kurz flackern oder schwarz werden.';
 
   @override
   String get settingsNavigationSound => 'Navigationston';

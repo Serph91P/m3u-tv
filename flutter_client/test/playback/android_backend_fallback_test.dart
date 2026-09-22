@@ -37,6 +37,35 @@ void main() {
         'speed': 1.25,
       });
     });
+
+    test(
+      'dispose forwards preserveDisplayMode so a backend handoff does not '
+      'restore-then-reapply Auto Frame Rate (see FrameRateManager)',
+      () async {
+        final receivedCalls = <MethodCall>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              receivedCalls.add(call);
+              return null;
+            });
+        final host = MethodChannelAndroidMedia3Host(
+          playerId: 'primary',
+          methodChannel: channel,
+        );
+
+        await host.dispose();
+        await host.dispose(preserveDisplayMode: true);
+
+        expect(receivedCalls[0].arguments, <String, Object?>{
+          'playerId': 'primary',
+          'preserveDisplayMode': false,
+        });
+        expect(receivedCalls[1].arguments, <String, Object?>{
+          'playerId': 'primary',
+          'preserveDisplayMode': true,
+        });
+      },
+    );
   });
 
   group('AndroidPlaybackAdapter', () {
@@ -431,7 +460,7 @@ void main() {
         await stateSubscription.cancel();
         await errorSubscription.cancel();
         await adapter.dispose();
-        expect(host.commands.last, 'dispose');
+        expect(host.commands.last, 'dispose:preserveDisplayMode=false');
       },
     );
   });
@@ -537,8 +566,8 @@ class _FakeAndroidMedia3Host implements AndroidMedia3Host {
       commands.add('setVolume:$volume');
 
   @override
-  Future<void> dispose() async {
-    commands.add('dispose');
+  Future<void> dispose({bool preserveDisplayMode = false}) async {
+    commands.add('dispose:preserveDisplayMode=$preserveDisplayMode');
     await _events.close();
   }
 }

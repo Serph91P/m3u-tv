@@ -825,7 +825,7 @@
   "settingsHdrMode": "Modo HDR",
   "settingsHdrModeHint": "Permite que los vídeos HDR cambien la pantalla al modo HDR. Solo Windows y Linux.",
   "settingsMatchRefreshRate": "Ajustar frecuencia de actualización",
-  "settingsMatchRefreshRateHint": "Cambia el monitor a la frecuencia de fotogramas del vídeo al iniciar la reproducción. Puede dejar la pantalla en negro un instante. Solo Windows.",
+  "settingsMatchRefreshRateHint": "Cambia la pantalla a la frecuencia de fotogramas del vídeo al iniciar la reproducción. La pantalla puede parpadear o quedarse en negro un instante.",
   "settingsNavigationSound": "Sonido de navegación",
   "settingsNavigationSoundHint": "Reproduce un sonido de clic al mover el foco con el control remoto o el teclado.",
   "settingsToggleOn": "Activado",

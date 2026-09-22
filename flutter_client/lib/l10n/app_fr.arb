@@ -825,7 +825,7 @@
   "settingsHdrMode": "Mode HDR",
   "settingsHdrModeHint": "Autoriser les vidéos HDR à basculer l'écran en mode HDR. Windows et Linux uniquement.",
   "settingsMatchRefreshRate": "Adapter la fréquence de rafraîchissement",
-  "settingsMatchRefreshRateHint": "Bascule le moniteur sur la fréquence d'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l'écran noir. Windows uniquement.",
+  "settingsMatchRefreshRateHint": "Bascule l'écran sur la fréquence d'images de la vidéo au démarrage de la lecture. L'écran peut brièvement clignoter ou devenir noir.",
   "settingsNavigationSound": "Son de navigation",
   "settingsNavigationSoundHint": "Joue un son de clic lors du déplacement du focus avec la télécommande ou le clavier.",
   "settingsToggleOn": "Activé",

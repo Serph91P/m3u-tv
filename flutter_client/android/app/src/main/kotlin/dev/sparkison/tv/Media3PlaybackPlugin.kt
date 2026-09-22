@@ -63,6 +63,7 @@ import io.flutter.plugin.common.MethodChannel
 class Media3PlaybackPlugin(
     private val context: Context,
     flutterEngine: FlutterEngine,
+    private val frameRateManager: FrameRateManager,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler, DefaultLifecycleObserver {
     private val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
@@ -205,7 +206,8 @@ class Media3PlaybackPlugin(
                     result.success(null)
                 }
                 "dispose" -> {
-                    releasePlayer(playerId)
+                    val preserveDisplayMode = arguments?.get("preserveDisplayMode") as? Boolean ?: false
+                    releasePlayer(playerId, preserveDisplayMode)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -263,6 +265,7 @@ class Media3PlaybackPlugin(
         val userAgent = source["userAgent"] as? String
         val startPositionMs = (source["startPositionMs"] as? Number)?.toLong() ?: 0L
         val handleAudioFocus = arguments["handleAudioFocus"] as? Boolean ?: true
+        val matchDisplayRefreshRate = source["matchDisplayRefreshRate"] as? Boolean ?: false
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
@@ -284,6 +287,7 @@ class Media3PlaybackPlugin(
             player = player,
             uri = uri,
             subtitleConfigurations = subtitleConfigurations,
+            matchDisplayRefreshRate = matchDisplayRefreshRate,
         )
         state.mediaSession = MediaSession.Builder(context, player).setId(playerId).build()
         states[playerId] = state
@@ -299,7 +303,14 @@ class Media3PlaybackPlugin(
     private fun requirePlayer(playerId: String): ExoPlayer =
         states[playerId]?.player ?: throw IllegalStateException("No Media3 player is loaded for $playerId")
 
-    private fun releasePlayer(playerId: String) {
+    /**
+     * [preserveDisplayMode]: true when this teardown is a mid-playback
+     * backend handoff (e.g. the EAC3 mpv fallback) rather than a genuine
+     * stop -- skips restoring the Auto Frame Rate switch so the backend this
+     * hands off to doesn't immediately reapply it, avoiding a visible
+     * restore-then-reswitch flicker. See [FrameRateManager]'s class doc.
+     */
+    private fun releasePlayer(playerId: String, preserveDisplayMode: Boolean = false) {
         val state = states.remove(playerId) ?: return
         state.resumeStallRunnable?.let { mainHandler.removeCallbacks(it) }
         state.mediaSession?.release()
@@ -313,6 +324,9 @@ class Media3PlaybackPlugin(
         state.player.clearVideoSurfaceView(surfaceViews[playerId])
         state.player.release()
         subtitleViews[playerId]?.setCues(null)
+        if (!preserveDisplayMode) {
+            frameRateManager.restore()
+        }
         emit(playerId, "disposed")
     }
 
@@ -526,8 +540,15 @@ class Media3PlaybackPlugin(
         }
 
         override fun onTracksChanged(tracks: Tracks) {
-            val player = states[playerId]?.player ?: return
+            val state = states[playerId] ?: return
+            val player = state.player
             emitTrackSnapshot(playerId, player)
+
+            val fps = player.videoFormat?.frameRate
+            if (state.matchDisplayRefreshRate && fps != null && fps > 0f && fps != state.lastAppliedFps) {
+                state.lastAppliedFps = fps
+                frameRateManager.applyForFrameRate(fps.toDouble())
+            }
         }
 
         override fun onCues(cueGroup: CueGroup) {
@@ -580,6 +601,8 @@ class Media3PlaybackPlugin(
         var retriedHlsAsProgressive: Boolean = false,
         var lastVideoWidth: Int = 0,
         var lastVideoHeight: Int = 0,
+        val matchDisplayRefreshRate: Boolean = false,
+        var lastAppliedFps: Float = 0f,
         var resumeStallRunnable: Runnable? = null,
         var resumeStallBaselineFrames: Int = 0,
         var resumeStallBaselinePositionMs: Long = 0L,

@@ -1475,7 +1475,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsMatchRefreshRateHint =>
-      'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.';
+      'Switch the display to the video\'s frame rate when playback starts. Can briefly flash or blank the screen.';
 
   @override
   String get settingsNavigationSound => 'Navigation sound';

@@ -1486,7 +1486,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get settingsMatchRefreshRateHint =>
-      'Cambia el monitor a la frecuencia de fotogramas del vídeo al iniciar la reproducción. Puede dejar la pantalla en negro un instante. Solo Windows.';
+      'Cambia la pantalla a la frecuencia de fotogramas del vídeo al iniciar la reproducción. La pantalla puede parpadear o quedarse en negro un instante.';
 
   @override
   String get settingsNavigationSound => 'Sonido de navegación';

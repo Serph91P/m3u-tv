@@ -2187,9 +2187,17 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   AppFontSize _fontSize = AppFontSize.normal;
 
   // The mpv HDR override ships on the Linux and Windows desktop backends
-  // only; refresh-rate matching is Windows-only (see DisplayModeManager).
+  // only. Refresh-rate matching ships on Windows (DisplayModeManager) and
+  // Android (FrameRateManager) -- both opt-in, matching the open-source
+  // Plezy player's own per-platform toggles (matchRefreshRate on Windows,
+  // matchContentFrameRate on Android), off by default on both since the
+  // mode switch briefly blanks/flashes the display. tvOS also matches
+  // refresh rate (MpvPlayerCore.swift's AVDisplayManager use) but
+  // unconditionally, with no toggle -- Plezy's own tvOS core has none
+  // either, so there is nothing to surface here for that platform.
   static final bool _showHdrToggle = Platform.isWindows || Platform.isLinux;
-  static final bool _showRefreshRateToggle = Platform.isWindows;
+  static final bool _showRefreshRateToggle =
+      Platform.isWindows || Platform.isAndroid;
 
   // The navigation click sound only ever plays on TV/desktop (see main.dart);
   // hide the toggle where it would have no effect.

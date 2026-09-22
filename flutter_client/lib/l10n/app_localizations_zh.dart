@@ -1434,8 +1434,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsMatchRefreshRate => '匹配显示器刷新率';
 
   @override
-  String get settingsMatchRefreshRateHint =>
-      '播放开始时将显示器切换为视频的帧率。可能会使屏幕短暂黑屏。仅限 Windows。';
+  String get settingsMatchRefreshRateHint => '播放开始时将显示器切换为视频的帧率。屏幕可能会短暂闪烁或黑屏。';
 
   @override
   String get settingsNavigationSound => '导航音效';
