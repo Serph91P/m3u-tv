@@ -952,6 +952,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _pendingComskipSeekTimer?.cancel();
     _introDbPromptTimer?.cancel();
     _introDbPendingSkipTimer?.cancel();
+    _skipCommitTimer?.cancel();
     _screenFocusNode.dispose();
     _controlsFocusNode.dispose();
     _errorButtonFocusNode.dispose();
@@ -1355,6 +1356,62 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  // Holding a remote's skip/FF/rewind button (or the arrow keys, when the
+  // overlay is hidden) fires a stream of KeyDownEvent/KeyRepeatEvent, one per
+  // OS repeat tick. Seeking the orchestrator on every tick would be jumpy
+  // and hammer it with redundant seeks, so this accumulates the target
+  // locally - same pattern as _SeekBar._adjustScrub's dpad-focused scrubbing
+  // - and only commits a single real seek once the repeats go quiet.
+  static const Duration _skipStep = Duration(seconds: 10);
+  static const Duration _skipCommitDebounce = Duration(milliseconds: 700);
+  Duration? _skipScrubPosition;
+  Timer? _skipCommitTimer;
+
+  void _adjustSkip(int direction) {
+    if (!_canSeek) return;
+    final current = _skipScrubPosition ?? _currentPosition;
+    final next = current + (_skipStep * direction);
+    setState(() {
+      _skipScrubPosition = next < Duration.zero
+          ? Duration.zero
+          : (next > _duration ? _duration : next);
+    });
+    _skipCommitTimer?.cancel();
+    _skipCommitTimer = Timer(_skipCommitDebounce, _commitSkip);
+  }
+
+  void _commitSkip() {
+    _skipCommitTimer?.cancel();
+    _skipCommitTimer = null;
+    final pos = _skipScrubPosition;
+    if (pos == null) return;
+    setState(() => _skipScrubPosition = null);
+    _seekTo(pos);
+  }
+
+  // Mirrors _adjustSkip's debounce reasoning: holding channel up/down fires
+  // repeated key events too, and each one triggers a full channel
+  // switch/reload, so accepted changes are rate-limited instead of one
+  // firing per repeat tick.
+  static const Duration _channelChangeDebounce = Duration(milliseconds: 400);
+  DateTime? _lastChannelChangeAt;
+
+  void _handleNextChannel() {
+    final now = DateTime.now();
+    final last = _lastChannelChangeAt;
+    if (last != null && now.difference(last) < _channelChangeDebounce) return;
+    _lastChannelChangeAt = now;
+    widget.onNextChannel?.call();
+  }
+
+  void _handlePreviousChannel() {
+    final now = DateTime.now();
+    final last = _lastChannelChangeAt;
+    if (last != null && now.difference(last) < _channelChangeDebounce) return;
+    _lastChannelChangeAt = now;
+    widget.onPreviousChannel?.call();
+  }
+
   void _seekTo(Duration position) {
     if (!_canSeek) return;
     // A manual seek always supersedes any in-flight comskip seek — the
@@ -1504,16 +1561,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
           actions: <Type, Action<Intent>>{
             _BackIntent: _BackAction(_handleBack),
             _PlayPauseIntent: _PlayPauseAction(_togglePlayPause),
-            _SeekBackIntent: _SeekAction(
-              () => _seekTo(_currentPosition - const Duration(seconds: 10)),
-            ),
-            _SeekForwardIntent: _SeekAction(
-              () => _seekTo(_currentPosition + const Duration(seconds: 10)),
-            ),
-            _ChannelUpIntent: _ChannelChangeAction(widget.onNextChannel),
-            _ChannelDownIntent: _ChannelChangeAction(
-              widget.onPreviousChannel,
-            ),
+            _SeekBackIntent: _SeekAction(() => _adjustSkip(-1)),
+            _SeekForwardIntent: _SeekAction(() => _adjustSkip(1)),
+            _ChannelUpIntent: _ChannelChangeAction(_handleNextChannel),
+            _ChannelDownIntent: _ChannelChangeAction(_handlePreviousChannel),
           },
           child: Focus(
             focusNode: _screenFocusNode,
@@ -1789,7 +1840,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             isPlaying: _isPlaying,
                             isLive: _isLive,
                             canSeek: _canSeek,
-                            currentPosition: _currentPosition,
+                            currentPosition:
+                                _skipScrubPosition ?? _currentPosition,
                             duration: _duration,
                             onPlayPause: _togglePlayPause,
                             onSeek: _seekTo,
