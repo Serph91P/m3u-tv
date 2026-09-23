@@ -26,6 +26,7 @@ import 'package:m3u_tv/services/window_state_service.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
+import 'package:m3u_tv/shared/tv_remote_input_governor_scope.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:window_manager/window_manager.dart';
@@ -468,21 +469,24 @@ class _MyAppState extends State<MyApp> {
                   }
                 }
               : null,
-          child: ImageQualityScope(
-            optimizeFor: optimizeFor,
-            child: FontSizeScope(
-              fontSize: fontSize,
-              child: Builder(
-                builder: (context) {
-                  final scale = FontSizeScope.scaleOf(context);
-                  if (scale == 1) return routerChild;
-                  return MediaQuery(
-                    data: MediaQuery.of(
-                      context,
-                    ).copyWith(textScaler: TextScaler.linear(scale)),
-                    child: routerChild,
-                  );
-                },
+          child: TvRemoteInputGovernorScope(
+            enabled: Platform.operatingSystem == 'tvos',
+            child: ImageQualityScope(
+              optimizeFor: optimizeFor,
+              child: FontSizeScope(
+                fontSize: fontSize,
+                child: Builder(
+                  builder: (context) {
+                    final scale = FontSizeScope.scaleOf(context);
+                    if (scale == 1) return routerChild;
+                    return MediaQuery(
+                      data: MediaQuery.of(
+                        context,
+                      ).copyWith(textScaler: TextScaler.linear(scale)),
+                      child: routerChild,
+                    );
+                  },
+                ),
               ),
             ),
           ),
