@@ -1471,6 +1471,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
           LogicalKeySet(LogicalKeyboardKey.goBack): const _BackIntent(),
           LogicalKeySet(LogicalKeyboardKey.mediaPlayPause):
               const _PlayPauseIntent(),
+          // Channel up/down and skip fwd/back are dedicated remote buttons,
+          // distinct from the arrow keys dpad uses for spatial navigation,
+          // so they're safe to claim regardless of overlay visibility.
+          // _ChannelChangeAction/_seekTo no-op when not applicable (e.g. a
+          // skip key during live TV, or channel keys during VOD), so no
+          // _isLive/_canSeek gating is needed here.
+          LogicalKeySet(LogicalKeyboardKey.channelUp): const _ChannelUpIntent(),
+          LogicalKeySet(LogicalKeyboardKey.channelDown):
+              const _ChannelDownIntent(),
+          // Remotes vary on whether they send FF/rewind or dedicated skip
+          // keys for VOD/series scrubbing, so both map to the same 10s seek
+          // as the arrow keys below.
+          LogicalKeySet(LogicalKeyboardKey.mediaFastForward):
+              const _SeekForwardIntent(),
+          LogicalKeySet(LogicalKeyboardKey.mediaRewind):
+              const _SeekBackIntent(),
+          LogicalKeySet(LogicalKeyboardKey.mediaSkipForward):
+              const _SeekForwardIntent(),
+          LogicalKeySet(LogicalKeyboardKey.mediaSkipBackward):
+              const _SeekBackIntent(),
           // Only claim arrow keys when the overlay is hidden - when visible,
           // let dpad's root Shortcuts handle them for spatial navigation.
           if (!_overlayVisible) ...{
@@ -1489,6 +1509,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
             _SeekForwardIntent: _SeekAction(
               () => _seekTo(_currentPosition + const Duration(seconds: 10)),
+            ),
+            _ChannelUpIntent: _ChannelChangeAction(widget.onNextChannel),
+            _ChannelDownIntent: _ChannelChangeAction(
+              widget.onPreviousChannel,
             ),
           },
           child: Focus(
@@ -2324,6 +2348,14 @@ class _SeekForwardIntent extends Intent {
   const _SeekForwardIntent();
 }
 
+class _ChannelUpIntent extends Intent {
+  const _ChannelUpIntent();
+}
+
+class _ChannelDownIntent extends Intent {
+  const _ChannelDownIntent();
+}
+
 class _BackAction extends Action<_BackIntent> {
   _BackAction(this.onBack);
   final VoidCallback onBack;
@@ -2340,6 +2372,16 @@ class _PlayPauseAction extends Action<_PlayPauseIntent> {
   @override
   Object? invoke(_PlayPauseIntent intent) {
     onToggle();
+    return null;
+  }
+}
+
+class _ChannelChangeAction extends Action<Intent> {
+  _ChannelChangeAction(this.onChange);
+  final VoidCallback? onChange;
+  @override
+  Object? invoke(Intent intent) {
+    onChange?.call();
     return null;
   }
 }
