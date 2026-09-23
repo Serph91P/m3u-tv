@@ -1640,12 +1640,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 final diagnosticsWidth = _showPlaybackDiagnostics
                     ? (isCompact ? 200.0 : 300.0) * fontScale
                     : 0.0;
+                final desktopMaxWidth =
+                    mediaQuery.size.width -
+                    overlayLeft -
+                    (mediaQuery.padding.right + edgePadding) -
+                    (diagnosticsWidth > 0 ? diagnosticsWidth + 12 : 0);
                 final overlayWidth = isCompact
-                    ? mediaQuery.size.width -
-                          overlayLeft -
-                          (mediaQuery.padding.right + edgePadding) -
-                          (diagnosticsWidth > 0 ? diagnosticsWidth + 12 : 0)
-                    : 420.0;
+                    ? desktopMaxWidth
+                    : (420.0 * fontScale < desktopMaxWidth
+                          ? 420.0 * fontScale
+                          : desktopMaxWidth);
                 final skipPrompt = _buildSkipPrompt(context);
                 final upNextPrompt = (_upNextVisible && _nextEpisode != null)
                     ? UpNextOverlay(
