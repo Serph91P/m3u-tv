@@ -716,6 +716,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get homeUpNext => 'Als Nächstes';
 
   @override
+  String get continueWatchingItemUnavailable =>
+      'Dieser Titel ist nicht mehr verfügbar';
+
+  @override
   String get homeNoLiveTv => 'Kein Live-TV verfügbar';
 
   @override

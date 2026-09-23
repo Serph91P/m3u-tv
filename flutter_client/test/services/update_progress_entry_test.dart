@@ -57,4 +57,43 @@ void main() {
     );
     expect(controller.progressList.length, 2);
   });
+
+  test('removeProgressEntry drops the matching entry by streamId', () {
+    final controller = AppStateController();
+    addTearDown(controller.dispose);
+
+    controller
+      ..updateProgressEntry(_p(1))
+      ..updateProgressEntry(_p(2))
+      ..updateProgressEntry(_p(3))
+      ..removeProgressEntry(_p(2));
+    expect(controller.progressList.map((p) => p.streamId), [3, 1]);
+  });
+
+  test('removeProgressEntry matches AIO items by aioItemId, not streamId', () {
+    final controller = AppStateController();
+    addTearDown(controller.dispose);
+
+    controller
+      ..updateProgressEntry(
+        _p(0, type: ContentType.aiostreams, aioItemId: 'tt111'),
+      )
+      ..updateProgressEntry(
+        _p(0, type: ContentType.aiostreams, aioItemId: 'tt222'),
+      )
+      ..removeProgressEntry(
+        _p(0, type: ContentType.aiostreams, aioItemId: 'tt111'),
+      );
+    expect(controller.progressList.map((p) => p.aioItemId), ['tt222']);
+  });
+
+  test('removeProgressEntry is a no-op when nothing matches', () {
+    final controller = AppStateController();
+    addTearDown(controller.dispose);
+
+    controller
+      ..updateProgressEntry(_p(1))
+      ..removeProgressEntry(_p(99));
+    expect(controller.progressList.map((p) => p.streamId), [1]);
+  });
 }

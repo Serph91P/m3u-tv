@@ -1388,6 +1388,12 @@ abstract class AppLocalizations {
   /// **'Up next'**
   String get homeUpNext;
 
+  /// No description provided for @continueWatchingItemUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This item is no longer available'**
+  String get continueWatchingItemUnavailable;
+
   /// No description provided for @homeNoLiveTv.
   ///
   /// In en, this message translates to:

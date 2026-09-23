@@ -340,6 +340,7 @@
     }
   },
   "homeUpNext": "A continuación",
+  "continueWatchingItemUnavailable": "Este contenido ya no está disponible",
   "homeNoLiveTv": "No hay Televisión en vivo disponible",
   "homeFavoriteChannels": "Canales favoritos",
   "homeNoFavoriteChannels": "No hay canales favoritos disponibles",

@@ -341,6 +341,7 @@
     }
   },
   "homeUpNext": "Up next",
+  "continueWatchingItemUnavailable": "This item is no longer available",
   "homeNoLiveTv": "No Live TV available",
   "homeFavoriteChannels": "Favorite Channels",
   "homeNoFavoriteChannels": "No favorite channels available",

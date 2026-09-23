@@ -2592,6 +2592,27 @@ class AppStateController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drops a Continue Watching entry that no longer resolves to any catalog
+  /// item (e.g. its stream_id went stale after a media-server library flush),
+  /// so the dead card doesn't keep reappearing after a failed tap.
+  void removeProgressEntry(Progress stale) {
+    bool sameItem(Progress p) {
+      if (p.contentType != stale.contentType) return false;
+      if (stale.contentType == ContentType.aiostreams) {
+        return p.aioItemId == stale.aioItemId;
+      }
+      return p.streamId == stale.streamId;
+    }
+
+    final next = [
+      for (final p in _progressList)
+        if (!sameItem(p)) p,
+    ];
+    if (next.length == _progressList.length) return;
+    _progressList = next;
+    notifyListeners();
+  }
+
   Future<bool> _replaceWithXtreamContent({
     required bool clearCache,
     required int sourceGeneration,

@@ -406,7 +406,12 @@ class _MyAppState extends State<MyApp> {
 
     return MaterialApp.router(
       title: 'M3U TV',
-      debugShowCheckedModeBanner: !const bool.fromEnvironment('HIDE_DEBUG_BANNER'),
+      // Only redundant when analyzed without
+      // --dart-define=HIDE_DEBUG_BANNER=true; that's a real build flag.
+      // ignore: avoid_redundant_argument_values
+      debugShowCheckedModeBanner: !const bool.fromEnvironment(
+        'HIDE_DEBUG_BANNER',
+      ),
       routerConfig: _router,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

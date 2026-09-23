@@ -720,6 +720,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get homeUpNext => 'À suivre';
 
   @override
+  String get continueWatchingItemUnavailable =>
+      'Ce contenu n\'est plus disponible';
+
+  @override
   String get homeNoLiveTv => 'Pas de Télévision en direct disponible';
 
   @override

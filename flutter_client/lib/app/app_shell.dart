@@ -1448,6 +1448,8 @@ class AppShellState extends ConsumerState<AppShell>
             ),
           ),
         );
+      } else if (mounted) {
+        _reportProgressUnavailable(progress);
       }
       return;
     }
@@ -1485,8 +1487,26 @@ class AppShellState extends ConsumerState<AppShell>
             ),
           ),
         );
+      } else if (mounted) {
+        _reportProgressUnavailable(progress);
       }
     }
+  }
+
+  /// Surfaces a Continue Watching tap that resolved to nothing (its catalog
+  /// entry is gone - e.g. a media-server library flush regenerated ids) and
+  /// prunes the dead entry so the card doesn't keep failing silently on every
+  /// future tap.
+  void _reportProgressUnavailable(Progress progress) {
+    _appState.removeProgressEntry(progress);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppLocalizations.of(context).continueWatchingItemUnavailable,
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Widget _buildTabScreen(String routeName) {

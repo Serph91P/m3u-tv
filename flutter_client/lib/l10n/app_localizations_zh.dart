@@ -687,6 +687,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeUpNext => '即将播放';
 
   @override
+  String get continueWatchingItemUnavailable => '该内容已不可用';
+
+  @override
   String get homeNoLiveTv => '暂无直播电视';
 
   @override
