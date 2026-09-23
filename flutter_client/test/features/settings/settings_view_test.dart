@@ -9,7 +9,6 @@ import 'package:m3u_tv/services/secure_storage.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
-import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
 class _FakeSecureStorage implements SecureStorage {
   final _data = <String, String?>{};
@@ -76,91 +75,86 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('renders view settings chips and persists layout', (
+    /// Navigates from the root settings list into the pushed Appearance
+    /// sub-page, where the layout/EPG/filter rows now live (moved out of the
+    /// old single-tab chip section).
+    Future<void> openAppearancePage(
+      WidgetTester tester,
+      AppLocalizations l,
+    ) async {
+      await tester.tap(find.text(l.settingsAppearance));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('renders view settings rows and persists layout via picker', (
       tester,
     ) async {
       await pumpSettingsScreen(tester);
-
       final l = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l.settingsView), findsOneWidget);
-      expect(find.text(l.settingsLiveTvLayoutList), findsOneWidget);
-      expect(find.text(l.settingsLiveTvLayoutGrid), findsOneWidget);
-      expect(find.text(l.settingsLiveTvLayoutTimeline), findsOneWidget);
-      expect(find.text(l.settingsEpgStartViewCurrentTime), findsOneWidget);
-      expect(find.text(l.settingsEpgStartViewPrimeTime), findsOneWidget);
-      expect(find.text(l.settingsFilterPersistence), findsOneWidget);
-      expect(find.text(l.settingsFilterPersistenceRemember), findsOneWidget);
-      expect(find.text(l.settingsFilterPersistenceReset), findsOneWidget);
 
-      final gridChip = find.widgetWithText(
-        DpadInkWell,
-        l.settingsLiveTvLayoutGrid,
-      );
-      await tester.ensureVisible(gridChip);
+      await openAppearancePage(tester, l);
+      expect(find.text(l.settingsLiveTvLayout), findsOneWidget);
+      expect(find.text(l.settingsEpgStartView), findsOneWidget);
+      expect(find.text(l.settingsFilterPersistence), findsOneWidget);
+
+      await tester.tap(find.text(l.settingsLiveTvLayout));
       await tester.pumpAndSettle();
-      await tester.tap(gridChip);
+      expect(find.text(l.settingsLiveTvLayoutGrid), findsOneWidget);
+      await tester.tap(find.text(l.settingsLiveTvLayoutGrid));
       await tester.pumpAndSettle();
 
       expect(await viewSettingsService.liveTvLayout(), LiveTvLayout.grid);
 
-      final primeChip = find.widgetWithText(
-        DpadInkWell,
-        l.settingsEpgStartViewPrimeTime,
-      );
-      await tester.ensureVisible(primeChip);
+      await tester.tap(find.text(l.settingsEpgStartView));
       await tester.pumpAndSettle();
-      await tester.tap(primeChip);
+      await tester.tap(find.text(l.settingsEpgStartViewPrimeTime));
       await tester.pumpAndSettle();
 
       expect(await viewSettingsService.epgStartView(), EpgStartView.primeTime);
     });
 
     testWidgets(
-      'Filter Persistence defaults to Reset and toggles Remember/Reset',
+      'Filter Persistence defaults to Reset and toggles via switch row',
       (tester) async {
         await pumpSettingsScreen(tester);
         final l = await AppLocalizations.delegate.load(const Locale('en'));
 
-        // Default state: rememberMediaSort is false → "Reset Each Time" is
-        // the active chip, "Remember" is not.
-        expect(await viewSettingsService.rememberMediaSort(), isFalse);
+        await openAppearancePage(tester, l);
 
-        final rememberChip = find.widgetWithText(
-          DpadInkWell,
-          l.settingsFilterPersistenceRemember,
-        );
-        await tester.ensureVisible(rememberChip);
+        // Default state: rememberMediaSort is false → subtitle shows "Reset".
+        expect(await viewSettingsService.rememberMediaSort(), isFalse);
+        expect(find.text(l.settingsFilterPersistenceReset), findsOneWidget);
+
+        final filterRow = find.text(l.settingsFilterPersistence);
+        await tester.ensureVisible(filterRow);
         await tester.pumpAndSettle();
-        await tester.tap(rememberChip);
+        await tester.tap(filterRow);
         await tester.pumpAndSettle();
 
         expect(await viewSettingsService.rememberMediaSort(), isTrue);
+        expect(find.text(l.settingsFilterPersistenceRemember), findsOneWidget);
 
-        final resetChip = find.widgetWithText(
-          DpadInkWell,
-          l.settingsFilterPersistenceReset,
-        );
-        await tester.ensureVisible(resetChip);
+        await tester.ensureVisible(filterRow);
         await tester.pumpAndSettle();
-        await tester.tap(resetChip);
+        await tester.tap(filterRow);
         await tester.pumpAndSettle();
 
         expect(await viewSettingsService.rememberMediaSort(), isFalse);
       },
     );
 
-    testWidgets('renders default start page chips and persists the choice', (
+    testWidgets('renders default start page row and persists via picker', (
       tester,
     ) async {
       await pumpSettingsScreen(tester);
-
       final l = await AppLocalizations.delegate.load(const Locale('en'));
+
+      await openAppearancePage(tester, l);
       expect(find.text(l.settingsDefaultStartPage), findsOneWidget);
 
-      final liveTvChip = find.widgetWithText(DpadInkWell, l.navLiveTv);
-      await tester.ensureVisible(liveTvChip);
+      await tester.tap(find.text(l.settingsDefaultStartPage));
       await tester.pumpAndSettle();
-      await tester.tap(liveTvChip);
+      await tester.tap(find.text(l.navLiveTv));
       await tester.pumpAndSettle();
 
       expect(

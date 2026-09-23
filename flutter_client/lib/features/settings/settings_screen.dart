@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:m3u_tv/app/app_shell.dart' show DeviceType;
 import 'package:m3u_tv/features/settings/release_notes_view.dart';
+import 'package:m3u_tv/features/settings/settings_ui.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/app_version_service.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
@@ -18,9 +20,7 @@ import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/app_callout.dart';
-import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
-import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -53,6 +53,7 @@ class SettingsScreen extends StatefulWidget {
     this.viewSettingsService,
     this.deviceType,
     this.onSidebarActivate,
+    this.onHandleTopLevelBack,
   });
 
   final AuthNotifier authNotifier;
@@ -87,6 +88,12 @@ class SettingsScreen extends StatefulWidget {
 
   /// Activates the shell sidebar (left-edge press from tab content).
   final VoidCallback? onSidebarActivate;
+
+  /// Pops the topmost immersive settings sub-page pushed on the root
+  /// Navigator, deduping Android TV's two hardware-Back delivery paths (see
+  /// `AppShellState.handleBackFromTopLevelRoute` and `settings_ui.dart`'s
+  /// `_withTopLevelBackHandling`).
+  final bool Function()? onHandleTopLevelBack;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -176,6 +183,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         viewSettingsService: widget.viewSettingsService,
         onSidebarActivate: widget.onSidebarActivate,
         deviceType: widget.deviceType,
+        onHandleTopLevelBack: widget.onHandleTopLevelBack,
       ),
     );
   }
@@ -843,6 +851,7 @@ class _ConnectedView extends StatefulWidget {
     this.viewSettingsService,
     this.onSidebarActivate,
     this.deviceType,
+    this.onHandleTopLevelBack,
   });
 
   final AuthNotifier authNotifier;
@@ -852,6 +861,7 @@ class _ConnectedView extends StatefulWidget {
   final ComskipSettings? comskipSettings;
   final ViewSettingsService? viewSettingsService;
   final DeviceType? deviceType;
+  final bool Function()? onHandleTopLevelBack;
   final Viewer? activeViewer;
   final List<Viewer> viewers;
   final String? sourceLabel;
@@ -871,16 +881,7 @@ class _ConnectedView extends StatefulWidget {
   State<_ConnectedView> createState() => _ConnectedViewState();
 }
 
-class _ConnectedViewState extends State<_ConnectedView>
-    with SingleTickerProviderStateMixin {
-  late final _tabController = TabController(length: 3, vsync: this);
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
+class _ConnectedViewState extends State<_ConnectedView> {
   void _openViewerManagement(BuildContext context) {
     unawaited(
       showDialog<void>(
@@ -930,43 +931,145 @@ class _ConnectedViewState extends State<_ConnectedView>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DpadTabBar(
-          controller: _tabController,
-          tabs: [
-            AppLocalizations.of(context).settingsGeneral,
-            AppLocalizations.of(context).settingsIntegrations,
-            AppLocalizations.of(context).settingsReleaseNotesTab,
-          ],
-        ),
-        Expanded(
-          child: DpadTabBarView(
-            controller: _tabController,
+    final l = AppLocalizations.of(context);
+    final auth = widget.authNotifier.authResponse;
+    final hasViewSettings = widget.viewSettingsService != null;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SettingsGroup(
             children: [
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: _buildGeneralTab(context),
+              SettingsRow(
+                title: l.settingsGeneral,
+                subtitle: l.settingsGeneralSubtitle,
+                icon: Icons.settings_outlined,
+                trailing: const SettingsChevron(),
+                autofocus: true,
+                onTap: () => unawaited(
+                  pushSettingsSubpage<void>(
+                    context,
+                    title: l.settingsGeneral,
+                    onBack: widget.onHandleTopLevelBack,
+                    builder: _buildGeneralPageBody,
+                  ),
+                ),
               ),
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: _buildIntegrationsTab(context),
+              if (hasViewSettings)
+                SettingsRow(
+                  title: l.settingsAppearance,
+                  subtitle: l.settingsAppearanceSubtitle,
+                  icon: Icons.palette_outlined,
+                  trailing: const SettingsChevron(),
+                  onTap: () => unawaited(
+                    pushSettingsSubpage<void>(
+                      context,
+                      title: l.settingsAppearance,
+                      onBack: widget.onHandleTopLevelBack,
+                      builder: (_) => _ViewSettingsSection(
+                        service: widget.viewSettingsService!,
+                        deviceType: widget.deviceType,
+                        onHandleTopLevelBack: widget.onHandleTopLevelBack,
+                      ),
+                    ),
+                  ),
+                ),
+              SettingsRow(
+                title: l.settingsPlayback,
+                subtitle: l.settingsPlaybackSubtitle,
+                icon: Icons.play_circle_outline,
+                trailing: const SettingsChevron(),
+                onTap: () => unawaited(
+                  pushSettingsSubpage<void>(
+                    context,
+                    title: l.settingsPlayback,
+                    onBack: widget.onHandleTopLevelBack,
+                    builder: (_) => _PlaybackSettingsPage(
+                      proxyCapability: auth?.proxy,
+                      proxyPlaybackSettings: widget.proxyPlaybackSettings,
+                      comskipSettings: widget.comskipSettings,
+                      epgRefreshInterval: widget.epgRefreshInterval,
+                      epgRefreshOptions: widget.epgRefreshOptions,
+                      onEpgIntervalChanged: widget.onEpgIntervalChanged,
+                      onClearCache: _handleClearCache,
+                      onHandleTopLevelBack: widget.onHandleTopLevelBack,
+                    ),
+                  ),
+                ),
               ),
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: ReleaseNotesView(
-                  onSidebarActivate: widget.onSidebarActivate,
+              SettingsRow(
+                title: l.settingsIntegrations,
+                subtitle: l.settingsIntegrationsSubtitle,
+                icon: Icons.sync_alt,
+                trailing: const SettingsChevron(),
+                onTap: () => unawaited(
+                  pushSettingsSubpage<void>(
+                    context,
+                    title: l.settingsIntegrations,
+                    onBack: widget.onHandleTopLevelBack,
+                    builder: (_) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SettingsSectionHeader(l.settingsSectionServices),
+                        ListenableBuilder(
+                          listenable: widget.traktService,
+                          builder: (context, _) => SettingsCard(
+                            child: _TraktCard(
+                              traktService: widget.traktService,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SettingsRow(
+                title: l.settingsReleaseNotesTab,
+                subtitle: l.settingsReleaseNotesSubtitle,
+                icon: Icons.new_releases_outlined,
+                trailing: const SettingsChevron(),
+                onTap: () => unawaited(
+                  pushSettingsSubpageFullHeight<void>(
+                    context,
+                    title: l.settingsReleaseNotesTab,
+                    onBack: widget.onHandleTopLevelBack,
+                    builder: (_) => ReleaseNotesView(
+                      onSidebarActivate: widget.onSidebarActivate,
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-      ],
+
+          SettingsSectionHeader(l.settingsAccount),
+          SettingsGroup(
+            children: [
+              if (widget.activeViewer != null)
+                SettingsRow(
+                  title: l.settingsActiveViewer,
+                  subtitle: widget.activeViewer!.name,
+                  icon: Icons.person_outline,
+                  trailing: const SettingsChevron(),
+                  onTap: () => _openViewerManagement(context),
+                ),
+              SettingsRow(
+                title: l.disconnect,
+                icon: Icons.logout,
+                destructive: true,
+                onTap: _handleDisconnect,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildGeneralTab(BuildContext context) {
+  Widget _buildGeneralPageBody(BuildContext context) {
     final theme = Theme.of(context);
     final auth = widget.authNotifier.authResponse;
     final l = AppLocalizations.of(context);
@@ -974,56 +1077,24 @@ class _ConnectedViewState extends State<_ConnectedView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Language ────────────────────────────────────────────────────────
-        _SettingsSection(
-          title: l.settingsLanguage,
-          child: Wrap(
-            spacing: 8,
-            children: [
-              _LocaleChip(
-                label: l.settingsLanguageSystem,
-                isSelected: widget.locale == null,
-                onTap: () => widget.onLocaleChanged?.call(null),
-              ),
-              _LocaleChip(
-                label: 'English',
-                isSelected: widget.locale?.languageCode == 'en',
-                onTap: () => widget.onLocaleChanged?.call(const Locale('en')),
-              ),
-              _LocaleChip(
-                label: 'Deutsch',
-                isSelected: widget.locale?.languageCode == 'de',
-                onTap: () => widget.onLocaleChanged?.call(const Locale('de')),
-              ),
-              _LocaleChip(
-                label: 'Español',
-                isSelected: widget.locale?.languageCode == 'es',
-                onTap: () => widget.onLocaleChanged?.call(const Locale('es')),
-              ),
-              _LocaleChip(
-                label: 'Français',
-                isSelected: widget.locale?.languageCode == 'fr',
-                onTap: () => widget.onLocaleChanged?.call(const Locale('fr')),
-              ),
-              _LocaleChip(
-                label: '简体中文',
-                isSelected: widget.locale?.languageCode == 'zh',
-                onTap: () => widget.onLocaleChanged?.call(const Locale('zh')),
-              ),
-            ],
-          ),
+        SettingsSectionHeader(l.settingsSectionLanguageRegion),
+        SettingsGroup(
+          children: [
+            SettingsRow(
+              title: l.settingsLanguage,
+              subtitle: _localeLabel(context, widget.locale),
+              icon: Icons.language,
+              trailing: const SettingsChevron(),
+              onTap: () => _openLanguagePicker(context, l),
+            ),
+          ],
         ),
-        const SizedBox(height: 20),
 
-        _SettingsSection(
-          title: l.settingsApp,
-          child: const _AppVersionCard(),
-        ),
-        const SizedBox(height: 20),
+        SettingsSectionHeader(l.settingsApp),
+        const SettingsCard(child: _AppVersionCard()),
 
-        // ── Connection ──────────────────────────────────────────────────────
-        _SettingsSection(
-          title: l.settingsConnection,
+        SettingsSectionHeader(l.settingsConnection),
+        SettingsCard(
           child: Column(
             children: [
               _StatusRow(
@@ -1089,202 +1160,240 @@ class _ConnectedViewState extends State<_ConnectedView>
             ],
           ),
         ),
-        const SizedBox(height: 20),
+      ],
+    );
+  }
 
-        // ── Viewer ──────────────────────────────────────────────────────────
-        if (widget.activeViewer != null) ...[
-          _SettingsSection(
-            title: l.settingsActiveViewer,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  void _openLanguagePicker(BuildContext context, AppLocalizations l) {
+    unawaited(
+      pushSettingsPicker<Locale?>(
+        context,
+        title: l.settingsLanguage,
+        onBack: widget.onHandleTopLevelBack,
+        selected: widget.locale,
+        options: [
+          SettingsPickerOption(value: null, label: l.settingsLanguageSystem),
+          const SettingsPickerOption(value: Locale('en'), label: 'English'),
+          const SettingsPickerOption(value: Locale('de'), label: 'Deutsch'),
+          const SettingsPickerOption(value: Locale('es'), label: 'Español'),
+          const SettingsPickerOption(value: Locale('fr'), label: 'Français'),
+          const SettingsPickerOption(value: Locale('zh'), label: '简体中文'),
+        ],
+        onSelected: (locale) => widget.onLocaleChanged?.call(locale),
+      ),
+    );
+  }
+
+  String _localeLabel(BuildContext context, Locale? locale) {
+    switch (locale?.languageCode) {
+      case 'en':
+        return 'English';
+      case 'de':
+        return 'Deutsch';
+      case 'es':
+        return 'Español';
+      case 'fr':
+        return 'Français';
+      case 'zh':
+        return '简体中文';
+      default:
+        return AppLocalizations.of(context).settingsLanguageSystem;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Playback settings sub-page (proxy, content cache, DVR)
+// ---------------------------------------------------------------------------
+
+class _PlaybackSettingsPage extends StatelessWidget {
+  const _PlaybackSettingsPage({
+    required this.proxyCapability,
+    required this.proxyPlaybackSettings,
+    required this.comskipSettings,
+    required this.epgRefreshInterval,
+    required this.epgRefreshOptions,
+    required this.onEpgIntervalChanged,
+    required this.onClearCache,
+    this.onHandleTopLevelBack,
+  });
+
+  final ProxyCapability? proxyCapability;
+  final ProxyPlaybackSettings? proxyPlaybackSettings;
+  final ComskipSettings? comskipSettings;
+  final Duration? epgRefreshInterval;
+  final List<Duration> epgRefreshOptions;
+  final void Function(Duration interval)? onEpgIntervalChanged;
+  final VoidCallback onClearCache;
+  final bool Function()? onHandleTopLevelBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (proxyCapability != null && proxyPlaybackSettings != null) ...[
+          SettingsSectionHeader(l.settingsSectionStreaming),
+          ListenableBuilder(
+            listenable: proxyPlaybackSettings!,
+            builder: (context, _) => _buildProxyGroup(context, l),
+          ),
+        ],
+
+        SettingsSectionHeader(l.settingsContentCache),
+        _buildCacheGroup(context, l),
+
+        if (comskipSettings != null) ...[
+          SettingsSectionHeader(l.settingsDvr),
+          ListenableBuilder(
+            listenable: comskipSettings!,
+            builder: (context, _) => SettingsGroup(
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: theme.colorScheme.primary,
-                      child: Text(
-                        widget.activeViewer!.name.isNotEmpty
-                            ? widget.activeViewer!.name[0].toUpperCase()
-                            : '?',
-                        style: TextStyle(color: theme.colorScheme.onPrimary),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.activeViewer!.name,
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          if (widget.activeViewer!.isAdmin)
-                            Text(
-                              l.admin,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: AppButton(
-                    label: AppLocalizations.of(context).settingsManageViewers,
-                    onPressed: () => _openViewerManagement(context),
+                SettingsSwitchRow(
+                  title: l.settingsComskipAutoSkip,
+                  subtitle: l.settingsComskipSubtitle,
+                  icon: Icons.fast_forward,
+                  value: comskipSettings!.autoSkipEnabled,
+                  onChanged: (enabled) => unawaited(
+                    comskipSettings!.setAutoSkipEnabled(enabled: enabled),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
         ],
-
-        if (widget.viewSettingsService != null) ...[
-          _ViewSettingsSection(
-            service: widget.viewSettingsService!,
-            deviceType: widget.deviceType,
-          ),
-          const SizedBox(height: 20),
-        ],
-
-        // ── Cache ────────────────────────────────────────────────────────────
-        _SettingsSection(
-          title: l.settingsContentCache,
-          subtitle: l.settingsCacheSubtitle,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (widget.epgRefreshOptions.isNotEmpty &&
-                  widget.epgRefreshInterval != null) ...[
-                Text(
-                  l.settingsEpgRefreshInterval,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: widget.epgRefreshOptions.map((d) {
-                    return _IntervalChip(
-                      label: _intervalLabel(l, d),
-                      isSelected: d == widget.epgRefreshInterval,
-                      onTap: () => widget.onEpgIntervalChanged?.call(d),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-                const SizedBox(height: 12),
-              ],
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  autofocus: widget.epgRefreshOptions.isEmpty,
-                  icon: Icons.refresh,
-                  label: l.settingsClearCacheConfirm,
-                  onPressed: _handleClearCache,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // ── Proxy playback ───────────────────────────────────────────────────
-        if (auth?.proxy != null && widget.proxyPlaybackSettings != null) ...[
-          _SettingsSection(
-            title: l.settingsProxyPlayback,
-            subtitle: l.settingsProxyPlaybackSubtitle,
-            child: ListenableBuilder(
-              listenable: widget.proxyPlaybackSettings!,
-              builder: (context, _) => _ProxyPlaybackControls(
-                capability: auth!.proxy!,
-                settings: widget.proxyPlaybackSettings!,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-
-        // ── DVR ──────────────────────────────────────────────────────────────
-        if (widget.comskipSettings != null) ...[
-          _SettingsSection(
-            title: l.settingsDvr,
-            subtitle: l.settingsDvrSubtitle,
-            child: ListenableBuilder(
-              listenable: widget.comskipSettings!,
-              builder: (context, _) => SizedBox(
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(l.settingsComskip, style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      l.settingsComskipSubtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _IntervalChip(
-                          label: l.settingsComskipAutoSkip,
-                          isSelected: widget.comskipSettings!.autoSkipEnabled,
-                          onTap: () => unawaited(
-                            widget.comskipSettings!.setAutoSkipEnabled(
-                              enabled: !widget.comskipSettings!.autoSkipEnabled,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-
-        // ── Account ──────────────────────────────────────────────────────────
-        _SettingsSection(
-          title: l.settingsAccount,
-          child: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              variant: AppButtonVariant.destructive,
-              label: l.disconnect,
-              onPressed: _handleDisconnect,
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildIntegrationsTab(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SettingsSection(
-          title: l.traktWatchHistory,
-          subtitle: l.traktWatchHistorySubtitle,
-          child: ListenableBuilder(
-            listenable: widget.traktService,
-            builder: (context, _) =>
-                _TraktCard(traktService: widget.traktService),
-          ),
+  Widget _buildProxyGroup(BuildContext context, AppLocalizations l) {
+    final settings = proxyPlaybackSettings!;
+    final capability = proxyCapability!;
+    final isActive = settings.enabled || capability.forced;
+
+    final rows = <Widget>[
+      if (capability.forced)
+        SettingsRow(
+          title: l.settingsProxyPlayback,
+          subtitle: l.settingsProxyForced,
+          icon: Icons.dns_outlined,
+        )
+      else
+        SettingsSwitchRow(
+          title: l.settingsProxyPlayback,
+          subtitle: l.settingsProxyPlaybackSubtitle,
+          icon: Icons.dns_outlined,
+          value: settings.enabled,
+          onChanged: (enabled) =>
+              unawaited(settings.setEnabled(enabled: enabled)),
+        ),
+      if (isActive && capability.profiles.isEmpty)
+        SettingsRow(
+          title: l.settingsProxyLiveProfile,
+          subtitle: l.settingsProxyNoProfiles,
+          icon: Icons.tune,
+        ),
+      if (isActive && capability.profiles.isNotEmpty) ...[
+        _proxyProfileRow(
+          context,
+          l: l,
+          title: l.settingsProxyLiveProfile,
+          profiles: capability.profiles,
+          selectedId: settings.liveProfileId,
+          onChanged: (id) => unawaited(settings.setLiveProfileId(id)),
+        ),
+        _proxyProfileRow(
+          context,
+          l: l,
+          title: l.settingsProxyVodProfile,
+          profiles: capability.profiles,
+          selectedId: settings.vodProfileId,
+          onChanged: (id) => unawaited(settings.setVodProfileId(id)),
         ),
       ],
+    ];
+
+    return SettingsGroup(children: rows);
+  }
+
+  Widget _proxyProfileRow(
+    BuildContext context, {
+    required AppLocalizations l,
+    required String title,
+    required List<ProxyStreamProfile> profiles,
+    required int? selectedId,
+    required void Function(int? id) onChanged,
+  }) {
+    final options = <SettingsPickerOption<int?>>[
+      SettingsPickerOption(value: null, label: l.settingsProxyProfileDefault),
+      SettingsPickerOption(
+        value: ProxyPlaybackSettings.directProfileId,
+        label: l.settingsProxyProfileDirect,
+      ),
+      for (final profile in profiles)
+        SettingsPickerOption(value: profile.id, label: profile.name),
+    ];
+    final selectedLabel = options
+        .firstWhere(
+          (option) => option.value == selectedId,
+          orElse: () => options.first,
+        )
+        .label;
+    return SettingsRow(
+      title: title,
+      subtitle: selectedLabel,
+      icon: Icons.high_quality_outlined,
+      trailing: const SettingsChevron(),
+      onTap: () => unawaited(
+        pushSettingsPicker<int?>(
+          context,
+          title: title,
+          onBack: onHandleTopLevelBack,
+          options: options,
+          selected: selectedId,
+          onSelected: onChanged,
+        ),
+      ),
     );
+  }
+
+  Widget _buildCacheGroup(BuildContext context, AppLocalizations l) {
+    final rows = <Widget>[];
+    if (epgRefreshOptions.isNotEmpty && epgRefreshInterval != null) {
+      final options = [
+        for (final d in epgRefreshOptions)
+          SettingsPickerOption(value: d, label: _intervalLabel(l, d)),
+      ];
+      rows.add(
+        SettingsRow(
+          title: l.settingsEpgRefreshInterval,
+          subtitle: _intervalLabel(l, epgRefreshInterval!),
+          icon: Icons.schedule,
+          trailing: const SettingsChevron(),
+          onTap: () => unawaited(
+            pushSettingsPicker<Duration>(
+              context,
+              title: l.settingsEpgRefreshInterval,
+              onBack: onHandleTopLevelBack,
+              options: options,
+              selected: epgRefreshInterval!,
+              onSelected: (d) => onEpgIntervalChanged?.call(d),
+            ),
+          ),
+        ),
+      );
+    }
+    rows.add(
+      SettingsRow(
+        title: l.settingsClearCacheConfirm,
+        subtitle: l.settingsCacheSubtitle,
+        icon: Icons.refresh,
+        onTap: onClearCache,
+      ),
+    );
+    return SettingsGroup(children: rows);
   }
 }
 
@@ -1882,7 +1991,7 @@ class _ViewerManagementDialogState extends State<_ViewerManagementDialog> {
                       onSelect: () => Navigator.of(context).pop(),
                       effects: kStadiumFocusEffects,
                       child: IconButton(
-                        icon: const Icon(Icons.close),
+                        icon: Icon(Icons.close, size: 24 * scale),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ),
@@ -2013,6 +2122,7 @@ class _ViewerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scale = FontSizeScope.scaleOf(context);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
@@ -2036,10 +2146,10 @@ class _ViewerRow extends StatelessWidget {
               ),
             ),
           if (isActive) ...[
-            if (viewer.isAdmin) const SizedBox(width: 8),
+            if (viewer.isAdmin) SizedBox(width: 8 * scale),
             Icon(
               Icons.check_circle,
-              size: 16,
+              size: 16 * scale,
               color: theme.colorScheme.primary,
             ),
           ],
@@ -2051,124 +2161,19 @@ class _ViewerRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Shared section layout
+// Appearance settings sub-page (layout, display, filters)
 // ---------------------------------------------------------------------------
 
-class _ProxyPlaybackControls extends StatelessWidget {
-  const _ProxyPlaybackControls({
-    required this.capability,
-    required this.settings,
-  });
-
-  final ProxyCapability capability;
-  final ProxyPlaybackSettings settings;
-
-  @override
-  Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final isActive = settings.enabled || capability.forced;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (capability.forced)
-          Text(l.settingsProxyForced, style: theme.textTheme.bodySmall)
-        else
-          Wrap(
-            spacing: 8,
-            children: [
-              _IntervalChip(
-                label: l.settingsProxyUse,
-                isSelected: settings.enabled,
-                onTap: () =>
-                    unawaited(settings.setEnabled(enabled: !settings.enabled)),
-              ),
-            ],
-          ),
-        if (isActive && capability.profiles.isEmpty) ...[
-          const SizedBox(height: 12),
-          Text(l.settingsProxyNoProfiles, style: theme.textTheme.bodySmall),
-        ],
-        if (isActive && capability.profiles.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          const Divider(),
-          const SizedBox(height: 12),
-          _ProxyProfilePicker(
-            label: l.settingsProxyLiveProfile,
-            profiles: capability.profiles,
-            selectedId: settings.liveProfileId,
-            onChanged: (id) => unawaited(settings.setLiveProfileId(id)),
-          ),
-          const SizedBox(height: 12),
-          _ProxyProfilePicker(
-            label: l.settingsProxyVodProfile,
-            profiles: capability.profiles,
-            selectedId: settings.vodProfileId,
-            onChanged: (id) => unawaited(settings.setVodProfileId(id)),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ProxyProfilePicker extends StatelessWidget {
-  const _ProxyProfilePicker({
-    required this.label,
-    required this.profiles,
-    required this.selectedId,
-    required this.onChanged,
-  });
-
-  final String label;
-  final List<ProxyStreamProfile> profiles;
-  final int? selectedId;
-  final void Function(int? id) onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _IntervalChip(
-              label: l.settingsProxyProfileDefault,
-              isSelected: selectedId == null,
-              onTap: () => onChanged(null),
-            ),
-            _IntervalChip(
-              label: l.settingsProxyProfileDirect,
-              isSelected: selectedId == ProxyPlaybackSettings.directProfileId,
-              onTap: () => onChanged(ProxyPlaybackSettings.directProfileId),
-            ),
-            ...profiles.map(
-              (profile) => _IntervalChip(
-                label: profile.name,
-                isSelected: selectedId == profile.id,
-                onTap: () => onChanged(profile.id),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 class _ViewSettingsSection extends StatefulWidget {
-  const _ViewSettingsSection({required this.service, this.deviceType});
+  const _ViewSettingsSection({
+    required this.service,
+    this.deviceType,
+    this.onHandleTopLevelBack,
+  });
 
   final ViewSettingsService service;
   final DeviceType? deviceType;
+  final bool Function()? onHandleTopLevelBack;
 
   @override
   State<_ViewSettingsSection> createState() => _ViewSettingsSectionState();
@@ -2187,17 +2192,20 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   AppFontSize _fontSize = AppFontSize.normal;
 
   // The mpv HDR override ships on the Linux and Windows desktop backends
-  // only. Refresh-rate matching ships on Windows (DisplayModeManager) and
-  // Android (FrameRateManager) -- both opt-in, matching the open-source
-  // Plezy player's own per-platform toggles (matchRefreshRate on Windows,
-  // matchContentFrameRate on Android), off by default on both since the
-  // mode switch briefly blanks/flashes the display. tvOS also matches
-  // refresh rate (MpvPlayerCore.swift's AVDisplayManager use) but
-  // unconditionally, with no toggle -- Plezy's own tvOS core has none
-  // either, so there is nothing to surface here for that platform.
+  // only. Refresh-rate matching ships on Windows (DisplayModeManager),
+  // Android (FrameRateManager), and tvOS (MpvPlayerCore.swift's
+  // AVDisplayManager use, decoupled from its always-on HDR criteria so this
+  // toggle actually controls it). Windows/Android default off -- the mode
+  // switch briefly blanks/flashes the display; tvOS defaults on, since it
+  // shipped unconditionally before this toggle existed (see
+  // ViewSettingsService.matchRefreshRate's platform-aware default).
   static final bool _showHdrToggle = Platform.isWindows || Platform.isLinux;
   static final bool _showRefreshRateToggle =
-      Platform.isWindows || Platform.isAndroid;
+      Platform.isWindows || Platform.isAndroid || _isTvOS;
+
+  // Mirrors the tvOS/Android-TV detection duplicated in go_router_config.dart
+  // and dvr_series_rule_options_screen.dart -- no shared helper exists yet.
+  static bool get _isTvOS => !kIsWeb && Platform.operatingSystem == 'tvos';
 
   // The navigation click sound only ever plays on TV/desktop (see main.dart);
   // hide the toggle where it would have no effect.
@@ -2252,272 +2260,218 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    return _SettingsSection(
-      title: l.settingsView,
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsSectionHeader(l.settingsSectionLayout),
+        SettingsGroup(
           children: [
-            Text(
-              l.settingsDefaultStartPage,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final page in DefaultStartPage.values)
-                  _IntervalChip(
-                    label: _startPageLabel(l, page),
-                    isSelected: _defaultStartPage == page,
-                    onTap: () => widget.service.setDefaultStartPage(page),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              l.settingsLiveTvLayout,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _IntervalChip(
-                  label: l.settingsLiveTvLayoutList,
-                  isSelected: _liveTvLayout == LiveTvLayout.list,
-                  onTap: () =>
-                      widget.service.setLiveTvLayout(LiveTvLayout.list),
+            SettingsRow(
+              title: l.settingsDefaultStartPage,
+              subtitle: _startPageLabel(l, _defaultStartPage),
+              icon: Icons.home_outlined,
+              trailing: const SettingsChevron(),
+              onTap: () => unawaited(
+                pushSettingsPicker<DefaultStartPage>(
+                  context,
+                  title: l.settingsDefaultStartPage,
+                  onBack: widget.onHandleTopLevelBack,
+                  selected: _defaultStartPage,
+                  options: [
+                    for (final page in DefaultStartPage.values)
+                      SettingsPickerOption(
+                        value: page,
+                        label: _startPageLabel(l, page),
+                      ),
+                  ],
+                  onSelected: widget.service.setDefaultStartPage,
                 ),
-                _IntervalChip(
-                  label: l.settingsLiveTvLayoutGrid,
-                  isSelected: _liveTvLayout == LiveTvLayout.grid,
-                  onTap: () =>
-                      widget.service.setLiveTvLayout(LiveTvLayout.grid),
-                ),
-                _IntervalChip(
-                  label: l.settingsLiveTvLayoutTimeline,
-                  isSelected: _liveTvLayout == LiveTvLayout.timeline,
-                  onTap: () =>
-                      widget.service.setLiveTvLayout(LiveTvLayout.timeline),
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              l.settingsLiveTvChannelColumn,
-              style: Theme.of(context).textTheme.bodyMedium,
+            SettingsRow(
+              title: l.settingsLiveTvLayout,
+              subtitle: _liveTvLayoutLabel(l, _liveTvLayout),
+              icon: Icons.view_list_outlined,
+              trailing: const SettingsChevron(),
+              onTap: () => unawaited(
+                pushSettingsPicker<LiveTvLayout>(
+                  context,
+                  title: l.settingsLiveTvLayout,
+                  onBack: widget.onHandleTopLevelBack,
+                  selected: _liveTvLayout,
+                  options: [
+                    SettingsPickerOption(
+                      value: LiveTvLayout.list,
+                      label: l.settingsLiveTvLayoutList,
+                    ),
+                    SettingsPickerOption(
+                      value: LiveTvLayout.grid,
+                      label: l.settingsLiveTvLayoutGrid,
+                    ),
+                    SettingsPickerOption(
+                      value: LiveTvLayout.timeline,
+                      label: l.settingsLiveTvLayoutTimeline,
+                    ),
+                  ],
+                  onSelected: widget.service.setLiveTvLayout,
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _IntervalChip(
-                  label: l.settingsLiveTvChannelColumnLogoTitle,
-                  isSelected:
-                      _channelColumnLayout == ChannelColumnLayout.logoAndTitle,
-                  onTap: () => widget.service.setChannelColumnLayout(
-                    ChannelColumnLayout.logoAndTitle,
-                  ),
+            SettingsRow(
+              title: l.settingsLiveTvChannelColumn,
+              subtitle: _channelColumnLabel(l, _channelColumnLayout),
+              icon: Icons.view_column_outlined,
+              trailing: const SettingsChevron(),
+              onTap: () => unawaited(
+                pushSettingsPicker<ChannelColumnLayout>(
+                  context,
+                  title: l.settingsLiveTvChannelColumn,
+                  onBack: widget.onHandleTopLevelBack,
+                  selected: _channelColumnLayout,
+                  options: [
+                    SettingsPickerOption(
+                      value: ChannelColumnLayout.logoAndTitle,
+                      label: l.settingsLiveTvChannelColumnLogoTitle,
+                    ),
+                    SettingsPickerOption(
+                      value: ChannelColumnLayout.logoOnly,
+                      label: l.settingsLiveTvChannelColumnLogoOnly,
+                    ),
+                    SettingsPickerOption(
+                      value: ChannelColumnLayout.titleOnly,
+                      label: l.settingsLiveTvChannelColumnTitleOnly,
+                    ),
+                  ],
+                  onSelected: widget.service.setChannelColumnLayout,
                 ),
-                _IntervalChip(
-                  label: l.settingsLiveTvChannelColumnLogoOnly,
-                  isSelected:
-                      _channelColumnLayout == ChannelColumnLayout.logoOnly,
-                  onTap: () => widget.service.setChannelColumnLayout(
-                    ChannelColumnLayout.logoOnly,
-                  ),
-                ),
-                _IntervalChip(
-                  label: l.settingsLiveTvChannelColumnTitleOnly,
-                  isSelected:
-                      _channelColumnLayout == ChannelColumnLayout.titleOnly,
-                  onTap: () => widget.service.setChannelColumnLayout(
-                    ChannelColumnLayout.titleOnly,
-                  ),
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              l.settingsEpgStartView,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _IntervalChip(
-                  label: l.settingsEpgStartViewCurrentTime,
-                  isSelected: _epgStartView == EpgStartView.currentTime,
-                  onTap: () =>
-                      widget.service.setEpgStartView(EpgStartView.currentTime),
+            SettingsRow(
+              title: l.settingsEpgStartView,
+              subtitle: _epgStartViewLabel(l, _epgStartView),
+              icon: Icons.calendar_view_day_outlined,
+              trailing: const SettingsChevron(),
+              onTap: () => unawaited(
+                pushSettingsPicker<EpgStartView>(
+                  context,
+                  title: l.settingsEpgStartView,
+                  onBack: widget.onHandleTopLevelBack,
+                  selected: _epgStartView,
+                  options: [
+                    SettingsPickerOption(
+                      value: EpgStartView.currentTime,
+                      label: l.settingsEpgStartViewCurrentTime,
+                    ),
+                    SettingsPickerOption(
+                      value: EpgStartView.primeTime,
+                      label: l.settingsEpgStartViewPrimeTime,
+                    ),
+                  ],
+                  onSelected: widget.service.setEpgStartView,
                 ),
-                _IntervalChip(
-                  label: l.settingsEpgStartViewPrimeTime,
-                  isSelected: _epgStartView == EpgStartView.primeTime,
-                  onTap: () =>
-                      widget.service.setEpgStartView(EpgStartView.primeTime),
-                ),
-              ],
+              ),
             ),
-            if (_showHdrToggle) ...[
-              const SizedBox(height: 16),
-              _BooleanSetting(
-                label: l.settingsHdrMode,
-                hint: l.settingsHdrModeHint,
+          ],
+        ),
+
+        SettingsSectionHeader(l.settingsSectionDisplay),
+        SettingsGroup(
+          children: [
+            if (_showHdrToggle)
+              SettingsSwitchRow(
+                title: l.settingsHdrMode,
+                subtitle: l.settingsHdrModeHint,
+                icon: Icons.hdr_on_outlined,
                 value: _hdrEnabled,
                 onChanged: widget.service.setHdrEnabled,
               ),
-            ],
-            if (_showRefreshRateToggle) ...[
-              const SizedBox(height: 16),
-              _BooleanSetting(
-                label: l.settingsMatchRefreshRate,
-                hint: l.settingsMatchRefreshRateHint,
+            if (_showRefreshRateToggle)
+              SettingsSwitchRow(
+                title: l.settingsMatchRefreshRate,
+                subtitle: l.settingsMatchRefreshRateHint,
+                icon: Icons.speed_outlined,
                 value: _matchRefreshRate,
                 onChanged: widget.service.setMatchRefreshRate,
               ),
-            ],
-            if (_showNavigationSoundToggle) ...[
-              const SizedBox(height: 16),
-              _BooleanSetting(
-                label: l.settingsNavigationSound,
-                hint: l.settingsNavigationSoundHint,
+            if (_showNavigationSoundToggle)
+              SettingsSwitchRow(
+                title: l.settingsNavigationSound,
+                subtitle: l.settingsNavigationSoundHint,
+                icon: Icons.volume_up_outlined,
                 value: _navigationSoundEnabled,
                 onChanged: widget.service.setNavigationSoundEnabled,
               ),
-            ],
-            const SizedBox(height: 16),
-            Text(
-              l.settingsOptimizeFor,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              l.settingsOptimizeForSpeedHint,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            SettingsRow(
+              title: l.settingsOptimizeFor,
+              subtitle: _optimizeForLabel(l, _optimizeFor),
+              icon: Icons.tune,
+              trailing: const SettingsChevron(),
+              onTap: () => unawaited(
+                pushSettingsPicker<OptimizeFor>(
+                  context,
+                  title: l.settingsOptimizeFor,
+                  onBack: widget.onHandleTopLevelBack,
+                  selected: _optimizeFor,
+                  options: [
+                    SettingsPickerOption(
+                      value: OptimizeFor.quality,
+                      label: l.settingsOptimizeForQuality,
+                    ),
+                    SettingsPickerOption(
+                      value: OptimizeFor.speed,
+                      label: l.settingsOptimizeForSpeed,
+                    ),
+                  ],
+                  onSelected: widget.service.setOptimizeFor,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _IntervalChip(
-                  label: l.settingsOptimizeForQuality,
-                  isSelected: _optimizeFor == OptimizeFor.quality,
-                  onTap: () =>
-                      widget.service.setOptimizeFor(OptimizeFor.quality),
+            SettingsRow(
+              title: l.settingsFontSize,
+              subtitle: _fontSizeLabel(l, _fontSize),
+              icon: Icons.format_size,
+              trailing: const SettingsChevron(),
+              onTap: () => unawaited(
+                pushSettingsPicker<AppFontSize>(
+                  context,
+                  title: l.settingsFontSize,
+                  onBack: widget.onHandleTopLevelBack,
+                  selected: _fontSize,
+                  options: [
+                    SettingsPickerOption(
+                      value: AppFontSize.normal,
+                      label: l.settingsFontSizeNormal,
+                      icon: Icons.smartphone,
+                    ),
+                    SettingsPickerOption(
+                      value: AppFontSize.large,
+                      label: l.settingsFontSizeLarge,
+                    ),
+                    SettingsPickerOption(
+                      value: AppFontSize.veryLarge,
+                      label: l.settingsFontSizeVeryLarge,
+                      icon: Icons.tv,
+                    ),
+                  ],
+                  onSelected: widget.service.setFontSize,
                 ),
-                _IntervalChip(
-                  label: l.settingsOptimizeForSpeed,
-                  isSelected: _optimizeFor == OptimizeFor.speed,
-                  onTap: () => widget.service.setOptimizeFor(OptimizeFor.speed),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              l.settingsFontSize,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _IntervalChip(
-                  icon: Icons.smartphone,
-                  label: l.settingsFontSizeNormal,
-                  isSelected: _fontSize == AppFontSize.normal,
-                  onTap: () => widget.service.setFontSize(AppFontSize.normal),
-                ),
-                _IntervalChip(
-                  label: l.settingsFontSizeLarge,
-                  isSelected: _fontSize == AppFontSize.large,
-                  onTap: () => widget.service.setFontSize(AppFontSize.large),
-                ),
-                _IntervalChip(
-                  icon: Icons.tv,
-                  label: l.settingsFontSizeVeryLarge,
-                  isSelected: _fontSize == AppFontSize.veryLarge,
-                  onTap: () =>
-                      widget.service.setFontSize(AppFontSize.veryLarge),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              l.settingsFilterPersistence,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _IntervalChip(
-                  label: l.settingsFilterPersistenceRemember,
-                  isSelected: _rememberMediaSort,
-                  onTap: () => widget.service.setRememberMediaSort(true),
-                ),
-                _IntervalChip(
-                  label: l.settingsFilterPersistenceReset,
-                  isSelected: !_rememberMediaSort,
-                  onTap: () => widget.service.setRememberMediaSort(false),
-                ),
-              ],
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
 
-/// An on/off pair of [_IntervalChip]s with a label and explanatory hint,
-/// matching the rest of the View settings section's chip styling.
-class _BooleanSetting extends StatelessWidget {
-  const _BooleanSetting({
-    required this.label,
-    required this.hint,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String hint;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 4),
-        Text(
-          hint,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
+        SettingsSectionHeader(l.settingsSectionFilters),
+        SettingsGroup(
           children: [
-            _IntervalChip(
-              label: l.settingsToggleOn,
-              isSelected: value,
-              onTap: () => onChanged(true),
-            ),
-            _IntervalChip(
-              label: l.settingsToggleOff,
-              isSelected: !value,
-              onTap: () => onChanged(false),
+            SettingsSwitchRow(
+              title: l.settingsFilterPersistence,
+              subtitle: _rememberMediaSort
+                  ? l.settingsFilterPersistenceRemember
+                  : l.settingsFilterPersistenceReset,
+              icon: Icons.filter_alt_outlined,
+              value: _rememberMediaSort,
+              onChanged: widget.service.setRememberMediaSort,
             ),
           ],
         ),
@@ -2525,107 +2479,6 @@ class _BooleanSetting extends StatelessWidget {
     );
   }
 }
-
-class _SettingsSection extends StatelessWidget {
-  const _SettingsSection({
-    required this.title,
-    required this.child,
-    this.subtitle,
-  });
-
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: theme.textTheme.titleLarge),
-        if (subtitle != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            subtitle!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(padding: const EdgeInsets.all(16), child: child),
-        ),
-      ],
-    );
-  }
-}
-
-class _IntervalChip extends StatelessWidget {
-  const _IntervalChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    this.icon,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback? onTap;
-
-  /// Optional leading icon, shown before the label (e.g. a device glyph on
-  /// the font-size chips). Null (default) omits it, as every other caller
-  /// of this shared chip still wants.
-  final IconData? icon;
-
-  static const double _radius = 20;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final scale = FontSizeScope.scaleOf(context);
-    final radius = BorderRadius.all(Radius.circular(_radius * scale));
-    final contentColor = isSelected
-        ? colorScheme.onPrimaryContainer
-        : colorScheme.onSurfaceVariant;
-    return DpadInkWell(
-      onTap: onTap,
-      effects: [GradientBorderEffect(borderRadius: radius)],
-      color: isSelected
-          ? colorScheme.primaryContainer
-          : colorScheme.surfaceContainerHigh,
-      borderRadius: radius,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: 12 * scale,
-          vertical: 6 * scale,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 16 * scale, color: contentColor),
-              SizedBox(width: 4 * scale),
-            ],
-            if (isSelected) ...[
-              Icon(Icons.check, size: 16 * scale, color: contentColor),
-              SizedBox(width: 4 * scale),
-            ],
-            Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(color: contentColor),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-typedef _LocaleChip = _IntervalChip;
 
 class _StatusRow extends StatelessWidget {
   const _StatusRow({required this.label, required this.value, this.valueColor});
@@ -2679,3 +2532,37 @@ String _intervalLabel(AppLocalizations l, Duration d) {
   }
   return l.settingsEpgDurationMinutes(d.inMinutes);
 }
+
+String _liveTvLayoutLabel(AppLocalizations l, LiveTvLayout layout) =>
+    switch (layout) {
+      LiveTvLayout.list => l.settingsLiveTvLayoutList,
+      LiveTvLayout.grid => l.settingsLiveTvLayoutGrid,
+      LiveTvLayout.timeline => l.settingsLiveTvLayoutTimeline,
+    };
+
+String _channelColumnLabel(AppLocalizations l, ChannelColumnLayout layout) =>
+    switch (layout) {
+      ChannelColumnLayout.logoAndTitle =>
+        l.settingsLiveTvChannelColumnLogoTitle,
+      ChannelColumnLayout.logoOnly => l.settingsLiveTvChannelColumnLogoOnly,
+      ChannelColumnLayout.titleOnly => l.settingsLiveTvChannelColumnTitleOnly,
+    };
+
+String _epgStartViewLabel(AppLocalizations l, EpgStartView view) =>
+    switch (view) {
+      EpgStartView.currentTime => l.settingsEpgStartViewCurrentTime,
+      EpgStartView.primeTime => l.settingsEpgStartViewPrimeTime,
+    };
+
+String _optimizeForLabel(AppLocalizations l, OptimizeFor optimizeFor) =>
+    switch (optimizeFor) {
+      OptimizeFor.quality => l.settingsOptimizeForQuality,
+      OptimizeFor.speed => l.settingsOptimizeForSpeed,
+    };
+
+String _fontSizeLabel(AppLocalizations l, AppFontSize fontSize) =>
+    switch (fontSize) {
+      AppFontSize.normal => l.settingsFontSizeNormal,
+      AppFontSize.large => l.settingsFontSizeLarge,
+      AppFontSize.veryLarge => l.settingsFontSizeVeryLarge,
+    };

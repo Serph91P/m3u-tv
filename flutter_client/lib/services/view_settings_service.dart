@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
@@ -338,19 +340,25 @@ class ViewSettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Whether the Windows desktop backend may switch the monitor to a refresh
-  /// rate matching the source frame rate when playback starts (the classic
-  /// "24Hz mode" home-theater feature). Defaults off: the display mode change
-  /// briefly blanks the whole screen, which is disruptive on a desktop
-  /// monitor. Ignored on every platform other than the Windows mpv backend.
+  /// Whether the Windows/Android backends may switch the display to a
+  /// refresh rate matching the source frame rate when playback starts (the
+  /// classic "24Hz mode" home-theater feature). Defaults off on those two
+  /// platforms: the display mode change briefly blanks/flashes the screen.
+  /// Defaults **on** for tvOS, since its `AVDisplayManager`-driven refresh
+  /// matching shipped unconditionally before this setting existed -- this
+  /// keeps existing tvOS users' behavior unchanged now that it's a real
+  /// toggle. Ignored on every other platform.
   Future<bool> matchRefreshRate() async {
     final raw = await _read(matchRefreshRateKey);
-    return raw as bool? ?? false;
+    return raw as bool? ?? _defaultMatchRefreshRate;
   }
 
   /// Synchronous access to the in-memory cached refresh-rate-match setting.
   bool get matchRefreshRateSync =>
-      (_memory[matchRefreshRateKey] as bool?) ?? false;
+      (_memory[matchRefreshRateKey] as bool?) ?? _defaultMatchRefreshRate;
+
+  static bool get _defaultMatchRefreshRate =>
+      !kIsWeb && Platform.operatingSystem == 'tvos';
 
   Future<void> setMatchRefreshRate(
     // ignore: avoid_positional_boolean_parameters

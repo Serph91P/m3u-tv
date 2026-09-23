@@ -353,7 +353,46 @@ class AppLocalizationsFr extends AppLocalizations {
   String get settingsGeneral => 'Général';
 
   @override
+  String get settingsGeneralSubtitle => 'Langue, connexion et compte';
+
+  @override
   String get settingsIntegrations => 'Intégrations';
+
+  @override
+  String get settingsIntegrationsSubtitle => 'Trakt et plus';
+
+  @override
+  String get settingsAppearance => 'Apparence';
+
+  @override
+  String get settingsAppearanceSubtitle => 'Disposition, EPG et affichage';
+
+  @override
+  String get settingsPlayback => 'Lecture';
+
+  @override
+  String get settingsPlaybackSubtitle => 'Proxy, cache et DVR';
+
+  @override
+  String get settingsReleaseNotesSubtitle => 'Nouveautés de cette version';
+
+  @override
+  String get settingsSectionLanguageRegion => 'Langue et région';
+
+  @override
+  String get settingsSectionLayout => 'Disposition';
+
+  @override
+  String get settingsSectionDisplay => 'Affichage';
+
+  @override
+  String get settingsSectionFilters => 'Filtres';
+
+  @override
+  String get settingsSectionStreaming => 'Streaming';
+
+  @override
+  String get settingsSectionServices => 'Services';
 
   @override
   String get settingsLanguage => 'Langue';

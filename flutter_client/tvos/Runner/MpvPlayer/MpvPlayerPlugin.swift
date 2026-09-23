@@ -61,7 +61,12 @@ final class MpvPlayerPlugin: NSObject, FlutterStreamHandler, MpvPlayerCoreDelega
           isLive: args["isLive"] as? Bool ?? false,
           userAgent: args["userAgent"] as? String,
           headers: args["headers"] as? [String: String],
-          externalSubtitles: Self.parseExternalSubtitles(args["externalSubtitles"])
+          externalSubtitles: Self.parseExternalSubtitles(args["externalSubtitles"]),
+          // Default true here is belt-and-suspenders only -- the
+          // authoritative default lives in ViewSettingsService.matchRefreshRate
+          // (Dart), which defaults tvOS on. See MpvPlayerCore's
+          // matchRefreshRateEnabled doc comment.
+          matchRefreshRate: args["matchRefreshRate"] as? Bool ?? true
         )
         result(["ok": true])
       }

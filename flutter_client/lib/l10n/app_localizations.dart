@@ -734,11 +734,89 @@ abstract class AppLocalizations {
   /// **'General'**
   String get settingsGeneral;
 
+  /// No description provided for @settingsGeneralSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Language, connection, and account'**
+  String get settingsGeneralSubtitle;
+
   /// No description provided for @settingsIntegrations.
   ///
   /// In en, this message translates to:
   /// **'Integrations'**
   String get settingsIntegrations;
+
+  /// No description provided for @settingsIntegrationsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Trakt and more'**
+  String get settingsIntegrationsSubtitle;
+
+  /// No description provided for @settingsAppearance.
+  ///
+  /// In en, this message translates to:
+  /// **'Appearance'**
+  String get settingsAppearance;
+
+  /// No description provided for @settingsAppearanceSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Layout, EPG, and display'**
+  String get settingsAppearanceSubtitle;
+
+  /// No description provided for @settingsPlayback.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback'**
+  String get settingsPlayback;
+
+  /// No description provided for @settingsPlaybackSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy, cache, and DVR'**
+  String get settingsPlaybackSubtitle;
+
+  /// No description provided for @settingsReleaseNotesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'See what\'s new in this version'**
+  String get settingsReleaseNotesSubtitle;
+
+  /// No description provided for @settingsSectionLanguageRegion.
+  ///
+  /// In en, this message translates to:
+  /// **'Language & Region'**
+  String get settingsSectionLanguageRegion;
+
+  /// No description provided for @settingsSectionLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Layout'**
+  String get settingsSectionLayout;
+
+  /// No description provided for @settingsSectionDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Display'**
+  String get settingsSectionDisplay;
+
+  /// No description provided for @settingsSectionFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Filters'**
+  String get settingsSectionFilters;
+
+  /// No description provided for @settingsSectionStreaming.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming'**
+  String get settingsSectionStreaming;
+
+  /// No description provided for @settingsSectionServices.
+  ///
+  /// In en, this message translates to:
+  /// **'Services'**
+  String get settingsSectionServices;
 
   /// No description provided for @settingsLanguage.
   ///

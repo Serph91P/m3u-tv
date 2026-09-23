@@ -59,6 +59,16 @@ final class MpvPlayerCore {
   private weak var hostView: UIView?
   private var activeDisplayCriteriaKey: String?
 
+  // Set fresh on every `load()`, read only on `queue` (see
+  // `scheduleDisplayCriteriaUpdate`, which captures it into the main-thread
+  // `updateDisplayCriteria` call rather than reading it there directly) --
+  // same single-queue-owns-it convention as `readyEmitted`/`disposed`.
+  // Default true is a belt-and-suspenders fallback only; the authoritative
+  // default lives in ViewSettingsService.matchRefreshRate (Dart), which
+  // defaults tvOS on to preserve this path's pre-toggle unconditional
+  // behavior.
+  private var matchRefreshRateEnabled = true
+
   private static let maximumSideDataDimension: Int64 = 16384
   private static let maximumSideDataPixels: Int64 = 16384 * 16384
 
@@ -185,11 +195,13 @@ final class MpvPlayerCore {
     isLive: Bool,
     userAgent: String?,
     headers: [String: String]?,
-    externalSubtitles: [(uri: String, title: String?, language: String?)] = []
+    externalSubtitles: [(uri: String, title: String?, language: String?)] = [],
+    matchRefreshRate: Bool = true
   ) {
     queue.async { [weak self] in
       guard let self, let handle = self.mpv else { return }
       self.readyEmitted = false
+      self.matchRefreshRateEnabled = matchRefreshRate
 
       if let userAgent, !userAgent.isEmpty {
         mpv_set_option_string(handle, "user-agent", userAgent)
@@ -559,6 +571,8 @@ final class MpvPlayerCore {
     let gamma = stringProperty(handle, "video-params/gamma")
     let primaries = stringProperty(handle, "video-params/primaries")
     let colorMatrix = stringProperty(handle, "video-params/colormatrix")
+    // Read here, on `queue` -- see `matchRefreshRateEnabled`'s doc comment.
+    let matchRefreshRateEnabled = self.matchRefreshRateEnabled
 
     DispatchQueue.main.async { [weak self] in
       self?.updateDisplayCriteria(
@@ -570,7 +584,8 @@ final class MpvPlayerCore {
         sigPeak: sigPeak,
         gamma: gamma,
         primaries: primaries,
-        colorMatrix: colorMatrix
+        colorMatrix: colorMatrix,
+        matchRefreshRateEnabled: matchRefreshRateEnabled
       )
     }
   }
@@ -589,7 +604,8 @@ final class MpvPlayerCore {
     sigPeak: Double,
     gamma: String?,
     primaries: String?,
-    colorMatrix: String?
+    colorMatrix: String?,
+    matchRefreshRateEnabled: Bool
   ) -> Bool {
     guard !Self.isSimulator, let window = hostView?.window else { return false }
     let displayManager = window.avDisplayManager
@@ -599,7 +615,16 @@ final class MpvPlayerCore {
       return false
     }
 
+    // The bail-out below (and the criteria key/request itself) uses
+    // `effectiveRefreshRate`, gated on the toggle -- dynamic-range criteria
+    // stays unconditional either way, matching this app's "HDR is always
+    // automatic on Apple platforms" rule (see player_adapter.dart's
+    // HdrToggleProvider doc comment). The raw `refreshRate` still decides
+    // whether *anything* about the stream is display-metadata-worthy, so a
+    // genuinely fps-less/metadata-less source bails out the same as before
+    // this toggle existed, regardless of the setting.
     let refreshRate = Float(fps > 0 ? fps : 0)
+    let effectiveRefreshRate = matchRefreshRateEnabled ? refreshRate : 0
     let sourceHasDolbyVision = doviProfile > 0
     guard
       refreshRate > 0 || sourceHasDolbyVision || sigPeak > 0 || gamma != nil || primaries != nil
@@ -642,17 +667,18 @@ final class MpvPlayerCore {
       return false
     }
 
-    let criteriaKey = "\(displayRange.rawValue)|\(refreshRate)|\(width)x\(height)|\(doviProfile)|\(doviLevel)"
+    let criteriaKey =
+      "\(displayRange.rawValue)|\(effectiveRefreshRate)|\(width)x\(height)|\(doviProfile)|\(doviLevel)"
     if activeDisplayCriteriaKey == criteriaKey && displayManager.preferredDisplayCriteria != nil {
       return true
     }
 
     displayManager.preferredDisplayCriteria = AVDisplayCriteria(
-      refreshRate: refreshRate, formatDescription: formatDescription)
+      refreshRate: effectiveRefreshRate, formatDescription: formatDescription)
     activeDisplayCriteriaKey = criteriaKey
     NSLog(
       "[MpvPlayerCore] preferredDisplayCriteria set to %@ (fps: %@, %dx%d, DV profile: %@, level: %@)",
-      displayRange.rawValue, String(refreshRate), width, height, String(doviProfile), String(doviLevel)
+      displayRange.rawValue, String(effectiveRefreshRate), width, height, String(doviProfile), String(doviLevel)
     )
     return true
   }

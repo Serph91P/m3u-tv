@@ -542,6 +542,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // "Connection" (with its error/retry copy) now lives inside the
+        // General sub-page rather than directly on the root settings list.
+        await tester.tap(find.text('General'));
+        await tester.pumpAndSettle();
+
         expect(find.text('Server is currently unavailable.'), findsOneWidget);
         expect(
           find.textContaining('playlist Xtream connection details'),
@@ -606,7 +611,10 @@ void main() {
       await tester.pumpWidget(_settingsApp(notifier));
       await tester.pumpAndSettle();
 
-      // Should show the connected view with status
+      // Connection status now lives inside the General sub-page.
+      await tester.tap(find.text('General'));
+      await tester.pumpAndSettle();
+
       expect(find.text('Connection'), findsOneWidget);
       expect(find.text('Connected'), findsWidgets);
     });
@@ -630,6 +638,10 @@ void main() {
           onDisconnect: () => edited = true,
         ),
       );
+      await tester.pumpAndSettle();
+
+      // Retry/Edit live inside the General sub-page's Connection card.
+      await tester.tap(find.text('General'));
       await tester.pumpAndSettle();
 
       expect(find.text('Server is currently unavailable.'), findsOneWidget);
@@ -703,6 +715,10 @@ void main() {
       await tester.pumpWidget(_settingsApp(notifier));
       await tester.pumpAndSettle();
 
+      // Content Cache lives inside the Playback sub-page.
+      await tester.tap(find.text('Playback'));
+      await tester.pumpAndSettle();
+
       expect(find.text('Content Cache'), findsOneWidget);
     });
 
@@ -732,9 +748,9 @@ void main() {
       await tester.pumpWidget(_settingsApp(notifier, activeViewer: viewer));
       await tester.pumpAndSettle();
 
-      // Should show the viewer section with the viewer name
+      // The Active Viewer row shows the viewer's name as its subtitle.
       expect(find.text('Active Viewer'), findsOneWidget);
-      expect(find.text('Admin'), findsWidgets);
+      expect(find.text('Admin'), findsOneWidget);
     });
 
     testWidgets(

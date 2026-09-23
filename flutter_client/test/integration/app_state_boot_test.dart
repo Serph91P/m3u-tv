@@ -930,6 +930,11 @@ void main() {
         await _tapSidebarDestination(tester, 'Settings');
         await _pumpAppState(tester);
 
+        // Connection status/retry now live inside the General sub-page
+        // rather than directly on the root settings list.
+        await tester.tap(find.text('General'));
+        await _pumpAppState(tester);
+
         expect(find.text('Server is currently unavailable.'), findsWidgets);
         expect(find.text('Retry connection'), findsOneWidget);
         expect(find.text('Edit server settings'), findsOneWidget);
@@ -999,6 +1004,8 @@ void main() {
         expect(find.text('Fixture Show'), findsWidgets);
 
         await _tapSidebarDestination(tester, 'Settings');
+        await _pumpAppState(tester);
+        await tester.tap(find.text('General'));
         await _pumpAppState(tester);
         expect(find.text('Connection'), findsOneWidget);
         expect(find.text('Source'), findsOneWidget);

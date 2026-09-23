@@ -1667,6 +1667,7 @@ class AppShellState extends ConsumerState<AppShell>
           proxyPlaybackSettings: _appState.proxyPlaybackSettings,
           comskipSettings: _appState.comskipSettings,
           onSidebarActivate: _activateSidebar,
+          onHandleTopLevelBack: handleBackFromTopLevelRoute,
         ),
       ),
       _ => const PlaceholderScreen(title: 'Home'),

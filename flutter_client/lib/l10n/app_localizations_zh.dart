@@ -344,7 +344,46 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsGeneral => '通用';
 
   @override
+  String get settingsGeneralSubtitle => '语言、连接和账户';
+
+  @override
   String get settingsIntegrations => '集成';
+
+  @override
+  String get settingsIntegrationsSubtitle => 'Trakt 等';
+
+  @override
+  String get settingsAppearance => '外观';
+
+  @override
+  String get settingsAppearanceSubtitle => '布局、节目单和显示';
+
+  @override
+  String get settingsPlayback => '播放';
+
+  @override
+  String get settingsPlaybackSubtitle => '代理、缓存和 DVR';
+
+  @override
+  String get settingsReleaseNotesSubtitle => '本版本的更新内容';
+
+  @override
+  String get settingsSectionLanguageRegion => '语言和地区';
+
+  @override
+  String get settingsSectionLayout => '布局';
+
+  @override
+  String get settingsSectionDisplay => '显示';
+
+  @override
+  String get settingsSectionFilters => '筛选';
+
+  @override
+  String get settingsSectionStreaming => '流媒体';
+
+  @override
+  String get settingsSectionServices => '服务';
 
   @override
   String get settingsLanguage => '语言';
