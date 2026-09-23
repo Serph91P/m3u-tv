@@ -30,7 +30,6 @@ import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
-import 'package:m3u_tv/services/apple_tv_remote_swipe_governor.dart';
 import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
     show kCatalogKindSeries, kCatalogKindVod;
 import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
@@ -146,8 +145,6 @@ class AppShellState extends ConsumerState<AppShell>
   late final AppStateController _appState;
   late final bool _ownsAppState;
   final MemoryWatchdog _memoryWatchdog = MemoryWatchdog();
-  final AppleTvRemoteSwipeGovernor _remoteSwipeGovernor =
-      AppleTvRemoteSwipeGovernor.instance;
   late final SystemUiPolicy _systemUiPolicy;
   int _unreadCount = 0;
 
@@ -251,7 +248,6 @@ class AppShellState extends ConsumerState<AppShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _memoryWatchdog.start();
-    if (Platform.operatingSystem == 'tvos') _remoteSwipeGovernor.start();
     _appState = widget.appState ?? AppStateController();
     _ownsAppState = widget.appState == null;
     _systemUiPolicy = widget.systemUiPolicy ?? SystemUiPolicy();
@@ -490,7 +486,6 @@ class AppShellState extends ConsumerState<AppShell>
     _notificationActivationSub?.cancel().ignore();
     _desktopNotificationDispatcher.dispose();
     _memoryWatchdog.stop();
-    _remoteSwipeGovernor.stop();
     WidgetsBinding.instance.removeObserver(this);
     _playerOrchestrator?.dispose().ignore();
     _playerNativePlaneSub?.cancel().ignore();
