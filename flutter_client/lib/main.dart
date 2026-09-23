@@ -406,6 +406,7 @@ class _MyAppState extends State<MyApp> {
 
     return MaterialApp.router(
       title: 'M3U TV',
+      debugShowCheckedModeBanner: !const bool.fromEnvironment('HIDE_DEBUG_BANNER'),
       routerConfig: _router,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
