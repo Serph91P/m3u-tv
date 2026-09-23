@@ -1890,7 +1890,7 @@ class SeriesDetailBody extends StatelessWidget {
         scrimColors: [bg.withValues(alpha: 0.2), bg.withValues(alpha: 0.8), bg],
         colorMatchReady: colorMatchReady,
         contentPadding: EdgeInsets.only(
-          top: bandHeight * 0.44 + detailAppBarHeight(context),
+          top: bandHeight * 0.22 + detailAppBarHeight(context),
           bottom: 24,
         ),
         content: content,
