@@ -27,6 +27,7 @@ class ItemMetaInfo extends StatelessWidget {
     this.clearLogoUrl,
     required this.buttonLabel,
     required this.onPlay,
+    this.primaryIcon = Icons.play_arrow,
     this.chips = const [],
     this.fullWidthButton = false,
     this.hidePrimaryAction = false,
@@ -53,6 +54,11 @@ class ItemMetaInfo extends StatelessWidget {
   /// rather than a verb like "Play" - the icon and bar already say "resume".
   final String buttonLabel;
   final VoidCallback? onPlay;
+
+  /// Primary button's leading icon. Defaults to the play glyph every
+  /// existing caller (VOD, Series, AIOStreams) wants; Requests overrides it
+  /// per submission state (add/pending/already-available).
+  final IconData primaryIcon;
   final bool fullWidthButton;
 
   /// Suppresses the built-in play/resume + start-over button row. The caller
@@ -94,7 +100,7 @@ class ItemMetaInfo extends StatelessWidget {
       autofocus: true,
       focusNode: primaryActionFocusNode,
       variant: AppButtonVariant.primaryInverted,
-      icon: Icons.play_arrow,
+      icon: primaryIcon,
       label: buttonLabel,
       onPressed: isLoading ? null : onPlay,
       inlineProgressValue: progressValue,

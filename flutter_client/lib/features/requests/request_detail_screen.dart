@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,15 +8,20 @@ import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
-import 'package:m3u_tv/shared/cached_backdrop_image.dart';
+import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
-import 'package:m3u_tv/shared/image_quality_scope.dart';
+import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+import 'package:m3u_tv/shared/movie_detail_body.dart';
 
-/// Detail screen for a single `request_search` result — mirrors
-/// VodDetailsScreen/AIOStreamsDetailScreen's backdrop layout (same metadata
-/// chip row, same wide/narrow breakpoint), since all the metadata needed is
-/// already present on [result] from the search response — no separate fetch.
+/// Detail screen for a single `request_search` result — built directly on
+/// [MovieDetailBody], the same shared body VOD/AIOStreams movie details use
+/// (poster/backdrop hero, colour-match fade-in, primary button styling,
+/// synopsis measure). A change to that shared body shows up here too instead
+/// of needing to be copied in - only the request-specific bits (season
+/// picker, submit/status button state) live in this file. All the metadata
+/// needed is already present on [result] from the search response - no
+/// separate fetch.
 class RequestDetailScreen extends ConsumerStatefulWidget {
   const RequestDetailScreen({
     super.key,
@@ -54,6 +58,29 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       .where((season) => !season.hasFile && season.seasonNumber != 0)
       .map((season) => season.seasonNumber)
       .toSet();
+
+  Color? _dominantColor;
+
+  /// True once the palette extraction has resolved (with a colour or not).
+  /// Gates the hero's backdrop reveal so the art and its colour-match fade
+  /// in together - see VodDetailsScreen's matching field.
+  bool _colorMatchResolved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final result = widget.result;
+    unawaited(_resolveDominantColor(result.fanart ?? result.poster));
+  }
+
+  Future<void> _resolveDominantColor(String? url) async {
+    final color = await resolveDominantBackdropColor(url);
+    if (!mounted) return;
+    setState(() {
+      if (color != null) _dominantColor = color;
+      _colorMatchResolved = true;
+    });
+  }
 
   String _errorMessage(Object error) =>
       error is XtreamRequestException ? error.message : error.toString();
@@ -116,366 +143,90 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (!widget.isOwnerCurrent) return const SizedBox.shrink();
+    final l = AppLocalizations.of(context);
+    final result = widget.result;
     final myRequests = ref.watch(mediaRequestsProvider);
     final existing = myRequests
         .where(
           (request) =>
-              request.type == widget.result.type &&
-              request.externalId == widget.result.externalId &&
+              request.type == result.type &&
+              request.externalId == result.externalId &&
               (request.status == MediaRequestStatus.pendingApproval ||
                   request.status == MediaRequestStatus.approved ||
                   request.status == MediaRequestStatus.completed),
         )
         .firstOrNull;
-    final scale = FontSizeScope.scaleOf(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.result.title),
-        automaticallyImplyLeading: false,
-        // AppBar's default toolbarHeight is fixed and unscaled - without
-        // scaling it too, the leading button's larger padding + icon get
-        // squeezed into that fixed height (see item_detail_scaffold.dart).
-        toolbarHeight: kToolbarHeight * scale,
-        leadingWidth: 56 * scale,
-        leading: Padding(
-          padding: EdgeInsets.all(8 * scale),
-          child: DpadFocusable(
-            onSelect: () => Navigator.of(context).maybePop(),
-            effects: kStadiumFocusEffects,
-            child: IconButton(
-              icon: Icon(Icons.arrow_back, size: 24 * scale),
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-          ),
-        ),
-      ),
-      body: _Body(
-        result: widget.result,
-        existing: existing,
-        isSubmitting: _isSubmitting,
-        selectedSeasons: _selectedSeasons,
-        onSubmit: () => unawaited(_submit()),
-        onToggleSeason: _toggleSeason,
-        onSelectAllSeasons: _selectAllSeasons,
-        onClearAllSeasons: _clearAllSeasons,
-      ),
-    );
-  }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
-}
-
-class _Body extends StatelessWidget {
-  const _Body({
-    required this.result,
-    required this.existing,
-    required this.isSubmitting,
-    required this.selectedSeasons,
-    required this.onSubmit,
-    required this.onToggleSeason,
-    required this.onSelectAllSeasons,
-    required this.onClearAllSeasons,
-  });
-
-  final ContentRequestSearchResult result;
-  final MediaRequestSummary? existing;
-  final bool isSubmitting;
-  final Set<int> selectedSeasons;
-  final VoidCallback onSubmit;
-  final ValueChanged<int> onToggleSeason;
-  final VoidCallback onSelectAllSeasons;
-  final VoidCallback onClearAllSeasons;
-
-  /// The season picker only makes sense while a request can still be
-  /// submitted — once approved/rejected/completed or already in the
-  /// library, the selection is moot.
-  bool get _showSeasonPicker =>
-      result.type == 'series' &&
-      result.seasons.isNotEmpty &&
-      existing == null &&
-      !result.alreadyAvailable;
-
-  static const double _wideBreakpoint = 600;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < _wideBreakpoint) {
-          return _buildNarrow(context);
-        }
-        return _buildWide(context);
-      },
-    );
-  }
-
-  Widget _buildWide(BuildContext context) {
-    final theme = Theme.of(context);
-    final backdrop = result.fanart;
-    final content = Padding(
-      padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          SizedBox(
-            width: 220,
-            child: AspectRatio(
-              aspectRatio: 0.68,
-              child: Hero(
-                tag: 'request_poster_${result.type}_${result.externalId}',
-                child: ResilientMediaImage(
-                  imageUrl: result.poster,
-                  fallbackIcon: result.type == 'series'
-                      ? Icons.tv
-                      : Icons.movie,
-                  borderRadius: MediaBrowsingMetrics.cardRadius,
-                  fallbackTitle: result.title,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: MediaBrowsingMetrics.pagePadding),
-          Expanded(
-            child: SingleChildScrollView(
-              child: _infoColumn(context, theme),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (backdrop == null) return content;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CachedBackdropImage(backdrop),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.2),
-                Colors.black.withValues(alpha: 0.85),
-                theme.colorScheme.surface,
-              ],
-              stops: const [0.0, 0.5, 1.0],
-            ),
-          ),
-        ),
-        Align(
-          alignment: Alignment.bottomLeft,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.sizeOf(context).height * 0.1,
-            ),
-            child: content,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNarrow(BuildContext context) {
-    final theme = Theme.of(context);
-    final backdrop = result.fanart;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 220,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (backdrop != null)
-                CachedBackdropImage(backdrop)
-              else
-                ResilientMediaImage(
-                  imageUrl: result.poster,
-                  fallbackIcon: result.type == 'series'
-                      ? Icons.tv
-                      : Icons.movie,
-                  borderRadius: 0,
-                  fallbackTitle: result.title,
-                ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, theme.colorScheme.surface],
-                      stops: const [0.4, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 16,
-                bottom: 16,
-                child: SizedBox(
-                  width: 80,
-                  child: AspectRatio(
-                    aspectRatio: 0.68,
-                    child: Hero(
-                      tag: 'request_poster_${result.type}_${result.externalId}',
-                      child: ResilientMediaImage(
-                        imageUrl: result.poster,
-                        fallbackIcon: result.type == 'series'
-                            ? Icons.tv
-                            : Icons.movie,
-                        fallbackTitle: result.title,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: _infoColumn(context, theme, fullWidthButton: true),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _infoColumn(
-    BuildContext context,
-    ThemeData theme, {
-    bool fullWidthButton = false,
-  }) {
-    final l = AppLocalizations.of(context);
+    final showSeasonPicker =
+        result.type == 'series' &&
+        result.seasons.isNotEmpty &&
+        existing == null &&
+        !result.alreadyAvailable;
     final rating = result.rating;
-    final button = _actionButton(l, fullWidth: fullWidthButton);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(result.title, style: theme.textTheme.headlineMedium),
-        const SizedBox(height: MediaBrowsingMetrics.itemGap),
-        Wrap(
-          spacing: MediaBrowsingMetrics.itemGap,
-          runSpacing: MediaBrowsingMetrics.chipGap,
-          children: [
-            if (result.year != null) _MetadataChip(label: result.year!),
-            if (result.certification != null)
-              _MetadataChip(label: result.certification!),
-            if (rating != null)
-              _MetadataChip(
-                label: rating.source == null
-                    ? '★ ${rating.value.toStringAsFixed(1)}'
-                    : '★ ${rating.value.toStringAsFixed(1)} ${rating.source!.toUpperCase()}',
-              ),
-            if (result.runtimeMinutes != null)
-              _MetadataChip(label: _formatRuntime(result.runtimeMinutes!)),
-            ...result.genres
-                .take(3)
-                .map((genre) => _MetadataChip(label: genre)),
-          ],
+    final chips = [
+      if (result.year != null) result.year!,
+      if (result.certification != null) result.certification!,
+      if (rating != null && rating.source == null)
+        '★ ${rating.value.toStringAsFixed(1)}',
+      if (rating != null && rating.source != null)
+        '★ ${rating.value.toStringAsFixed(1)} ${rating.source!.toUpperCase()}',
+      if (result.runtimeMinutes != null) _formatRuntime(result.runtimeMinutes!),
+      ...result.genres.take(3),
+    ];
+
+    return ItemDetailScaffold(
+      title: result.title,
+      body: MovieDetailBody(
+        name: result.title,
+        posterUrl: result.poster,
+        backdropUrl: result.fanart,
+        fallbackIcon: result.type == 'series' ? Icons.tv : Icons.movie,
+        chips: chips,
+        plot: result.overview,
+        credits: const [],
+        castSemanticLabel: '',
+        primaryButtonLabel: _primaryLabel(l, existing),
+        primaryIcon: _primaryIcon(existing),
+        onPrimary: _primaryAction(
+          existing: existing,
+          showSeasonPicker: showSeasonPicker,
         ),
-        if (result.overview != null && result.overview!.isNotEmpty) ...[
-          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-          Text(
-            result.overview!,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        if (_showSeasonPicker) ...[
-          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-          _SeasonsSection(
-            seasons: result.seasons,
-            selectedSeasons: selectedSeasons,
-            onToggleSeason: onToggleSeason,
-          ),
-        ],
-        const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-        _actionRow(l, button, fullWidthButton: fullWidthButton),
-      ],
+        isLoading: _isSubmitting,
+        dominantColor: _dominantColor,
+        colorMatchReady: _colorMatchResolved,
+        extraContent: !showSeasonPicker
+            ? null
+            : _SeasonsSection(
+                seasons: result.seasons,
+                selectedSeasons: _selectedSeasons,
+                onToggleSeason: _toggleSeason,
+                onSelectAll: _selectAllSeasons,
+                onClear: _clearAllSeasons,
+              ),
+      ),
     );
   }
 
-  /// Places Select All/Clear right next to the Request button — rather than
-  /// up by the season chips — so keyboard/D-pad users hit them in the same
-  /// focus neighborhood as the action they actually affect.
-  Widget _actionRow(
-    AppLocalizations l,
-    Widget button, {
-    required bool fullWidthButton,
+  String _primaryLabel(AppLocalizations l, MediaRequestSummary? existing) {
+    if (widget.result.alreadyAvailable) return l.requestsAlreadyAvailable;
+    if (existing != null) return _statusLabel(l, existing.status);
+    return l.requestsRequestButton;
+  }
+
+  IconData _primaryIcon(MediaRequestSummary? existing) {
+    if (widget.result.alreadyAvailable) return Icons.check_circle_outline;
+    if (existing != null) return Icons.check;
+    return Icons.add;
+  }
+
+  VoidCallback? _primaryAction({
+    required MediaRequestSummary? existing,
+    required bool showSeasonPicker,
   }) {
-    if (!_showSeasonPicker) {
-      return fullWidthButton
-          ? SizedBox(width: double.infinity, child: button)
-          : button;
-    }
-
-    final selectAll = AppButton(
-      label: l.requestsSelectAllSeasons,
-      onPressed: onSelectAllSeasons,
-    );
-    final clear = AppButton(
-      label: l.requestsClearSeasons,
-      onPressed: onClearAllSeasons,
-    );
-
-    if (fullWidthButton) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          button,
-          const SizedBox(height: MediaBrowsingMetrics.chipGap),
-          Row(
-            children: [
-              Expanded(child: selectAll),
-              const SizedBox(width: MediaBrowsingMetrics.chipGap),
-              Expanded(child: clear),
-            ],
-          ),
-        ],
-      );
-    }
-
-    return Wrap(
-      spacing: MediaBrowsingMetrics.chipGap,
-      runSpacing: MediaBrowsingMetrics.chipGap,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [button, selectAll, clear],
-    );
-  }
-
-  Widget _actionButton(AppLocalizations l, {required bool fullWidth}) {
-    if (result.alreadyAvailable) {
-      return AppButton(
-        icon: Icons.check_circle_outline,
-        label: l.requestsAlreadyAvailable,
-        onPressed: null,
-      );
-    }
-    final request = existing;
-    if (request != null) {
-      return AppButton(
-        icon: Icons.check,
-        label: _statusLabel(l, request.status),
-        onPressed: null,
-      );
-    }
-    final noSeasonsSelected = _showSeasonPicker && selectedSeasons.isEmpty;
-    final onPressed = isSubmitting || noSeasonsSelected ? null : onSubmit;
-    return AppButton(
-      autofocus: true,
-      variant: AppButtonVariant.primary,
-      icon: Icons.add,
-      label: l.requestsRequestButton,
-      loading: isSubmitting,
-      onPressed: onPressed,
-    );
+    if (widget.result.alreadyAvailable || existing != null) return null;
+    final noSeasonsSelected = showSeasonPicker && _selectedSeasons.isEmpty;
+    if (noSeasonsSelected) return null;
+    return () => unawaited(_submit());
   }
 
   String _statusLabel(AppLocalizations l, MediaRequestStatus status) =>
@@ -496,9 +247,17 @@ class _Body extends StatelessWidget {
   }
 }
 
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+}
+
 // ---------------------------------------------------------------------------
 // Season picker — lets the guest request every season, or just the ones
-// missing from the library (the default selection).
+// missing from the library (the default selection). This is a multi-select
+// "which missing seasons to request" affordance for a title not yet in the
+// library, distinct in purpose from series_detail_widgets.dart's season
+// picker (single-select, for browsing a title already owned) — it is not a
+// drift case, just a different interaction over the same "season" concept.
 // ---------------------------------------------------------------------------
 
 class _SeasonsSection extends StatelessWidget {
@@ -506,11 +265,15 @@ class _SeasonsSection extends StatelessWidget {
     required this.seasons,
     required this.selectedSeasons,
     required this.onToggleSeason,
+    required this.onSelectAll,
+    required this.onClear,
   });
 
   final List<ContentRequestSeason> seasons;
   final Set<int> selectedSeasons;
   final ValueChanged<int> onToggleSeason;
+  final VoidCallback onSelectAll;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -534,6 +297,18 @@ class _SeasonsSection extends StatelessWidget {
                 hasFile: season.hasFile,
                 onTap: () => onToggleSeason(season.seasonNumber),
               ),
+          ],
+        ),
+        const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+        Wrap(
+          spacing: MediaBrowsingMetrics.chipGap,
+          runSpacing: MediaBrowsingMetrics.chipGap,
+          children: [
+            AppButton(
+              label: l.requestsSelectAllSeasons,
+              onPressed: onSelectAll,
+            ),
+            AppButton(label: l.requestsClearSeasons, onPressed: onClear),
           ],
         ),
       ],
@@ -592,27 +367,6 @@ class _SeasonToggle extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Shared chip widget (mirrors _MetadataChip in vod_details_screen.dart /
-// aiostreams_detail_screen.dart)
-// ---------------------------------------------------------------------------
-
-class _MetadataChip extends StatelessWidget {
-  const _MetadataChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Chip(
-      label: Text(label),
-      backgroundColor: colorScheme.surfaceContainerHighest,
-      side: BorderSide(color: colorScheme.outlineVariant),
     );
   }
 }

@@ -551,7 +551,9 @@ GoRouter createGoRouter({
               ),
             ],
           ),
-          // Branch 7: Requests with nested result details
+          // Branch 7: Requests. Its result-detail screen is NOT nested here -
+          // see the top-level `RouteNames.requestsDetailsPath` route below,
+          // for the same reason VOD/Series/AIOStreams details are top-level.
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -561,40 +563,6 @@ GoRouter createGoRouter({
                     _tabScreen(context, RouteNames.requests),
                   ),
                 ),
-                routes: [
-                  GoRoute(
-                    path: 'details/:integrationId/:type/:externalId',
-                    pageBuilder: (context, state) {
-                      final result = state.extra! as ContentRequestSearchResult;
-                      final actions = ContentActions.of(context);
-                      final requestOwner = actions.appState.mediaRequestOwner;
-                      return _slidePage(
-                        ListenableBuilder(
-                          listenable: actions.appState,
-                          builder: (ctx, _) => RequestDetailScreen(
-                            result: result,
-                            isOwnerCurrent:
-                                actions.appState.mediaRequestOwner ==
-                                requestOwner,
-                            onSubmit:
-                                ({
-                                  required type,
-                                  required integrationId,
-                                  required externalId,
-                                  seasons,
-                                }) => actions.appState.submitContentRequest(
-                                  type: type,
-                                  integrationId: integrationId,
-                                  externalId: externalId,
-                                  seasons: seasons,
-                                  requestOwner: requestOwner,
-                                ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
               ),
             ],
           ),
@@ -730,6 +698,47 @@ GoRouter createGoRouter({
                     includeLibraryFilter: false,
                     aiostreamsIntegrationId: integrationId,
                   ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+      // Top-level for the same reason as VOD/Series/AIOStreams above - covers
+      // the sidebar by painting into the root Navigator instead of resizing
+      // AppShell for it. Requests is only ever reached in-app from the
+      // search tab's results grid, which always supplies the
+      // ContentRequestSearchResult via `extra` - no deep-link/async-catalog
+      // fallback path exists here, matching how this route already worked
+      // before it moved out of the `requests` branch.
+      GoRoute(
+        path: RouteNames.requestsDetailsPath,
+        pageBuilder: (context, state) {
+          final result = state.extra! as ContentRequestSearchResult;
+          final actions = _topLevelActions(appShellKey, appState);
+          final requestOwner = actions.appState.mediaRequestOwner;
+          return _slidePage(
+            _withTopLevelBackHandling(
+              appShellKey,
+              ListenableBuilder(
+                listenable: actions.appState,
+                builder: (ctx, _) => RequestDetailScreen(
+                  result: result,
+                  isOwnerCurrent:
+                      actions.appState.mediaRequestOwner == requestOwner,
+                  onSubmit:
+                      ({
+                        required type,
+                        required integrationId,
+                        required externalId,
+                        seasons,
+                      }) => actions.appState.submitContentRequest(
+                        type: type,
+                        integrationId: integrationId,
+                        externalId: externalId,
+                        seasons: seasons,
+                        requestOwner: requestOwner,
+                      ),
                 ),
               ),
             ),

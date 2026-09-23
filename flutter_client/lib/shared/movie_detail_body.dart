@@ -45,6 +45,8 @@ class MovieDetailBody extends StatefulWidget {
     this.progressValue,
     this.dominantColor,
     this.fallbackIcon = Icons.movie,
+    this.primaryIcon = Icons.play_arrow,
+    this.extraContent,
   });
 
   final String name;
@@ -71,7 +73,11 @@ class MovieDetailBody extends StatefulWidget {
   final ValueChanged<RelatedItem>? onRelatedTap;
 
   final String primaryButtonLabel;
-  final VoidCallback onPrimary;
+
+  /// Null renders the primary button disabled (e.g. Requests: already
+  /// available, already requested, or no seasons selected yet) rather than
+  /// wired to an action.
+  final VoidCallback? onPrimary;
 
   /// Resume affordances - only VOD passes these; AIOStreams leaves them null.
   final VoidCallback? onStartOver;
@@ -79,6 +85,14 @@ class MovieDetailBody extends StatefulWidget {
 
   final bool isLoading;
   final IconData fallbackIcon;
+
+  /// Primary button's leading icon - see [ItemMetaInfo.primaryIcon].
+  final IconData primaryIcon;
+
+  /// Extra content rendered directly below the meta column (title/chips/
+  /// button/plot/credits), above the cast/related rows - e.g. Requests'
+  /// season picker. Null renders nothing extra (every existing caller).
+  final Widget? extraContent;
 
   /// Palette-extracted backdrop tone + whether it has resolved. Drives the
   /// held-then-cross-faded hero (see [BackdropDetailHero.colorMatchReady]).
@@ -328,6 +342,7 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
           chips: widget.chips,
           buttonLabel: widget.primaryButtonLabel,
           onPlay: widget.onPrimary,
+          primaryIcon: widget.primaryIcon,
           onStartOver: widget.onStartOver,
           progressValue: widget.progressValue,
           fullWidthButton: fullWidthButton,
@@ -337,6 +352,13 @@ class _MovieDetailBodyState extends State<MovieDetailBody> {
           plotMaxLines: 4,
           credits: widget.credits,
         ),
+        if (widget.extraContent != null)
+          Padding(
+            padding: const EdgeInsets.only(
+              top: MediaBrowsingMetrics.contentPadding,
+            ),
+            child: widget.extraContent,
+          ),
         // Wide renders the cast strip full-width below the poster (see
         // _buildWide); narrow keeps it inline here as a compact picker chip.
         if (compact)

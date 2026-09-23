@@ -979,6 +979,8 @@ class MediaPreviewItem {
     this.emphasisLabel,
     this.upNextLabel,
     this.ratingLabel,
+    this.cornerBadgeIcon,
+    this.cornerBadgeColor,
   });
 
   final String title;
@@ -988,6 +990,18 @@ class MediaPreviewItem {
   final VoidCallback onTap;
   final VoidCallback? onLongTap;
   final bool isFavorite;
+
+  /// Icon shown as a small circular corner badge over the poster (top-left),
+  /// the same treatment [isFavorite] gives its star. Only rendered by
+  /// default/poster cards, and only when [isFavorite] is false - the two
+  /// share one corner and isFavorite (the more common case) takes priority.
+  /// Lets callers like Requests (already-requested/already-available) flag a
+  /// card's state without forking the card widget itself.
+  final IconData? cornerBadgeIcon;
+
+  /// Background color for [cornerBadgeIcon]'s circle. Defaults to the
+  /// theme's primary color when null.
+  final Color? cornerBadgeColor;
   final BoxFit imageFit;
   final double? imageAspectRatio;
   final String? fallbackTitle;
@@ -1517,6 +1531,23 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                       ),
                       child: Icon(
                         Icons.star,
+                        color: Colors.white,
+                        size: 14 * scale,
+                      ),
+                    ),
+                  )
+                else if (item.cornerBadgeIcon != null)
+                  Positioned(
+                    top: 4 * scale,
+                    left: 4 * scale,
+                    child: Container(
+                      padding: EdgeInsets.all(3 * scale),
+                      decoration: BoxDecoration(
+                        color: item.cornerBadgeColor ?? colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        item.cornerBadgeIcon,
                         color: Colors.white,
                         size: 14 * scale,
                       ),

@@ -8,8 +8,9 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
-import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
 
@@ -301,7 +302,10 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
       builder: (context, constraints) {
         final availableWidth =
             constraints.maxWidth - MediaBrowsingMetrics.contentPadding * 2;
-        final columnCount = _posterColumnCount(availableWidth);
+        final columnCount = _posterColumnCount(
+          availableWidth,
+          FontSizeScope.scaleOf(context),
+        );
         return FocusScope(
           node: _gridFocusNode,
           child: DpadRegion(
@@ -326,11 +330,30 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
               itemCount: _results.length,
               itemBuilder: (context, index) {
                 final result = _results[index];
-                return _RequestResultCard(
-                  result: result,
+                final flagged =
+                    result.alreadyAvailable ||
+                    _isAlreadyRequested(result, myRequests);
+                return MediaPreviewCard(
+                  posterStyle: true,
+                  keepAlive: false,
                   autofocus: index == 0,
-                  isAlreadyRequested: _isAlreadyRequested(result, myRequests),
-                  onTap: () => widget.onResultSelect(result),
+                  item: MediaPreviewItem(
+                    title: result.title,
+                    imageUrl: result.poster,
+                    subtitle: result.year,
+                    ratingLabel: result.rating == null
+                        ? null
+                        : '★ ${result.rating!.value.toStringAsFixed(1)}',
+                    fallbackIcon: result.type == 'series'
+                        ? Icons.tv
+                        : Icons.movie,
+                    cornerBadgeIcon: flagged
+                        ? (result.alreadyAvailable
+                              ? Icons.check_circle_outline
+                              : Icons.hourglass_top)
+                        : null,
+                    onTap: () => widget.onResultSelect(result),
+                  ),
                 );
               },
             ),
@@ -343,14 +366,16 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
   static const double _minPosterCardWidth = 120;
   static const double _maxPosterCardWidth = 220;
 
-  int _posterColumnCount(double availableWidth) {
+  int _posterColumnCount(double availableWidth, double scale) {
+    final maxCardWidth = _maxPosterCardWidth * scale;
+    final minCardWidth = _minPosterCardWidth * scale;
     final minimumColumns =
         ((availableWidth + MediaBrowsingMetrics.itemGap) /
-                (_maxPosterCardWidth + MediaBrowsingMetrics.itemGap))
+                (maxCardWidth + MediaBrowsingMetrics.itemGap))
             .ceil();
     final maximumColumns =
         ((availableWidth + MediaBrowsingMetrics.itemGap) /
-                (_minPosterCardWidth + MediaBrowsingMetrics.itemGap))
+                (minCardWidth + MediaBrowsingMetrics.itemGap))
             .floor();
     return minimumColumns.clamp(1, maximumColumns.clamp(1, 100));
   }
@@ -384,98 +409,6 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
           ),
         );
       },
-    );
-  }
-}
-
-/// Mirrors _VodCard in vod_screen.dart: same Hero tag convention, same
-/// image/title/rating layout, same corner-badge position — just swapping
-/// the favorite star for an already-requested/already-available indicator.
-class _RequestResultCard extends StatelessWidget {
-  const _RequestResultCard({
-    required this.result,
-    required this.onTap,
-    this.autofocus = false,
-    this.isAlreadyRequested = false,
-  });
-
-  final ContentRequestSearchResult result;
-  final VoidCallback onTap;
-  final bool autofocus;
-  final bool isAlreadyRequested;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final flagged = result.alreadyAvailable || isAlreadyRequested;
-    return DpadInkWell(
-      autofocus: autofocus,
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: Hero(
-                  tag: 'request_poster_${result.type}_${result.externalId}',
-                  child: ResilientMediaImage(
-                    imageUrl: result.poster,
-                    fallbackIcon: result.type == 'series'
-                        ? Icons.tv
-                        : Icons.movie,
-                    borderRadius: 0,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      result.title,
-                      style: theme.textTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (result.rating != null)
-                      Text(
-                        '★ ${result.rating!.value.toStringAsFixed(1)}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFFFFCC00),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (flagged)
-            Positioned(
-              top: 4,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  result.alreadyAvailable
-                      ? Icons.check_circle_outline
-                      : Icons.hourglass_top,
-                  color: Colors.white,
-                  size: 14,
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }
@@ -584,13 +517,11 @@ class _MyRequestCard extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              DpadFocusable(
-                onSelect: onDismiss,
-                child: IconButton(
-                  tooltip: l.requestsDismiss,
-                  icon: const Icon(Icons.close),
-                  onPressed: onDismiss,
-                ),
+              AppIconButton(
+                tooltip: l.requestsDismiss,
+                icon: Icons.close,
+                dense: true,
+                onPressed: onDismiss,
               ),
           ],
         ],
