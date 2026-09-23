@@ -2840,12 +2840,6 @@ abstract class AppLocalizations {
   /// **'Couldn\'t load this actor\'s filmography.'**
   String get personDetailsError;
 
-  /// No description provided for @personDetailsFilterAll.
-  ///
-  /// In en, this message translates to:
-  /// **'All'**
-  String get personDetailsFilterAll;
-
   /// No description provided for @personDetailsFilterInLibrary.
   ///
   /// In en, this message translates to:

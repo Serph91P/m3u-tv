@@ -1585,9 +1585,6 @@ class AppLocalizationsDe extends AppLocalizations {
       'Die Filmografie konnte nicht geladen werden.';
 
   @override
-  String get personDetailsFilterAll => 'Alle';
-
-  @override
   String get personDetailsFilterInLibrary => 'In der Bibliothek';
 
   @override

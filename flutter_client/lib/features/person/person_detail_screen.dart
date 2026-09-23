@@ -135,6 +135,10 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
 
   bool _showLibraryOnly = false;
 
+  // Tapping the actor image toggles the bio between its truncated preview
+  // and the full text - see the DpadInkWell in _actorImage().
+  bool _bioExpanded = false;
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -148,6 +152,13 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
+  }
+
+  static const int _maxBioLength = 500;
+
+  String _truncatedBio(String bio) {
+    if (bio.length <= _maxBioLength) return bio;
+    return '${bio.substring(0, _maxBioLength).trimRight()}...';
   }
 
   int _posterColumnCount(double availableWidth, double scale) {
@@ -175,6 +186,13 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
         ? allCredits.where((c) => c.inLibrary).toList(growable: false)
         : allCredits;
     final scale = FontSizeScope.scaleOf(context);
+    // Below this, stack the actor image above the bio instead of side by
+    // side - matches the compact breakpoint used by MovieDetailBody.
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final bio = person?.bio?.trim();
+    final bioText = (bio?.isNotEmpty ?? false)
+        ? (_bioExpanded ? bio! : _truncatedBio(bio!))
+        : l.personDetailsBioUnavailable;
 
     return SafeArea(
       top: false,
@@ -203,54 +221,21 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
                     ? const Center(child: CircularProgressIndicator())
                     : widget.hasError
                     ? Text(l.personDetailsError)
+                    : compact
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _actorImage(person, scale),
+                          const SizedBox(height: 16),
+                          _animatedBio(context, bioText),
+                        ],
+                      )
                     : Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Focusable but not clickable (onTap: null) -
-                          // purely so D-pad Up from the grid's top row has a
-                          // target to land on above it; the Focus wrapper
-                          // above owns scrolling it back into view (full
-                          // scroll-to-top, not "just enough to reveal").
-                          // autoScroll: false is required here - DpadInkWell's
-                          // default autoScroll fires its own ensureVisible
-                          // (partial-reveal) scroll on the same focus change,
-                          // and that second animateTo overrides the tail of
-                          // the Focus wrapper's animateTo(0) before it
-                          // settles, so the page stops short of the top. Same
-                          // fix as AppButton's autoScroll: false inside
-                          // RowScrollRegion (series_detail_widgets.dart) -
-                          // exactly one thing may own this ScrollController's
-                          // animation.
-                          // Styled like a Continue Watching poster tile
-                          // (MediaPreviewCard) rather than a plain circular
-                          // avatar - same corner radius, and the outer
-                          // DpadInkWell's clip (not a raw ClipOval) does the
-                          // rounding so the focus glow matches the image edge.
-                          DpadInkWell(
-                            autoScroll: false,
-                            borderRadius: BorderRadius.circular(
-                              MediaBrowsingMetrics.cardRadius,
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: SizedBox(
-                              width: 140 * scale,
-                              height: 210 * scale,
-                              child: ResilientMediaImage(
-                                imageUrl: person?.photo,
-                                fallbackIcon: Icons.person,
-                                borderRadius: 0,
-                              ),
-                            ),
-                          ),
+                          _actorImage(person, scale),
                           const SizedBox(width: 16),
-                          Expanded(
-                            child: Text(
-                              (person?.bio?.trim().isNotEmpty ?? false)
-                                  ? person!.bio!
-                                  : l.personDetailsBioUnavailable,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ),
+                          Expanded(child: _animatedBio(context, bioText)),
                         ],
                       ),
               ),
@@ -265,7 +250,8 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
                 0,
               ),
               sliver: SliverToBoxAdapter(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     DetailRowHeader(
                       icon: Icons.movie,
@@ -273,8 +259,8 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
                     ),
                     if (widget.includeLibraryFilter && allCredits.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: _LibraryFilterToggle(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _LibraryFilterSwitch(
                           showLibraryOnly: _showLibraryOnly,
                           onChanged: (value) =>
                               setState(() => _showLibraryOnly = value),
@@ -343,6 +329,49 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
     );
   }
 
+  Widget _animatedBio(BuildContext context, String bioText) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      alignment: Alignment.topLeft,
+      child: Text(bioText, style: Theme.of(context).textTheme.bodyMedium),
+    );
+  }
+
+  // Styled like a Continue Watching poster tile (MediaPreviewCard) rather
+  // than a plain circular avatar - same corner radius, and the outer
+  // DpadInkWell's clip (not a raw ClipOval) does the rounding so the focus
+  // glow matches the image edge. Also focusable so D-pad Up from the grid's
+  // top row has a target to land on above it - the Focus wrapper around the
+  // header owns scrolling it back into view (full scroll-to-top, not "just
+  // enough to reveal"), which is why autoScroll stays false here: DpadInkWell's
+  // default autoScroll fires its own ensureVisible (partial-reveal) scroll on
+  // the same focus change, and that second animateTo overrides the tail of
+  // the Focus wrapper's animateTo(0) before it settles, so the page stops
+  // short of the top. Same fix as AppButton's autoScroll: false inside
+  // RowScrollRegion (series_detail_widgets.dart) - exactly one thing may own
+  // this ScrollController's animation.
+  //
+  // Tapping it toggles the bio (rendered alongside/below it) between its
+  // truncated preview and the full text.
+  Widget _actorImage(PersonDetails? person, double scale) {
+    return DpadInkWell(
+      autoScroll: false,
+      onTap: () => setState(() => _bioExpanded = !_bioExpanded),
+      borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 140 * scale,
+        height: 210 * scale,
+        child: ResilientMediaImage(
+          imageUrl: person?.photo,
+          fallbackIcon: Icons.person,
+          borderRadius: 0,
+        ),
+      ),
+    );
+  }
+
   Widget _creditCard(FilmographyCredit credit, {required bool autofocus}) {
     // `inLibrary` is resolved against the Xtream playlist's Series/VOD
     // library - meaningless for AIOStreams, which is on-demand and has no
@@ -368,15 +397,12 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
   }
 }
 
-/// Pill toggle above the filmography grid, filtering credits down to what
-/// exists in the caller's playlist library. Mirrors the project's stadium
-/// pill-button convention (`circular(50)`, per m3u-tv/CLAUDE.md's TV
-/// interaction rules) and the selected/unselected color-swap idiom used by
-/// `_SeasonToggle` (`lib/features/requests/request_detail_screen.dart`) -
-/// there's no shared segmented-control widget yet, so this is a small
-/// bespoke one rather than introducing a new abstraction for a single use.
-class _LibraryFilterToggle extends StatelessWidget {
-  const _LibraryFilterToggle({
+/// Switch toggle above the filmography grid, filtering credits down to what
+/// exists in the caller's playlist library. Matches the real-`Switch` style
+/// used by `SettingsSwitchRow` (`lib/features/settings/settings_ui.dart`)
+/// instead of the project's stadium-pill idiom, at the user's request.
+class _LibraryFilterSwitch extends StatelessWidget {
+  const _LibraryFilterSwitch({
     required this.showLibraryOnly,
     required this.onChanged,
   });
@@ -387,53 +413,25 @@ class _LibraryFilterToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _FilterOption(
-          label: l.personDetailsFilterAll,
-          selected: !showLibraryOnly,
-          onTap: () => onChanged(false),
-        ),
-        const SizedBox(width: 8),
-        _FilterOption(
-          label: l.personDetailsFilterInLibrary,
-          selected: showLibraryOnly,
-          onTap: () => onChanged(true),
-        ),
-      ],
-    );
-  }
-}
-
-class _FilterOption extends StatelessWidget {
-  const _FilterOption({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scale = FontSizeScope.scaleOf(context);
     return DpadInkWell(
-      onTap: onTap,
-      borderRadius: const BorderRadius.all(Radius.circular(50)),
-      color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+      onTap: () => onChanged(!showLibraryOnly),
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: selected
-                ? scheme.onPrimaryContainer
-                : scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
-          ),
+        padding: EdgeInsets.symmetric(
+          horizontal: 12 * scale,
+          vertical: 8 * scale,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              l.personDetailsFilterInLibrary,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(width: 8),
+            Switch(value: showLibraryOnly, onChanged: onChanged),
+          ],
         ),
       ),
     );

@@ -153,7 +153,7 @@ void main() {
         ],
       );
 
-      testWidgets('shows both credits by default (All selected)', (
+      testWidgets('shows both credits by default (switch off)', (
         tester,
       ) async {
         await tester.pumpWidget(
@@ -166,8 +166,11 @@ void main() {
         final l = AppLocalizations.of(
           tester.element(find.byType(PersonDetailScreen)),
         );
-        expect(find.text(l.personDetailsFilterAll), findsOneWidget);
         expect(find.text(l.personDetailsFilterInLibrary), findsOneWidget);
+        expect(
+          tester.widget<Switch>(find.byType(Switch)).value,
+          isFalse,
+        );
         expect(find.text('Fight Club'), findsOneWidget);
         expect(find.text('Game of Thrones'), findsOneWidget);
       });
@@ -237,8 +240,8 @@ void main() {
         final l = AppLocalizations.of(
           tester.element(find.byType(PersonDetailScreen)),
         );
-        expect(find.text(l.personDetailsFilterAll), findsNothing);
         expect(find.text(l.personDetailsFilterInLibrary), findsNothing);
+        expect(find.byType(Switch), findsNothing);
         // Both still render, unfiltered.
         expect(find.text('Fight Club'), findsOneWidget);
         expect(find.text('Game of Thrones'), findsOneWidget);

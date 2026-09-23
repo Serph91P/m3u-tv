@@ -858,7 +858,6 @@
   "personDetailsBioUnavailable": "No biography available.",
   "personDetailsEmpty": "No filmography available.",
   "personDetailsError": "Couldn't load this actor's filmography.",
-  "personDetailsFilterAll": "All",
   "personDetailsFilterInLibrary": "In Library",
   "personDetailsNoLibraryMatches": "None of this actor's filmography is in your library."
 }

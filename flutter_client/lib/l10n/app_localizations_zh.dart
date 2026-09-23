@@ -1530,9 +1530,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get personDetailsError => '无法加载该演员的作品年表。';
 
   @override
-  String get personDetailsFilterAll => '全部';
-
-  @override
   String get personDetailsFilterInLibrary => '库中已有';
 
   @override

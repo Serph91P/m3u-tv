@@ -1575,9 +1575,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get personDetailsError => 'Couldn\'t load this actor\'s filmography.';
 
   @override
-  String get personDetailsFilterAll => 'All';
-
-  @override
   String get personDetailsFilterInLibrary => 'In Library';
 
   @override
