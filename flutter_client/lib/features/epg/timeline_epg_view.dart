@@ -277,6 +277,15 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
     }
   }
 
+  /// Scrolls the Channels column and program grid back to the top row.
+  /// Called by LiveTvScreen when the selected group/category changes, since
+  /// [didUpdateWidget] otherwise leaves the vertical scroll offset wherever
+  /// the previous group's channel list happened to land.
+  void resetVerticalScroll() {
+    if (_leftVCtrl.hasClients) _leftVCtrl.jumpTo(0);
+    if (_rightVCtrl.hasClients) _rightVCtrl.jumpTo(0);
+  }
+
   void _initWindow() {
     _windowStart = _selectedDate;
     _windowEnd = DateTime(

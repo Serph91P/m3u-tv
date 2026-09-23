@@ -737,7 +737,14 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       searchHint: l.liveTvSearchHint,
       tabs: _categoryTabs(categories),
       selectedId: _selectedCategory ?? '',
-      onSelected: (id) => setState(() => _selectedCategory = id),
+      onSelected: (id) {
+        setState(() => _selectedCategory = id);
+        // The list/grid views reset via the ValueKey below, but
+        // TimelineEpgView is addressed by a fixed GlobalKey (see
+        // _timelineEpgViewKey) so its state - and vertical scroll offset -
+        // survives the switch; reset it explicitly.
+        _timelineEpgViewKey.currentState?.resetVerticalScroll();
+      },
       filterButtonLabel: l.mediaCategoryFilterButton,
       filterScreenTitle: l.mediaCategoryFilterScreenTitle,
       leading: _buildViewModeToggle(),
@@ -997,6 +1004,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       horizontalEdge: DpadEdgeBehavior.stop,
       onEdge: _handleGridLeftEdge,
       child: ScrollbarListView(
+        key: ValueKey(_selectedCategory),
         itemCount: channels.length,
         itemBuilder: (context, index) {
           final channel = channels[index];
@@ -1076,6 +1084,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       horizontalEdge: DpadEdgeBehavior.stop,
       onEdge: _handleGridLeftEdge,
       child: ScrollbarGridView(
+        key: ValueKey(_selectedCategory),
         // Zero top inset only, to match the List and EPG views' flush top
         // edge - ScrollbarGridView's own default padding is symmetric,
         // which otherwise leaves Grid visibly lower than its siblings.
