@@ -49,6 +49,14 @@ void main() {
     testWidgets('tapping an in-library credit fires onOpenCredit', (
       tester,
     ) async {
+      // Taller than the default 800x600 test surface - the wide/non-mobile
+      // layout's horizontal filmography strip sits below the header and
+      // library-filter switch, past the default viewport's bottom edge.
+      tester.view.physicalSize = const Size(800, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       FilmographyCredit? opened;
       await tester.pumpWidget(
         _TestApp(
@@ -252,6 +260,13 @@ void main() {
       'with includeLibraryFilter false (AIOStreams), a credit not marked '
       'in_library still fires onOpenCredit',
       (tester) async {
+        // Taller than the default 800x600 test surface - see the other
+        // tap test above for why.
+        tester.view.physicalSize = const Size(800, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
         FilmographyCredit? opened;
         await tester.pumpWidget(
           _TestApp(

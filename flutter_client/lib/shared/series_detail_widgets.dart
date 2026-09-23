@@ -21,7 +21,7 @@ import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart'
     show detailAppBarHeight;
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
-import 'package:m3u_tv/shared/related_strip.dart';
+import 'package:m3u_tv/shared/poster_strip.dart';
 
 /// Shared building blocks for the series-style detail screens (Xtream Series
 /// and the AIOStreams series body): the season picker, the locked-focus
@@ -1499,7 +1499,7 @@ class _CastRowState extends State<CastRow> implements LockedRow {
   }
 }
 
-/// Bridges the shared [RelatedStrip] to a [RowScrollRegion]: registers as a
+/// Bridges the shared [PosterStrip] to a [RowScrollRegion]: registers as a
 /// [LockedRow] so the cast row can hop down into it (and it can hop back up),
 /// and routes the strip's reveal through the region.
 class RelatedRow extends StatefulWidget {
@@ -1513,7 +1513,8 @@ class RelatedRow extends StatefulWidget {
 }
 
 class _RelatedRowState extends State<RelatedRow> implements LockedRow {
-  final GlobalKey<RelatedStripState> _stripKey = GlobalKey<RelatedStripState>();
+  final GlobalKey<PosterStripState<RelatedItem>> _stripKey =
+      GlobalKey<PosterStripState<RelatedItem>>();
   RowScrollRegionState? _region;
 
   @override
@@ -1538,9 +1539,14 @@ class _RelatedRowState extends State<RelatedRow> implements LockedRow {
 
   @override
   Widget build(BuildContext context) {
-    return RelatedStrip(
+    return PosterStrip<RelatedItem>(
       key: _stripKey,
+      debugLabel: 'relatedStrip',
       items: widget.items,
+      itemKey: (item) => item.id,
+      title: (item) => item.title,
+      posterUrl: (item) => item.posterUrl,
+      fallbackIcon: (item) => item.isSeries ? Icons.tv : Icons.movie,
       onTap: widget.onTap,
       onNavigateUp: () => _region?.navigateVertical(this, up: true),
       // Consume down so focus never escapes below the related row.

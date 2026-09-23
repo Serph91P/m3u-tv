@@ -1,4 +1,4 @@
-import 'package:dpad/dpad.dart';
+import 'package:dpad/dpad.dart' show DpadEdgeBehavior, DpadRegion;
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -8,6 +8,7 @@ import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+import 'package:m3u_tv/shared/poster_strip.dart';
 
 /// Actor filmography screen: TMDB bio/photo header over a poster grid of
 /// their other movies/TV credits, mirroring m3u-editor's own
@@ -139,9 +140,16 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
   // and the full text - see the DpadInkWell in _actorImage().
   bool _bioExpanded = false;
 
+  // Lets the wide-layout _FilmographyStrip send D-pad Up back to the actor
+  // image, since the strip is a single locked focus stop that intercepts
+  // every arrow key itself rather than letting dpad's spatial traversal find
+  // it (see _FilmographyStrip's doc comment).
+  final FocusNode _imageFocusNode = FocusNode(debugLabel: 'personImage');
+
   @override
   void dispose() {
     _scrollController.dispose();
+    _imageFocusNode.dispose();
     super.dispose();
   }
 
@@ -284,41 +292,75 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
               ),
             ),
           if (!widget.isLoading && !widget.hasError && credits.isNotEmpty)
-            SliverLayoutBuilder(
-              builder: (context, constraints) {
-                final availableWidth =
-                    constraints.crossAxisExtent -
-                    MediaBrowsingMetrics.contentPadding * 2;
-                final columnCount = _posterColumnCount(availableWidth, scale);
-                return SliverPadding(
-                  padding: const EdgeInsets.all(
-                    MediaBrowsingMetrics.contentPadding,
-                  ),
-                  sliver: DpadRegion(
-                    // Keyed by filter state so toggling rebuilds a fresh
-                    // region instead of reusing D-pad focus/scroll memory
-                    // for what is now a different item at the same index.
-                    memoryKey: 'person/filmography-grid/$filterActive',
-                    horizontalEdge: DpadEdgeBehavior.stop,
-                    child: SliverGrid(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columnCount,
-                        childAspectRatio: 0.6,
-                        mainAxisSpacing: MediaBrowsingMetrics.itemGap,
-                        crossAxisSpacing: MediaBrowsingMetrics.itemGap,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => _creditCard(
-                          credits[index],
-                          autofocus: index == 0,
+            if (compact)
+              SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  final availableWidth =
+                      constraints.crossAxisExtent -
+                      MediaBrowsingMetrics.contentPadding * 2;
+                  final columnCount = _posterColumnCount(
+                    availableWidth,
+                    scale,
+                  );
+                  return SliverPadding(
+                    padding: const EdgeInsets.all(
+                      MediaBrowsingMetrics.contentPadding,
+                    ),
+                    sliver: DpadRegion(
+                      // Keyed by filter state so toggling rebuilds a fresh
+                      // region instead of reusing D-pad focus/scroll memory
+                      // for what is now a different item at the same index.
+                      memoryKey: 'person/filmography-grid/$filterActive',
+                      horizontalEdge: DpadEdgeBehavior.stop,
+                      child: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columnCount,
+                          childAspectRatio: 0.6,
+                          mainAxisSpacing: MediaBrowsingMetrics.itemGap,
+                          crossAxisSpacing: MediaBrowsingMetrics.itemGap,
                         ),
-                        childCount: credits.length,
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => _creditCard(
+                            credits[index],
+                            autofocus: index == 0,
+                          ),
+                          childCount: credits.length,
+                        ),
                       ),
                     ),
+                  );
+                },
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.all(
+                  MediaBrowsingMetrics.contentPadding,
+                ),
+                sliver: SliverToBoxAdapter(
+                  // Keyed by filter state so toggling starts the strip with
+                  // fresh internal focus/scroll state for what is now a
+                  // different item at the same index.
+                  child: PosterStrip<FilmographyCredit>(
+                    key: ValueKey('person/filmography-strip/$filterActive'),
+                    debugLabel: 'personFilmographyStrip',
+                    items: credits,
+                    itemKey: (credit) => credit.tmdbId,
+                    title: (credit) => credit.title,
+                    subtitle: (credit) => credit.year,
+                    posterUrl: (credit) => credit.posterUrl,
+                    fallbackIcon: (credit) =>
+                        credit.isSeries ? Icons.tv : Icons.movie,
+                    // See _creditCard - `inLibrary` only means anything when
+                    // includeLibraryFilter is true (Xtream callers);
+                    // AIOStreams callers treat every credit as available.
+                    available: (credit) =>
+                        !widget.includeLibraryFilter || credit.inLibrary,
+                    onTap: (credit) => widget.onOpenCredit?.call(credit),
+                    onNavigateUp: _imageFocusNode.requestFocus,
+                    autofocus: true,
                   ),
-                );
-              },
-            ),
+                ),
+              ),
           SliverPadding(
             padding: EdgeInsets.only(
               bottom: MediaQuery.paddingOf(context).bottom + 24,
@@ -356,6 +398,7 @@ class _PersonDetailBodyState extends State<_PersonDetailBody> {
   // truncated preview and the full text.
   Widget _actorImage(PersonDetails? person, double scale) {
     return DpadInkWell(
+      focusNode: _imageFocusNode,
       autoScroll: false,
       onTap: () => setState(() => _bioExpanded = !_bioExpanded),
       borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
